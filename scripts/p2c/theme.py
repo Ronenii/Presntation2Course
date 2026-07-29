@@ -61,7 +61,10 @@ def theme_for(domain: str | None) -> str:
 
 
 def missing_tokens(css: str) -> list[str]:
-    return [t for t in REQUIRED_TOKENS if not re.search(rf"{re.escape(t)}\s*:", css)]
+    # Strip CSS comments before checking for tokens to avoid false positives
+    # (token names in comments do not count as defined)
+    css_no_comments = re.sub(r'/\*.*?\*/', '', css, flags=re.DOTALL)
+    return [t for t in REQUIRED_TOKENS if not re.search(rf"{re.escape(t)}\s*:", css_no_comments)]
 
 
 def available_themes(assets_dir: Path) -> list[str]:

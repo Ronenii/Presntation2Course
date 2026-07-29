@@ -51,6 +51,18 @@ def test_missing_tokens_lists_what_is_absent():
     assert missing_tokens(css) == [REQUIRED_TOKENS[0]]
 
 
+def test_missing_tokens_ignores_tokens_in_comments():
+    # Token names in comments do not count as defined; this test ensures
+    # that a token noted in a TODO comment but never actually declared
+    # is still reported as missing (critical for authoring checks in Task 12)
+    token_to_hide = REQUIRED_TOKENS[0]
+    other_tokens = [t for t in REQUIRED_TOKENS if t != token_to_hide]
+    css = f"/* TODO: define {token_to_hide} later */\n:root {{\n"
+    css += "\n".join(f"  {t}: x;" for t in other_tokens)
+    css += "\n}\n"
+    assert missing_tokens(css) == [token_to_hide]
+
+
 def _assets(tmp_path, *, theme="slate", tokens=True, template_override=None):
     base = tmp_path / "base"
     base.mkdir(parents=True)
