@@ -39,8 +39,8 @@ def validate_outline(obj: object) -> list[str]:
     for key in REQUIRED_TOP:
         if key not in obj:
             problems.append(f"outline is missing required key '{key}'")
-    if isinstance(obj.get("title"), str) is False and "title" in obj:
-        problems.append("outline.title must be a non-empty string")
+    if "title" in obj:
+        _check_str(obj, "title", "outline", problems)
     if "subject_domain" in obj and obj["subject_domain"] not in SUBJECT_DOMAINS:
         problems.append(
             f"outline.subject_domain must be one of {list(SUBJECT_DOMAINS)}, "
@@ -51,6 +51,8 @@ def validate_outline(obj: object) -> list[str]:
 
     modules = obj.get("modules")
     if not isinstance(modules, list):
+        if "modules" in obj:
+            problems.append("outline.modules must be a list")
         return problems
     if not modules:
         problems.append("outline.modules must contain at least one module")
@@ -78,6 +80,8 @@ def validate_outline(obj: object) -> list[str]:
 
         topics = module.get("topics")
         if not isinstance(topics, list):
+            if "topics" in module:
+                problems.append(f"{where}.topics must be a list")
             continue
         if not topics:
             problems.append(f"{where}.topics must contain at least one topic")

@@ -115,6 +115,23 @@ def test_rejects_a_malformed_slide_ref():
     assert any("slide_refs" in p and "deck.pdf#12" in p for p in validate_outline(broken))
 
 
+def test_rejects_a_wrong_typed_modules_field():
+    problems = validate_outline(outline(modules="not a list"))
+    assert any("modules" in p and "list" in p for p in problems)
+
+
+def test_rejects_a_wrong_typed_topics_field():
+    broken = outline()
+    broken["modules"][0]["topics"] = "not a list"
+    problems = validate_outline(broken)
+    assert any("topics" in p and "list" in p for p in problems)
+
+
+def test_rejects_a_blank_top_level_title():
+    problems = validate_outline(outline(title="   "))
+    assert any("title" in p for p in problems)
+
+
 def test_helpers_walk_the_structure():
     o = outline()
     assert topic_ids(o) == ["tlb", "thrashing"]
