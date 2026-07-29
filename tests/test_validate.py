@@ -131,6 +131,9 @@ def test_jargon_without_a_glossary_entry_is_blocking():
     assert "TLB" in gap[0].message
     assert gap[0].blocking is True
     assert gap[0].route == "writer"
+    # Attributed to the one topic that owns the term, so only its writer re-runs.
+    assert gap[0].module == "m-memory"
+    assert gap[0].topic == "tlb"
 
 
 def test_glossary_matching_ignores_case():
@@ -139,7 +142,15 @@ def test_glossary_matching_ignores_case():
 
 def test_a_malformed_glossary_block_is_blocking():
     findings = check(course(glossary="no colon at all"))
-    assert "glossary_malformed" in codes(findings)
+    bad = [f for f in findings if f.code == "glossary_malformed"]
+    assert len(bad) == 1
+    # The glossary block is global, not scoped to one module/topic — mdrender's
+    # glossary parser errors before anchor tracking even starts, so this finding
+    # can never be attributed to a single writer. Per the routing invariant,
+    # unattributable findings route to "build" (a re-render, no agent re-run).
+    assert bad[0].module is None
+    assert bad[0].topic is None
+    assert bad[0].route == "build"
 
 
 def test_a_broken_mermaid_block_is_blocking_and_routes_to_the_writer():

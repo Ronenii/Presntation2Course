@@ -8,13 +8,13 @@ import re
 from dataclasses import asdict, dataclass
 
 from p2c.mdrender import Rendered
-from p2c.outline import all_jargon, topic_ids
+from p2c.outline import iter_topics, topic_ids
 
 ROUTE_FOR_CODE = {
     "quiz_malformed": "writer",
     "topic_without_quiz": "writer",
     "mermaid_unparseable": "writer",
-    "glossary_malformed": "writer",
+    "glossary_malformed": "build",
     "jargon_without_glossary": "writer",
     "placeholder": "writer",
     "topic_missing": "summarizer",
@@ -168,16 +168,20 @@ def validate_course(rendered: Rendered, outline: dict, html_text: str) -> list[F
                 )
             )
 
-    # 6: every jargon term has a glossary entry.
+    # 6: every jargon term has a glossary entry. Reported per topic (rather than
+    # pooled across the whole outline) so each finding is attributable to one writer.
     defined = {term.lower() for term in rendered.glossary}
-    undefined = sorted(t for t in all_jargon(outline) if t.lower() not in defined)
-    if undefined:
-        findings.append(
-            _finding(
-                "jargon_without_glossary",
-                "jargon with no glossary entry: " + ", ".join(undefined),
+    for module, topic in iter_topics(outline):
+        undefined = sorted(t for t in topic["jargon"] if t.lower() not in defined)
+        if undefined:
+            findings.append(
+                _finding(
+                    "jargon_without_glossary",
+                    "jargon with no glossary entry: " + ", ".join(undefined),
+                    module=module["id"],
+                    topic=topic["id"],
+                )
             )
-        )
 
     # 7: no unresolved placeholders anywhere in the rendered body.
     for match in _PLACEHOLDER.finditer(rendered.html_body):
