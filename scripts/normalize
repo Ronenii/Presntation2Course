@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""CLI wrapper. Exit codes: 0 ok, 2 usage, 4 soffice missing, 5 bad deck."""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from p2c.normalize import NormalizeError, main  # noqa: E402
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except NormalizeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(exc.exit_code)
