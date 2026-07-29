@@ -46,6 +46,32 @@ _FENCE_OPEN = re.compile(r"^\s{0,3}```\s*(?P<info>[A-Za-z0-9_-]*)\s*$")
 _FENCE_CLOSE = re.compile(r"^\s{0,3}```\s*$")
 
 
+def _fenced_line_indices(lines: list[str]) -> set[int]:
+    """Indices that fall inside a *genuinely closed* ordinary code fence.
+
+    Mirrors p2c.blocks.extract_fences's own forward-looking open -> find-matching-
+    close algorithm exactly, so an opening ``` line only counts as a fence when a
+    later closing line actually exists. An unterminated fence is left untouched
+    (its opening line, and everything after it, resumes normal heading/topic-marker
+    scanning) -- a single-pass stateful toggle cannot know this in advance, since it
+    has no way to look ahead for a matching close.
+    """
+    protected: set[int] = set()
+    i = 0
+    n = len(lines)
+    while i < n:
+        if _FENCE_OPEN.match(lines[i]):
+            close = next(
+                (j for j in range(i + 1, n) if _FENCE_CLOSE.match(lines[j])), None
+            )
+            if close is not None:
+                protected.update(range(i, close + 1))
+                i = close + 1
+                continue
+        i += 1
+    return protected
+
+
 def _md(text: str) -> str:
     return markdown.Markdown(extensions=_EXTENSIONS).convert(text)
 
@@ -160,20 +186,17 @@ def render_course(course_md: str) -> Rendered:
         out.append(restore(injector.inject(protected), code_map))
         buffer.clear()
 
-    in_fence = False
-    for line in body.split("\n"):
-        if in_fence:
-            if _FENCE_CLOSE.match(line):
-                in_fence = False
-            buffer.append(line)
-            continue
-        if _FENCE_OPEN.match(line):
-            # An ordinary (unhandled-kind) code fence: HANDLED_KINDS fences were
-            # already tokenized to P2CBLOCK lines before this walk runs, so any
-            # ``` line seen here opens a plain code sample. Its contents must not
-            # be scanned for headings or topic markers (e.g. a `#`-commented line
-            # inside a ```c sample is not a heading).
-            in_fence = True
+    body_lines = body.split("\n")
+    fenced_lines = _fenced_line_indices(body_lines)
+    for index, line in enumerate(body_lines):
+        if index in fenced_lines:
+            # Inside an ordinary (unhandled-kind) code fence that genuinely closes
+            # later: HANDLED_KINDS fences were already tokenized to P2CBLOCK lines
+            # before this walk runs, so this is a plain code sample. Its contents
+            # must not be scanned for headings or topic markers (e.g. a
+            # `#`-commented line inside a ```c sample is not a heading). An
+            # unterminated fence is NOT in this set (see _fenced_line_indices), so
+            # it never suppresses real structure that follows it.
             buffer.append(line)
             continue
         marker = _TOPIC_MARKER.match(line)

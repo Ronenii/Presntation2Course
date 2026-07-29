@@ -264,6 +264,25 @@ def test_a_topic_marker_inside_an_ordinary_code_fence_is_not_treated_as_a_real_m
     assert "bogus" not in r.topic_ids
 
 
+def test_an_unterminated_code_fence_does_not_swallow_the_rest_of_the_document():
+    # Reproduces the fence-tracking regression: a code fence that opens but never
+    # closes must not suppress heading/topic-marker detection for everything that
+    # follows it. p2c.blocks.extract_fences's own contract is that an unterminated
+    # fence "is left untouched" -- the same must hold here.
+    body = (
+        "## M\n\n### Intro\n\n"
+        "```python\nx = 1\n# not closed\n\n"
+        "<!-- topic: tlb -->\n### The TLB\n\nSome text.\n"
+    )
+    r = render_course(course(body))
+    titles = [s.title for s in r.sections]
+    assert "The TLB" in titles
+    assert [s.topic_id for s in r.sections if s.level == 3 and s.title == "The TLB"] == [
+        "tlb"
+    ]
+    assert r.topic_ids == ["tlb"]
+
+
 def test_quiz_error_string_matches_the_anchor_colon_message_contract_exactly():
     body = "## M\n\n<!-- topic: t -->\n### T\n\n```quiz\nq: only two\n- [x] a\n- [ ] b\nwhy: w\n```\n"
     r = render_course(course(body))
