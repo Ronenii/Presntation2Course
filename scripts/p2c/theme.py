@@ -39,6 +39,20 @@ REQUIRED_TOKENS = (
     "--mermaid-text",
 )
 
+TEMPLATE_PLACEHOLDERS = (
+    "{{TITLE}}",
+    "{{THEME_NAME}}",
+    "{{THEME_CSS}}",
+    "{{LAYOUT_CSS}}",
+    "{{PRINT_CSS}}",
+    "{{TOC}}",
+    "{{CONTENT}}",
+    "{{GLOSSARY}}",
+    "{{SOURCE_DECKS}}",
+    "{{MERMAID_JS}}",
+    "{{COURSE_JS}}",
+)
+
 
 class ThemeError(Exception):
     """The requested theme cannot be loaded."""
@@ -65,6 +79,10 @@ def missing_tokens(css: str) -> list[str]:
     # (token names in comments do not count as defined)
     css_no_comments = re.sub(r'/\*.*?\*/', '', css, flags=re.DOTALL)
     return [t for t in REQUIRED_TOKENS if not re.search(rf"{re.escape(t)}\s*:", css_no_comments)]
+
+
+def missing_placeholders(template: str) -> list[str]:
+    return [p for p in TEMPLATE_PLACEHOLDERS if p not in template]
 
 
 def available_themes(assets_dir: Path) -> list[str]:
