@@ -55,6 +55,22 @@ def _fenced_line_indices(lines: list[str]) -> set[int]:
     (its opening line, and everything after it, resumes normal heading/topic-marker
     scanning) -- a single-pass stateful toggle cannot know this in advance, since it
     has no way to look ahead for a matching close.
+
+    Deliberate consequence, not a bug: if a fence never closes, anything that looks
+    like a heading or topic marker inside its dangling body (e.g. a `#`-style shell
+    comment, or a literal `<!-- topic: ... -->` example) IS treated as real markdown
+    structure. That is by design, not an oversight -- an unterminated fence is
+    inherently ambiguous input (did the author mean "the rest of the document is
+    code", or "I forgot a closing ```, everything after is real markdown"?), and
+    p2c.blocks.extract_fences already committed the whole pipeline to the second
+    reading for exactly this situation. Confirmed by running extract_fences() and
+    real markdown.markdown() on the same malformed input with no mdrender involved
+    at all: a "## fake module" line living inside a never-closed fence's dangling
+    body renders as a genuine <h2> there too. Matching that here keeps mdrender
+    consistent with the rest of the pipeline instead of inventing a third, bespoke
+    interpretation of malformed input. See
+    test_content_inside_a_never_closed_fence_is_treated_as_ordinary_markdown_by_design
+    in tests/test_mdrender.py, which locks this in as expected behavior.
     """
     protected: set[int] = set()
     i = 0

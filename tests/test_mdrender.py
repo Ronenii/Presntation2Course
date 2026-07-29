@@ -283,6 +283,36 @@ def test_an_unterminated_code_fence_does_not_swallow_the_rest_of_the_document():
     assert r.topic_ids == ["tlb"]
 
 
+def test_content_inside_a_never_closed_fence_is_treated_as_ordinary_markdown_by_design():
+    # This locks in EXPECTED behavior, not a bug: an unterminated fence is
+    # inherently ambiguous input (nothing downstream can tell whether the author
+    # meant "the rest of the document is code" or "I forgot a closing ```, the rest
+    # is real markdown"). p2c.blocks.extract_fences already committed the whole
+    # pipeline to the second reading ("an unterminated fence is left untouched").
+    # Confirmed independently: feeding this exact body through extract_fences() and
+    # then real markdown.markdown(), with no mdrender involved at all, also renders
+    # "## fake module" as a genuine <h2> and leaves "<!-- topic: bogus -->" as a
+    # plain HTML comment. mdrender must stay consistent with that reading rather
+    # than invent a third, bespoke interpretation of malformed input -- so a
+    # #-style line or a <!-- topic: ... --> example inside the dangling body of a
+    # fence that never closes IS parsed as real structure here too.
+    body = (
+        "## M\n\n<!-- topic: real1 -->\n### Intro\n\n"
+        "```bash\necho hi\n## fake module\n<!-- topic: bogus -->\n\n"
+        "```quiz\nq: real quiz?\n- [x] a\n- [ ] b\n- [ ] c\nwhy: w\n```\n\n"
+        "<!-- topic: tlb -->\n### The TLB\n\nSome text.\n"
+    )
+    r = render_course(course(body))
+    titles = [s.title for s in r.sections]
+    # The dangling "## fake module" line becomes a genuine (if unintended-by-the-
+    # author) section, exactly as plain extract_fences + markdown.markdown() would
+    # render it -- this is the documented, expected consequence of the ambiguity.
+    assert "fake module" in titles
+    # Real structure that follows the dangling body still recovers correctly.
+    assert "The TLB" in titles
+    assert r.topic_ids[-1] == "tlb"
+
+
 def test_quiz_error_string_matches_the_anchor_colon_message_contract_exactly():
     body = "## M\n\n<!-- topic: t -->\n### T\n\n```quiz\nq: only two\n- [x] a\n- [ ] b\nwhy: w\n```\n"
     r = render_course(course(body))
