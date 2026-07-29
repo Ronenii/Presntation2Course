@@ -212,3 +212,93 @@ def test_duplicate_titles_get_distinct_anchors():
     )
     r = render_course(course(body))
     assert [s.id for s in r.sections if s.level == 3] == ["caching", "caching-2"]
+
+
+def test_a_heading_like_line_inside_an_ordinary_code_fence_is_not_parsed_as_a_heading():
+    # Reproduces the reviewer's report: a `#`-commented line inside an unhandled
+    # (e.g. ```c) code fence must not be mistaken for a real heading, must not steal
+    # the real topic's anchor, and must not leak attr-list syntax into the rendered
+    # <pre><code> block.
+    body = (
+        "## M\n\n"
+        "### Intro\n\n"
+        "```c\n"
+        "# The TLB\n"
+        "int x;\n"
+        "```\n\n"
+        "<!-- topic: tlb -->\n"
+        "### The TLB\n\n"
+        "Some text.\n\n"
+        "```quiz\nq: Q?\n- [ ] a\n- [x] b\n- [ ] c\nwhy: w\n```\n"
+    )
+    r = render_course(course(body))
+
+    titles = [s.title for s in r.sections]
+    assert titles.count("The TLB") == 1  # no phantom section from inside the fence
+    ids = [s.id for s in r.sections]
+    assert "the-tlb" in ids
+    assert "the-tlb-2" not in ids  # the phantom did not steal the real anchor
+    assert 'data-quiz="the-tlb-q1"' in r.html_body  # quiz id not bumped by a phantom
+    assert "{: #" not in r.html_body  # attr-list syntax never leaks into output
+    # Only the real "# Operating Systems" course title is an <h1>; the code sample's
+    # "# The TLB" line must not produce a second one.
+    assert r.html_body.count("<h1") == 1
+    assert "# The TLB" in r.html_body  # the line still renders as plain code text
+
+
+def test_a_topic_marker_inside_an_ordinary_code_fence_is_not_treated_as_a_real_marker():
+    # A `<!-- topic: id -->` line that appears as *example text* inside a code sample
+    # must not be consumed as a real marker (which would both swallow it and leave a
+    # stale pending_topic attached to the next actual heading).
+    body = (
+        "## M\n\n"
+        "```markdown\n"
+        "<!-- topic: bogus -->\n"
+        "### Not a real heading\n"
+        "```\n\n"
+        "<!-- topic: tlb -->\n"
+        "### The TLB\n\nText.\n"
+    )
+    r = render_course(course(body))
+    assert [s.topic_id for s in r.sections if s.level == 3] == ["tlb"]
+    assert "bogus" not in r.topic_ids
+
+
+def test_quiz_error_string_matches_the_anchor_colon_message_contract_exactly():
+    body = "## M\n\n<!-- topic: t -->\n### T\n\n```quiz\nq: only two\n- [x] a\n- [ ] b\nwhy: w\n```\n"
+    r = render_course(course(body))
+    assert r.errors == ["t: quiz needs 3 or 4 options, found 2"]
+
+
+def test_mermaid_error_string_matches_the_anchor_colon_mermaid_message_contract_exactly():
+    body = "## M\n\n<!-- topic: t -->\n### T\n\n```mermaid\nnope LR\n A --> B\n```\n"
+    r = render_course(course(body))
+    assert r.errors == ["t: mermaid unrecognised diagram type 'nope'"]
+
+
+def test_glossary_error_string_starts_with_the_glossary_block_prefix_exactly():
+    body = (
+        "## M\n\n<!-- topic: t -->\n### T\n\nText.\n\n"
+        "```glossary\nBadLineNoColon\n```\n"
+    )
+    r = render_course(course(body))
+    assert len(r.errors) == 1
+    assert r.errors[0].startswith("glossary block: ")
+
+
+def test_multiple_quizzes_in_one_topic_get_distinct_scoped_ids_and_are_all_counted():
+    body = (
+        "## M\n\n"
+        "<!-- topic: tlb -->\n### The TLB\n\nText.\n\n"
+        "```quiz\nq: Q1?\n- [x] a\n- [ ] b\n- [ ] c\nwhy: w1\n```\n\n"
+        "```quiz\nq: Q2?\n- [ ] a\n- [x] b\n- [ ] c\nwhy: w2\n```\n\n"
+        "<!-- topic: thrashing -->\n### Thrashing\n\nText.\n\n"
+        "```quiz\nq: Q3?\n- [x] a\n- [ ] b\n- [ ] c\nwhy: w3\n```\n"
+    )
+    r = render_course(course(body))
+    assert r.quizzes_per_topic == {"tlb": 2, "thrashing": 1}
+    assert r.quiz_count == 3
+    assert 'data-quiz="the-tlb-q1"' in r.html_body
+    assert 'data-quiz="the-tlb-q2"' in r.html_body
+    assert 'data-quiz="thrashing-q1"' in r.html_body
+    assert r.errors == []

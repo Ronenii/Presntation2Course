@@ -39,6 +39,11 @@ CALLOUT_LABELS = {
 _TOPIC_MARKER = re.compile(r"^\s*<!--\s*topic:\s*(?P<id>[^\s>]+)\s*-->\s*$")
 _HEADING = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<text>.+?)\s*$")
 _EXTENSIONS = ["extra", "sane_lists"]
+# Same fence-line shape p2c.blocks.extract_fences uses: HANDLED_KINDS fences are
+# already tokenized before the line walk runs, so any ``` line seen there opens or
+# closes an ordinary (unhandled-kind) code sample.
+_FENCE_OPEN = re.compile(r"^\s{0,3}```\s*(?P<info>[A-Za-z0-9_-]*)\s*$")
+_FENCE_CLOSE = re.compile(r"^\s{0,3}```\s*$")
 
 
 def _md(text: str) -> str:
@@ -155,7 +160,22 @@ def render_course(course_md: str) -> Rendered:
         out.append(restore(injector.inject(protected), code_map))
         buffer.clear()
 
+    in_fence = False
     for line in body.split("\n"):
+        if in_fence:
+            if _FENCE_CLOSE.match(line):
+                in_fence = False
+            buffer.append(line)
+            continue
+        if _FENCE_OPEN.match(line):
+            # An ordinary (unhandled-kind) code fence: HANDLED_KINDS fences were
+            # already tokenized to P2CBLOCK lines before this walk runs, so any
+            # ``` line seen here opens a plain code sample. Its contents must not
+            # be scanned for headings or topic markers (e.g. a `#`-commented line
+            # inside a ```c sample is not a heading).
+            in_fence = True
+            buffer.append(line)
+            continue
         marker = _TOPIC_MARKER.match(line)
         if marker:
             pending_topic = marker.group("id")
