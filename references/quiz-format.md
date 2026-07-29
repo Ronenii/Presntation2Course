@@ -1,7 +1,7 @@
 `````markdown
 # Content block formats
 
-Three fenced block kinds are meaningful to the build. Anything else is rendered as an
+Six fenced block kinds are meaningful to the build. Anything else is rendered as an
 ordinary code block.
 
 ## `quiz` — one comprehension check
@@ -79,4 +79,37 @@ Every topic section must open with an HTML comment naming its outline id:
 
 The build uses these to prove every outline topic reached the course, and to scope quiz
 and term ids. A missing marker is a build failure.
+
+## `analogy` — the plain-language comparison
+
+```analogy
+A TLB is the sticky note on your monitor with the four phone numbers you actually
+dial, rather than the whole company directory in the drawer.
+```
+
+Renders as a distinctly styled callout. **It must appear before the technical
+explanation of the topic, never after.** That ordering is the point of the project.
+Markdown inside the block is rendered normally.
+
+## `unverified` — an admitted gap
+
+```unverified
+The lecturer's claim about cache line size on this architecture could not be confirmed
+against a primary source. Treat the specific number with suspicion.
+```
+
+Required whenever the topic's research file says `unverified: true`. Say what could not
+be confirmed and what the student should distrust. Never quietly invent a confident
+explanation instead — a student who cannot tell the difference is worse off with
+invention than with an admitted gap.
+
+## `prereq` — emitted by the build, not by writers
+
+```prereq
+- Binary arithmetic
+- Pointers
+```
+
+The build writes this at the start of each module from `outline.json`. Writers must not
+author it.
 `````
