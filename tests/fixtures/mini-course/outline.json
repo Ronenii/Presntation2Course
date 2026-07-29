@@ -1,0 +1,45 @@
+{
+  "title": "Operating Systems Foundations",
+  "subject_domain": "systems",
+  "source_decks": ["week1.pdf"],
+  "modules": [
+    {
+      "id": "m-memory",
+      "title": "Virtual Memory",
+      "prerequisites": ["Binary arithmetic"],
+      "topics": [
+        {
+          "id": "tlb",
+          "title": "What a TLB caches",
+          "slide_refs": ["week1.pdf#12"],
+          "jargon": ["TLB", "Page table"],
+          "diagrams": ["Boxes showing a virtual address becoming a physical address"],
+          "gaps": ["Why translation needs caching at all"]
+        },
+        {
+          "id": "thrashing",
+          "title": "Thrashing",
+          "slide_refs": ["week1.pdf#20"],
+          "jargon": ["Working set"],
+          "diagrams": [],
+          "gaps": ["What distinguishes thrashing from ordinary paging"]
+        }
+      ]
+    },
+    {
+      "id": "m-sched",
+      "title": "Scheduling",
+      "prerequisites": [],
+      "topics": [
+        {
+          "id": "round-robin",
+          "title": "Round robin",
+          "slide_refs": ["week1.pdf#31"],
+          "jargon": ["Quantum"],
+          "diagrams": [],
+          "gaps": ["How quantum length trades latency against throughput"]
+        }
+      ]
+    }
+  ]
+}

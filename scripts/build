@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""CLI wrapper. Exit codes: 0 clean, 1 error, 2 usage, 3 blocking findings."""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from p2c.assemble import AssembleError  # noqa: E402
+from p2c.build import main  # noqa: E402
+from p2c.outline import OutlineError  # noqa: E402
+from p2c.theme import ThemeError  # noqa: E402
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except (AssembleError, OutlineError, ThemeError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)

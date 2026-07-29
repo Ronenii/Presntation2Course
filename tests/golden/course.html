@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en" data-course-theme="slate">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Presentation2Course">
+<title>Operating Systems Foundations</title>
+<style>:root {
+  --font-heading: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-body: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --color-bg: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-fg: #1c2128;
+  --color-muted: #5b6670;
+  --color-border: #d5dae1;
+  --color-accent: #2d6cdf;
+  --color-accent-contrast: #ffffff;
+  --color-analogy: #7a5af5;
+  --color-prereq: #0f8a80;
+  --color-warn: #b26a00;
+  --color-correct: #1a7f4b;
+  --color-incorrect: #c0392b;
+  --mermaid-primary: #e4ebf7;
+  --mermaid-secondary: #f0f2f5;
+  --mermaid-line: #5b6670;
+  --mermaid-text: #1c2128;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #12161c;
+    --color-surface: #1a2027;
+    --color-fg: #e6eaef;
+    --color-muted: #9aa5b1;
+    --color-border: #2c343d;
+    --color-accent: #6ea8ff;
+    --color-accent-contrast: #0b0f14;
+    --color-analogy: #a08cff;
+    --color-prereq: #3fbfae;
+    --color-warn: #e0a24a;
+    --color-correct: #4cc98a;
+    --color-incorrect: #ff7b6b;
+    --mermaid-primary: #24303d;
+    --mermaid-secondary: #1a2027;
+    --mermaid-line: #9aa5b1;
+    --mermaid-text: #e6eaef;
+  }
+}
+:root[data-theme="dark"] {
+  --color-bg: #12161c;
+  --color-surface: #1a2027;
+  --color-fg: #e6eaef;
+  --color-muted: #9aa5b1;
+  --color-border: #2c343d;
+  --color-accent: #6ea8ff;
+  --color-accent-contrast: #0b0f14;
+  --color-analogy: #a08cff;
+  --color-prereq: #3fbfae;
+  --color-warn: #e0a24a;
+  --color-correct: #4cc98a;
+  --color-incorrect: #ff7b6b;
+  --mermaid-primary: #24303d;
+  --mermaid-secondary: #1a2027;
+  --mermaid-line: #9aa5b1;
+  --mermaid-text: #e6eaef;
+}
+</style>
+<style>/* Fixed layout, spacing scale, and component structure. Themes may not change these. */
+:root {
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --radius: 6px;
+  --measure: 70ch;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: var(--space-8); }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  line-height: 1.65;
+  -webkit-text-size-adjust: 100%;
+}
+h1, h2, h3, h4 { font-family: var(--font-heading); line-height: 1.25; }
+h1 { font-size: 2rem; margin: 0 0 var(--space-6); }
+h2 { font-size: 1.5rem; margin: var(--space-12) 0 var(--space-4); }
+h3 { font-size: 1.2rem; margin: var(--space-8) 0 var(--space-3); }
+a { color: var(--color-accent); }
+code, pre { font-family: var(--font-mono); font-size: 0.9em; }
+pre {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  overflow-x: auto;
+}
+table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--space-3); text-align: left; }
+
+.skip-link {
+  position: absolute; left: -9999px;
+  background: var(--color-accent); color: var(--color-accent-contrast);
+  padding: var(--space-2) var(--space-4);
+}
+.skip-link:focus { left: var(--space-4); top: var(--space-4); z-index: 10; }
+
+.shell { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: var(--space-8); }
+.sidebar {
+  position: sticky; top: 0; align-self: start;
+  height: 100vh; overflow-y: auto;
+  padding: var(--space-6);
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.sidebar__eyebrow {
+  margin: 0; text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: 0.7rem; color: var(--color-muted);
+}
+.sidebar__title { margin: var(--space-1) 0 var(--space-4); font-family: var(--font-heading); font-weight: 600; }
+.sidebar__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-6); }
+.btn {
+  font: inherit; font-size: 0.85rem; cursor: pointer;
+  background: var(--color-bg); color: var(--color-fg);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
+.btn:hover { border-color: var(--color-accent); }
+.btn--accent { background: var(--color-accent); color: var(--color-accent-contrast); border-color: transparent; }
+
+.toc__list, .toc__topics { list-style: none; margin: 0; padding: 0; }
+.toc__topics { margin: var(--space-1) 0 var(--space-4) var(--space-3); }
+.toc a {
+  display: block; padding: var(--space-1) var(--space-2);
+  text-decoration: none; color: var(--color-muted);
+  border-left: 2px solid transparent; border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 0.9rem;
+}
+.toc__module > a { color: var(--color-fg); font-weight: 600; margin-top: var(--space-3); }
+.toc a:hover { color: var(--color-fg); background: var(--color-bg); }
+.toc a[aria-current="true"] {
+  color: var(--color-accent); border-left-color: var(--color-accent); background: var(--color-bg);
+}
+
+.content { max-width: var(--measure); padding: var(--space-8) var(--space-6) var(--space-12); }
+
+.callout {
+  margin: var(--space-6) 0; padding: var(--space-4) var(--space-6);
+  border-left: 4px solid var(--color-border);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--color-surface);
+}
+.callout__label {
+  margin: 0 0 var(--space-2); font-family: var(--font-heading);
+  text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.72rem;
+  color: var(--color-muted);
+}
+.callout > :last-child { margin-bottom: 0; }
+.callout--analogy { border-left-color: var(--color-analogy); }
+.callout--prereq { border-left-color: var(--color-prereq); }
+.callout--unverified { border-left-color: var(--color-warn); }
+
+.term-wrap { position: relative; }
+.term {
+  font: inherit; cursor: help; padding: 0; background: none; border: none;
+  color: inherit; border-bottom: 1px dotted var(--color-accent);
+}
+.term:hover { border-bottom-style: solid; }
+.term__def {
+  display: block; margin: var(--space-2) 0; padding: var(--space-3);
+  border: 1px solid var(--color-border); border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius); background: var(--color-surface);
+  font-size: 0.92rem; color: var(--color-fg);
+}
+.term__def[hidden] { display: none; }
+
+.quiz {
+  margin: var(--space-8) 0; padding: var(--space-4) var(--space-6) var(--space-6);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  background: var(--color-surface);
+}
+.quiz__q { font-weight: 600; margin: var(--space-2) 0 var(--space-4); }
+.quiz__options { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.quiz__option {
+  font: inherit; text-align: left; width: 100%; cursor: pointer;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg); color: var(--color-fg);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+}
+.quiz__option:hover { border-color: var(--color-accent); }
+.quiz__option[data-state="correct"] { border-color: var(--color-correct); box-shadow: inset 3px 0 0 var(--color-correct); }
+.quiz__option[data-state="incorrect"] { border-color: var(--color-incorrect); box-shadow: inset 3px 0 0 var(--color-incorrect); }
+.quiz__answer, .quiz__why {
+  margin: var(--space-4) 0 0; padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border); font-size: 0.95rem;
+}
+.quiz__answer[hidden], .quiz__why[hidden] { display: none; }
+
+.mermaid { margin: var(--space-6) 0; text-align: center; overflow-x: auto; }
+.mermaid svg { max-width: 100%; height: auto; }
+.diagram-fallback {
+  margin: var(--space-6) 0; padding: var(--space-4);
+  border: 1px dashed var(--color-warn); border-radius: var(--radius);
+  color: var(--color-muted);
+}
+
+.appendix { margin-top: var(--space-12); border-top: 1px solid var(--color-border); }
+.glossary { display: grid; grid-template-columns: minmax(8rem, 14rem) 1fr; gap: var(--space-2) var(--space-6); }
+.glossary dt { font-weight: 600; font-family: var(--font-heading); }
+.glossary dd { margin: 0; color: var(--color-fg); }
+.footer { margin-top: var(--space-12); color: var(--color-muted); font-size: 0.85rem; }
+
+@media (max-width: 860px) {
+  .shell { grid-template-columns: 1fr; gap: 0; }
+  .sidebar { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--color-border); }
+  .content { padding: var(--space-6) var(--space-4); }
+  .glossary { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+<style>/* Shared print layout. Used by the in-page Download PDF button and export-pdf. */
+@page { size: A4; margin: 18mm 16mm; }
+
+@media print {
+  html, body { background: #fff !important; color: #000 !important; }
+  .shell { display: block; }
+  .sidebar, .skip-link, .btn, .footer { display: none !important; }
+  .content { max-width: none; padding: 0; }
+
+  h1, h2, h3 { break-after: avoid-page; page-break-after: avoid; }
+  h2 { break-before: page; page-break-before: always; }
+  h2:first-of-type { break-before: auto; page-break-before: auto; }
+  .quiz, .callout, .mermaid, table, pre { break-inside: avoid; page-break-inside: avoid; }
+
+  /* In print every question is immediately followed by its answer and explanation. */
+  .quiz__answer, .quiz__why { display: block !important; }
+  .quiz__option { border: 1px solid #999 !important; }
+
+  /* Definitions are useless behind a click on paper. */
+  .term__def { display: block !important; }
+  .term { border-bottom: 1px dotted #666; }
+
+  a { color: #000; text-decoration: underline; }
+  .content a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.8em; word-break: break-all; }
+  .mermaid svg { max-width: 100% !important; }
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to course content</a>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="sidebar__head">
+      <p class="sidebar__eyebrow">Course</p>
+      <p class="sidebar__title">Operating Systems Foundations</p>
+      <div class="sidebar__actions">
+        <button type="button" class="btn" id="theme-toggle" aria-pressed="false">Dark mode</button>
+        <button type="button" class="btn btn--accent" id="print-pdf">Download PDF</button>
+      </div>
+    </div>
+    <nav class="toc" aria-label="Course contents">
+      <ul class="toc__list">
+<li class="toc__module"><a href="#virtual-memory">Virtual Memory</a>
+<ul class="toc__topics">
+<li class="toc__topic"><a href="#what-a-tlb-caches">What a TLB caches</a></li>
+<li class="toc__topic"><a href="#thrashing">Thrashing</a></li>
+</ul></li>
+<li class="toc__module"><a href="#scheduling">Scheduling</a>
+<ul class="toc__topics">
+<li class="toc__topic"><a href="#round-robin">Round robin</a></li>
+</ul></li>
+</ul>
+    </nav>
+  </aside>
+  <main class="content" id="content" tabindex="-1">
+    <h1 id="operating-systems-foundations">Operating Systems Foundations</h1>
+<h2 id="virtual-memory">Virtual Memory</h2>
+<aside class="callout callout--prereq"><p class="callout__label">Before this module</p><ul>
+<li>Binary arithmetic</li>
+</ul></aside>
+<h3 id="what-a-tlb-caches">What a TLB caches</h3>
+<p>Every memory access your program makes uses an address that does not exist in hardware.
+Something has to turn it into a real one, on every single access, without slowing the
+machine to a crawl.</p>
+<aside class="callout callout--analogy"><p class="callout__label">Analogy</p><p>Imagine looking up a colleague's extension in a 400-page directory every time you call
+them. You would write the four numbers you actually dial on a sticky note. The sticky
+note is not a copy of the directory — it is a copy of the lookups you keep repeating.</p></aside>
+<p>The <span class="term-wrap"><button type="button" class="term" aria-expanded="false" aria-controls="def-tlb">TLB</button><span class="term__def" id="def-tlb" hidden>A small, fast cache holding recently used virtual-to-physical page mappings.</span></span> is that sticky note. It stores recently used virtual-to-physical page mappings so
+the processor can skip walking the <span class="term-wrap"><button type="button" class="term" aria-expanded="false" aria-controls="def-page-table">page table</button><span class="term__def" id="def-page-table" hidden>The full in-memory map from virtual pages to physical frames.</span></span>. On a hit, translation costs almost nothing.
+On a miss, the hardware walks the full structure and installs the result.</p>
+<div class="quiz" data-quiz="what-a-tlb-caches-q1">
+<p class="quiz__q">What does a TLB actually cache?</p>
+<ol class="quiz__options">
+<li><button type="button" class="quiz__option" data-correct="false" aria-describedby="what-a-tlb-caches-q1-why">The contents of recently used pages</button></li>
+<li><button type="button" class="quiz__option" data-correct="true" aria-describedby="what-a-tlb-caches-q1-why">Virtual-to-physical page mappings</button></li>
+<li><button type="button" class="quiz__option" data-correct="false" aria-describedby="what-a-tlb-caches-q1-why">The page table itself</button></li>
+</ol>
+<p class="quiz__answer" hidden>Correct answer: <strong>Virtual-to-physical page mappings</strong></p>
+<p class="quiz__why" id="what-a-tlb-caches-q1-why" hidden>It caches translations, not data. Confusing it with a data cache is the most common mistake here — the TLB sits in front of the page table, not in front of memory.</p>
+</div>
+<h3 id="thrashing">Thrashing</h3>
+<p>Paging is normal. Thrashing is what happens when paging stops being a background cost and
+becomes the entire workload.</p>
+<aside class="callout callout--analogy"><p class="callout__label">Analogy</p><p>A desk with room for three open books. With four books in play you spend your time
+swapping books in and out of the drawer instead of reading any of them.</p></aside>
+<p>The set of pages a process actively needs is its <span class="term-wrap"><button type="button" class="term" aria-expanded="false" aria-controls="def-working-set">working set</button><span class="term__def" id="def-working-set" hidden>The pages a process is actively using in a given window of time.</span></span>. When the combined working
+sets exceed physical memory, every process evicts pages another process is about to want,
+and useful work collapses while the disk stays busy.</p>
+<div class="quiz" data-quiz="thrashing-q1">
+<p class="quiz__q">A machine shows heavy disk activity and near-zero throughput. Why does that point to thrashing rather than a slow disk?</p>
+<ol class="quiz__options">
+<li><button type="button" class="quiz__option" data-correct="true" aria-describedby="thrashing-q1-why">The working sets no longer fit in memory, so processes keep evicting each other</button></li>
+<li><button type="button" class="quiz__option" data-correct="false" aria-describedby="thrashing-q1-why">The disk queue is saturated by one large sequential read</button></li>
+<li><button type="button" class="quiz__option" data-correct="false" aria-describedby="thrashing-q1-why">The page table has grown too large to search</button></li>
+</ol>
+<p class="quiz__answer" hidden>Correct answer: <strong>The working sets no longer fit in memory, so processes keep evicting each other</strong></p>
+<p class="quiz__why" id="thrashing-q1-why" hidden>A slow disk would still let useful work proceed between reads. The tell is that the paging is caused by the processes&#x27; own mutual eviction, so adding memory helps and a faster disk barely does.</p>
+</div>
+
+<h2 id="scheduling">Scheduling</h2>
+<h3 id="round-robin">Round robin</h3>
+<p>Once several programs are runnable at the same time, someone has to decide who runs next
+and for how long. Round robin makes the simplest possible choice.</p>
+<aside class="callout callout--analogy"><p class="callout__label">Analogy</p><p>A tap being shared between people filling buckets. Nobody fills a whole bucket at once;
+everyone gets a fixed number of seconds and then hands the tap on.</p></aside>
+<p>Each runnable process gets a fixed slice of CPU time — the <span class="term-wrap"><button type="button" class="term" aria-expanded="false" aria-controls="def-quantum">quantum</button><span class="term__def" id="def-quantum" hidden>The fixed slice of CPU time one process is allowed before the scheduler moves on.</span></span> — and then goes to the
+back of the queue. A short quantum makes the machine feel responsive but spends more time
+switching between processes. A long quantum reduces that overhead and makes interactive
+programs feel sluggish.</p>
+<div class="quiz" data-quiz="round-robin-q1">
+<p class="quiz__q">Halving the quantum on an interactive system usually has which effect?</p>
+<ol class="quiz__options">
+<li><button type="button" class="quiz__option" data-correct="true" aria-describedby="round-robin-q1-why">Better response time, more time lost to context switching</button></li>
+<li><button type="button" class="quiz__option" data-correct="false" aria-describedby="round-robin-q1-why">Better response time and higher total throughput</button></li>
+<li><button type="button" class="quiz__option" data-correct="false" aria-describedby="round-robin-q1-why">No change, because each process still gets the same total share</button></li>
+</ol>
+<p class="quiz__answer" hidden>Correct answer: <strong>Better response time, more time lost to context switching</strong></p>
+<p class="quiz__why" id="round-robin-q1-why" hidden>The tempting answer is that responsiveness is free. It is not — the switching overhead is real work the CPU does instead of running your program.</p>
+</div>
+
+    <section class="appendix">
+      <h2 id="glossary">Glossary</h2>
+      <dl class="glossary">
+<dt id="def-page-table">Page table</dt>
+<dd>The full in-memory map from virtual pages to physical frames.</dd>
+<dt id="def-quantum">Quantum</dt>
+<dd>The fixed slice of CPU time one process is allowed before the scheduler moves on.</dd>
+<dt id="def-tlb">TLB</dt>
+<dd>A small, fast cache holding recently used virtual-to-physical page mappings.</dd>
+<dt id="def-working-set">Working set</dt>
+<dd>The pages a process is actively using in a given window of time.</dd>
+</dl>
+    </section>
+    <footer class="footer">
+      <p>Built from week1.pdf. Quizzes are ungraded — retry as often as you like.</p>
+    </footer>
+  </main>
+</div>
+<script></script>
+<script>/* Course behaviour. Stateless on purpose: no scores, so no storage to go stale. */
+(function () {
+  "use strict";
+
+  function markReady() {
+    document.documentElement.setAttribute("data-mermaid-ready", "true");
+  }
+
+  /* --- quizzes: immediate feedback, unlimited retries, no scoring ---------- */
+  function wireQuizzes() {
+    document.querySelectorAll(".quiz").forEach(function (quiz) {
+      var answer = quiz.querySelector(".quiz__answer");
+      var why = quiz.querySelector(".quiz__why");
+      quiz.querySelectorAll(".quiz__option").forEach(function (option) {
+        option.addEventListener("click", function () {
+          var correct = option.getAttribute("data-correct") === "true";
+          quiz.querySelectorAll(".quiz__option").forEach(function (other) {
+            other.removeAttribute("data-state");
+          });
+          option.setAttribute("data-state", correct ? "correct" : "incorrect");
+          option.setAttribute("aria-pressed", "true");
+          if (answer) { answer.hidden = false; }
+          if (why) { why.hidden = false; }
+        });
+      });
+    });
+  }
+
+  /* --- glossary terms: click to reveal ------------------------------------ */
+  function wireTerms() {
+    document.querySelectorAll(".term").forEach(function (term) {
+      term.addEventListener("click", function () {
+        var id = term.getAttribute("aria-controls");
+        var def = id ? document.getElementById(id) : term.parentNode.querySelector(".term__def");
+        if (!def) { return; }
+        var open = def.hidden;
+        def.hidden = !open;
+        term.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+    });
+  }
+
+  /* --- sidebar: highlight the section being read -------------------------- */
+  function wireToc() {
+    var links = {};
+    document.querySelectorAll(".toc a[href^='#']").forEach(function (link) {
+      links[link.getAttribute("href").slice(1)] = link;
+    });
+    var headings = [].slice.call(document.querySelectorAll(".content h2[id], .content h3[id]"));
+    if (!headings.length || typeof IntersectionObserver === "undefined") { return; }
+
+    function activate(id) {
+      Object.keys(links).forEach(function (key) {
+        links[key].removeAttribute("aria-current");
+      });
+      if (links[id]) { links[id].setAttribute("aria-current", "true"); }
+    }
+    var observer = new IntersectionObserver(function (entries) {
+      var visible = entries
+        .filter(function (e) { return e.isIntersecting; })
+        .sort(function (a, b) { return a.boundingClientRect.top - b.boundingClientRect.top; });
+      if (visible.length) { activate(visible[0].target.id); }
+    }, { rootMargin: "-10% 0px -70% 0px", threshold: 0 });
+    headings.forEach(function (h) { observer.observe(h); });
+    activate(headings[0].id);
+  }
+
+  /* --- light/dark and print ---------------------------------------------- */
+  function currentlyDark() {
+    var explicit = document.documentElement.getAttribute("data-theme");
+    if (explicit) { return explicit === "dark"; }
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+
+  function wireChrome() {
+    var toggle = document.getElementById("theme-toggle");
+    if (toggle) {
+      var sync = function () {
+        var dark = currentlyDark();
+        toggle.setAttribute("aria-pressed", dark ? "true" : "false");
+        toggle.textContent = dark ? "Light mode" : "Dark mode";
+      };
+      toggle.addEventListener("click", function () {
+        document.documentElement.setAttribute("data-theme", currentlyDark() ? "light" : "dark");
+        sync();
+        renderDiagrams();
+      });
+      sync();
+    }
+    var print = document.getElementById("print-pdf");
+    if (print) {
+      print.addEventListener("click", function () { window.print(); });
+    }
+  }
+
+  /* --- diagrams ---------------------------------------------------------- */
+  function themeVariables() {
+    var styles = getComputedStyle(document.documentElement);
+    var v = function (name) { return styles.getPropertyValue(name).trim(); };
+    return {
+      background: v("--color-bg"),
+      primaryColor: v("--mermaid-primary"),
+      secondaryColor: v("--mermaid-secondary"),
+      tertiaryColor: v("--color-surface"),
+      primaryTextColor: v("--mermaid-text"),
+      primaryBorderColor: v("--mermaid-line"),
+      lineColor: v("--mermaid-line"),
+      textColor: v("--mermaid-text"),
+      fontFamily: v("--font-body")
+    };
+  }
+
+  function renderDiagrams() {
+    var nodes = [].slice.call(document.querySelectorAll(".mermaid"));
+    if (!nodes.length || typeof mermaid === "undefined") { markReady(); return; }
+    nodes.forEach(function (node) {
+      if (!node.hasAttribute("data-source")) {
+        node.setAttribute("data-source", node.textContent);
+      }
+      node.removeAttribute("data-processed");
+      node.innerHTML = node.getAttribute("data-source");
+    });
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "base",
+      themeVariables: themeVariables()
+    });
+    mermaid.run({ nodes: nodes })
+      .then(markReady)
+      .catch(function () { markReady(); });
+  }
+
+  function start() {
+    wireQuizzes();
+    wireTerms();
+    wireToc();
+    wireChrome();
+    renderDiagrams();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
+})();
+</script>
+</body>
+</html>
