@@ -79,6 +79,6 @@ Working set: The pages a process is actively using in a given window of time.
 - Mermaid blocks must start with a diagram keyword and have balanced brackets and quotes.
   A block the build rejects comes back to you for exactly one repair attempt; after that
   replace it with a prose description of the diagram.
-- No `TODO`, `TBD`, `FIXME`, `XXX`, `[insert …]`, or lorem ipsum. The build treats any of
-  them as a blocking finding.
+- No `TODO`, `TBD`, `FIXME`, `XXX`, `[insert …]`, `<placeholder`, or lorem ipsum. The build
+  treats any of them as a blocking finding.
 - Ask no questions. Write the file.
