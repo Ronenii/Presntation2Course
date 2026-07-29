@@ -12,14 +12,8 @@ Task 4: parked — extract_fences only matches exactly 3-backtick fences (no Com
 Task 4: minor (deferred): _INLINE_CODE regex doesn't handle double-backtick spans or escaped backticks (blocks.py:29); no test for extract_fences with an uppercase fence kind (e.g. ```QUIZ)
 Task 4: complete (commits b0f15e2..986a267, 1 parked, 2 minor deferred)
 Task 5: minor (deferred): no test for duplicate why: lines (quiz.py:159-160); no test for multi-line q: wrapping (quiz.py:163-165); report line-count claims did not match diff stat (cosmetic)
-Task 5: fix round 1/5 (1 addressed — quiz-format.md why: continuation doc gap; commits bf90a99..f17d9be) — RE-REVIEW NOT YET DISPATCHED, resume here
-
----
-Snapshot taken 2026-07-29 for handoff to a remote/cloud session. The live ledger during
-local execution lived at the gitignored path
-`.superpowers/sdd/2026-07-28-presentation2course/progress.md` (per
-superpowers:subagent-driven-development's workspace convention) and does not travel with
-this push. To resume: regenerate that workspace with this skill's
-`scripts/sdd-workspace docs/superpowers/plans/2026-07-28-presentation2course.md`, copy
-this snapshot back in as `progress.md`, and continue from the last line above — Task 5's
-fix (commit f17d9be) needs its scoped re-review dispatched before Task 6 starts.
+Task 5: fix round 1/5 re-reviewed (addressed, no new breakage; commits bf90a99..f17d9be)
+Task 5: complete (commits 986a267..f17d9be, 3 minor deferred)
+Task 6: minor (deferred): [^:]+ -> [^:]* regex fix in glossary.py:31 has no inline comment explaining why; unused `line` var in enumerate loop (glossary.py:206); no test for a term containing regex metacharacters (e.g. "C++")
+Task 6: complete (commits 316d380..ac04d3a, review clean)
+Task 7: NOT STARTED — brief generated (task-7-brief.md), implementer dispatch was rejected by the user before any subagent work began. A stray, non-collecting tests/test_outline.py (matches the brief's Step 1 RED test verbatim, imports p2c.outline which does not exist) is sitting untracked in the worktree — origin unclear (possibly a partial artifact from the rejected dispatch), NOT committed, breaks a bare `pytest` collection run. Resume: either delete this stray file and re-dispatch Task 7 from the brief, or use it as the starting RED state if it matches the brief exactly (verify first — do not trust it without comparing to task-7-brief.md Step 1).
