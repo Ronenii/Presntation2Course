@@ -24,7 +24,7 @@ Grammar, enforced by the build:
   the first option.
 - 3 or 4 options, each `- [ ] text` or `- [x] text`. No option may be empty.
 - Exactly one option marked `[x]`.
-- Exactly one `why:`, non-empty, wrapping onto continuation lines.
+- Exactly one `why:`, non-empty, wrapping onto indented continuation lines.
 - No other lines. A stray line is a build failure.
 - Plain text only — no markdown, no backticks, no HTML inside a quiz block.
 
