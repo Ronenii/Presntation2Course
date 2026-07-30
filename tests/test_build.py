@@ -13,11 +13,18 @@ REPO = Path(__file__).resolve().parents[1]
 MINI = REPO / "tests" / "fixtures" / "mini-course"
 ASSETS = REPO / "assets"
 GOLDEN = REPO / "tests" / "golden" / "course.html"
+MINI_HE = REPO / "tests" / "fixtures" / "mini-course-he"
+GOLDEN_HE = REPO / "tests" / "golden" / "course-he.html"
 
 
 @pytest.fixture
 def built(tmp_path):
     return build(MINI / "outline.json", MINI / "modules", tmp_path, ASSETS)
+
+
+@pytest.fixture
+def built_he(tmp_path):
+    return build(MINI_HE / "outline.json", MINI_HE / "modules", tmp_path, ASSETS)
 
 
 def test_build_writes_all_three_artifacts(built, tmp_path):
@@ -143,6 +150,28 @@ def test_matches_the_golden_snapshot(built):
         GOLDEN.write_text(built.course_html.read_text())
     assert built.course_html.read_text() == GOLDEN.read_text(), (
         "course.html changed; re-run with P2C_UPDATE_GOLDEN=1 and review the diff"
+    )
+
+
+def test_the_hebrew_course_builds_clean(built_he):
+    assert [f.code for f in built_he.findings] == []
+
+
+def test_the_hebrew_course_gets_rtl_layout_and_ltr_diagrams(built_he):
+    html = built_he.course_html.read_text()
+    assert 'lang="he"' in html
+    assert 'dir="rtl"' in html
+    assert '<div class="mermaid" dir="ltr">' in html
+    assert "TLB" in html  # jargon stays in its original form even in a Hebrew course
+    assert "<dt id=\"def-tlb\">TLB</dt>" in html
+
+
+def test_the_hebrew_course_matches_its_golden_snapshot(built_he):
+    if os.environ.get("P2C_UPDATE_GOLDEN") == "1":
+        GOLDEN_HE.parent.mkdir(parents=True, exist_ok=True)
+        GOLDEN_HE.write_text(built_he.course_html.read_text())
+    assert built_he.course_html.read_text() == GOLDEN_HE.read_text(), (
+        "course-he.html changed; re-run with P2C_UPDATE_GOLDEN=1 and review the diff"
     )
 
 

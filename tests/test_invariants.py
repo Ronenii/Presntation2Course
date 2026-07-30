@@ -11,6 +11,7 @@ from p2c.invariants import check_course
 REPO = Path(__file__).resolve().parents[1]
 MINI = REPO / "tests" / "fixtures" / "mini-course"
 ASSETS = REPO / "assets"
+MINI_HE = REPO / "tests" / "fixtures" / "mini-course-he"
 
 
 @pytest.fixture
@@ -21,8 +22,22 @@ def course_dir(tmp_path):
     return tmp_path
 
 
+@pytest.fixture
+def course_dir_he(tmp_path):
+    build(MINI_HE / "outline.json", MINI_HE / "modules", tmp_path, ASSETS)
+    (tmp_path / ".p2c").mkdir(exist_ok=True)
+    (tmp_path / ".p2c" / "outline.json").write_text((MINI_HE / "outline.json").read_text())
+    return tmp_path
+
+
 def test_a_sound_course_violates_nothing(course_dir):
     assert check_course(course_dir) == []
+
+
+def test_a_sound_hebrew_course_violates_nothing(course_dir_he):
+    """Confirms check_course needs no language-specific changes: same invariants,
+    same result, regardless of the course's language."""
+    assert check_course(course_dir_he) == []
 
 
 def test_a_missing_artifact_is_reported(course_dir):
