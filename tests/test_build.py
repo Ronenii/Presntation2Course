@@ -20,11 +20,17 @@ GOLDEN_HE = REPO / "tests" / "golden" / "course-he.html"
 
 @pytest.fixture
 def built(tmp_path):
+    normalized = tmp_path / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes((REPO / "tests" / "fixtures" / "terse.pdf").read_bytes())
     return build(MINI / "outline.json", MINI / "modules", tmp_path, ASSETS)
 
 
 @pytest.fixture
 def built_he(tmp_path):
+    normalized = tmp_path / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes((REPO / "tests" / "fixtures" / "terse.pdf").read_bytes())
     return build(MINI_HE / "outline.json", MINI_HE / "modules", tmp_path, ASSETS)
 
 
@@ -49,6 +55,11 @@ def test_theme_comes_from_subject_domain(built):
 
 
 def test_theme_can_be_overridden(tmp_path):
+    normalized = tmp_path / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
     result = build(MINI / "outline.json", MINI / "modules", tmp_path, ASSETS, theme="parchment")
     assert result.theme == "parchment"
     assert "ui-serif" in result.course_html.read_text()
@@ -81,7 +92,13 @@ def test_mermaid_is_inlined_once_when_a_diagram_is_present(tmp_path):
         modules.joinpath(name).write_text((MINI / "modules" / name).read_text())
     with modules.joinpath("02-scheduling.md").open("a") as handle:
         handle.write("\n```mermaid\nflowchart LR\n  A[Run] --> B[Queue]\n```\n")
-    result = build(MINI / "outline.json", modules, tmp_path / "out", ASSETS)
+    out = tmp_path / "out"
+    normalized = out / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
+    result = build(MINI / "outline.json", modules, out, ASSETS)
     html = result.course_html.read_text()
     assert html.count("__esbuild_esm_mermaid_nm") >= 1
     assert html.count('<div class="mermaid" dir="ltr">') == 1
@@ -90,7 +107,13 @@ def test_mermaid_is_inlined_once_when_a_diagram_is_present(tmp_path):
 
 def test_course_md_is_the_source_of_truth_and_reproducible(built, tmp_path):
     first = built.course_md.read_text()
-    again = build(MINI / "outline.json", MINI / "modules", tmp_path / "second", ASSETS)
+    second = tmp_path / "second"
+    normalized = second / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
+    again = build(MINI / "outline.json", MINI / "modules", second, ASSETS)
     assert again.course_md.read_text() == first
     assert again.course_html.read_text() == built.course_html.read_text()
 
@@ -109,7 +132,13 @@ def test_an_rtl_language_gets_dir_rtl_and_its_own_lang(tmp_path):
     outline["language"] = {"name": "Hebrew", "code": "he"}
     outline_path = tmp_path / "outline.json"
     outline_path.write_text(json.dumps(outline))
-    result = build(outline_path, MINI / "modules", tmp_path / "out", ASSETS)
+    out = tmp_path / "out"
+    normalized = out / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
+    result = build(outline_path, MINI / "modules", out, ASSETS)
     html = result.course_html.read_text()
     assert 'lang="he"' in html
     assert 'dir="rtl"' in html
@@ -188,6 +217,11 @@ def _run_cli(*args):
 
 
 def test_cli_exit_0_and_json_summary(tmp_path):
+    normalized = tmp_path / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
     proc = _run_cli(
         "--outline", MINI / "outline.json",
         "--modules", MINI / "modules",
@@ -292,7 +326,13 @@ def test_animate_blocks_render_inside_a_built_course(tmp_path):
         handle.write(
             "\n```animate\npattern: state-toggle\nbefore: Ready\nafter: Running\n```\n"
         )
-    result = build(MINI / "outline.json", modules, tmp_path / "out", ASSETS)
+    out = tmp_path / "out"
+    normalized = out / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
+    result = build(MINI / "outline.json", modules, out, ASSETS)
     html = result.course_html.read_text()
     assert '<div class="anim__state anim__state--before">Ready</div>' in html
     assert [f.code for f in result.findings] == []

@@ -14,7 +14,13 @@ back of the queue. A short quantum makes the machine feel responsive but spends 
 switching between processes. A long quantum reduces that overhead and makes interactive
 programs feel sluggish.
 
-<!-- no-visual: the outline calls for no diagram here; the tap-sharing analogy above already carries the mechanics. -->
+```animate
+pattern: step-reveal
+steps:
+  - A process becomes ready to run
+  - The scheduler picks it from the ready queue
+  - It runs until it blocks, yields, or is preempted
+```
 
 ```quiz
 q: Halving the quantum on an interactive system usually has which effect?

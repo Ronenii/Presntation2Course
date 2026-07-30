@@ -15,7 +15,10 @@ The TLB is that sticky note. It stores recently used virtual-to-physical page ma
 the processor can skip walking the page table. On a hit, translation costs almost nothing.
 On a miss, the hardware walks the full structure and installs the result.
 
-<!-- no-visual: this fixture module is deliberately diagram-free — other tests in tests/test_build.py rely on the base mini-course having zero mermaid diagrams as their control case. The address-translation flow is carried by the sticky-note analogy above. -->
+```figure
+source: terse.pdf#1
+caption: The original slide this diagram is redrawn from.
+```
 
 ```quiz
 q: What does a TLB actually cache?

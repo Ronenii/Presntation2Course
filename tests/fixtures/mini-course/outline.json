@@ -15,7 +15,8 @@
           "slide_refs": ["week1.pdf#12"],
           "jargon": ["TLB", "Page table"],
           "diagrams": ["Boxes showing a virtual address becoming a physical address"],
-          "gaps": ["Why translation needs caching at all"]
+          "gaps": ["Why translation needs caching at all"],
+          "reusable_image": "terse.pdf#1"
         },
         {
           "id": "thrashing",

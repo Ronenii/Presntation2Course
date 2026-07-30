@@ -16,16 +16,20 @@ MINI_HE = REPO / "tests" / "fixtures" / "mini-course-he"
 
 @pytest.fixture
 def course_dir(tmp_path):
+    normalized = tmp_path / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes((REPO / "tests" / "fixtures" / "terse.pdf").read_bytes())
     build(MINI / "outline.json", MINI / "modules", tmp_path, ASSETS)
-    (tmp_path / ".p2c").mkdir(exist_ok=True)
     (tmp_path / ".p2c" / "outline.json").write_text((MINI / "outline.json").read_text())
     return tmp_path
 
 
 @pytest.fixture
 def course_dir_he(tmp_path):
+    normalized = tmp_path / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes((REPO / "tests" / "fixtures" / "terse.pdf").read_bytes())
     build(MINI_HE / "outline.json", MINI_HE / "modules", tmp_path, ASSETS)
-    (tmp_path / ".p2c").mkdir(exist_ok=True)
     (tmp_path / ".p2c" / "outline.json").write_text((MINI_HE / "outline.json").read_text())
     return tmp_path
 
@@ -132,10 +136,15 @@ def test_a_course_with_a_diagram_is_not_falsely_flagged_as_reaching_the_network(
         modules.joinpath(name).write_text((MINI / "modules" / name).read_text())
     with modules.joinpath("02-scheduling.md").open("a") as handle:
         handle.write("\n```mermaid\nflowchart LR\n  A[Run] --> B[Queue]\n```\n")
-    build(MINI / "outline.json", modules, tmp_path / "out", ASSETS)
-    (tmp_path / "out" / ".p2c").mkdir(exist_ok=True)
-    (tmp_path / "out" / ".p2c" / "outline.json").write_text((MINI / "outline.json").read_text())
-    assert check_course(tmp_path / "out") == []
+    out = tmp_path / "out"
+    normalized = out / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
+    build(MINI / "outline.json", modules, out, ASSETS)
+    (out / ".p2c" / "outline.json").write_text((MINI / "outline.json").read_text())
+    assert check_course(out) == []
 
 
 @pytest.mark.skipif(
