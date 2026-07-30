@@ -13,6 +13,8 @@ Hardware solves this with a coherence protocol. MESI assigns each cache line a s
 uses write-invalidate traffic on the bus to keep the states consistent, so a write in one
 cache forces the others to drop their copy of that cache line.
 
+<!-- no-visual: the outline calls for no diagram here; this fixture is deliberately narrow, isolating only the two reviewer-only defects it is designed to test. -->
+
 ```quiz
 q: How many states does the MESI protocol define?
 - [ ] Three

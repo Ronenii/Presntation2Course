@@ -52,8 +52,16 @@ why: It caches translations, not data.
 
 
 def course(*, tlb_body=None, thrashing_body=None, glossary="TLB: A cache of mappings."):
-    tlb = tlb_body if tlb_body is not None else f"The TLB is fast.\n\n{GOOD_QUIZ}"
-    thrash = thrashing_body if thrashing_body is not None else f"Paging dominates.\n\n{GOOD_QUIZ}"
+    tlb = tlb_body if tlb_body is not None else (
+        "The TLB is fast.\n\n"
+        "<!-- no-visual: test fixture prose, nothing spatial to draw -->\n\n"
+        f"{GOOD_QUIZ}"
+    )
+    thrash = thrashing_body if thrashing_body is not None else (
+        "Paging dominates.\n\n"
+        "<!-- no-visual: test fixture prose, nothing spatial to draw -->\n\n"
+        f"{GOOD_QUIZ}"
+    )
     parts = [HEAD, "\n<!-- topic: tlb -->\n### The TLB\n\n", tlb, "\n"]
     if thrashing_body != "":
         parts += ["\n<!-- topic: thrashing -->\n### Thrashing\n\n", thrash, "\n"]
@@ -106,6 +114,22 @@ def test_a_topic_with_no_quiz_is_blocking_and_names_the_topic():
     assert missing[0].topic == "tlb"
     assert missing[0].module == "m-memory"
     assert missing[0].blocking is True
+
+
+def test_a_topic_with_no_visual_and_no_justification_is_blocking():
+    findings = check(course(tlb_body="The TLB is fast, with nothing spatial about it drawn."))
+    missing = [f for f in findings if f.code == "topic_without_visual"]
+    assert len(missing) == 1
+    assert missing[0].topic == "tlb"
+    assert missing[0].module == "m-memory"
+    assert missing[0].blocking is True
+    assert missing[0].route == "writer"
+
+
+def test_a_figure_block_counts_as_a_visual_for_the_coverage_check():
+    body = "The TLB is fast.\n\n```figure\nsource: week1.pdf#1\ncaption: c\n```\n\n" + GOOD_QUIZ
+    findings = check(course(tlb_body=body))
+    assert "topic_without_visual" not in codes(findings)
 
 
 def test_a_missing_topic_routes_to_the_summarizer():

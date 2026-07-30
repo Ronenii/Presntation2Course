@@ -176,6 +176,19 @@ def _animate_html(anim: Animate) -> str:
 
 _TOPIC_MARKER = re.compile(r"^\s*<!--\s*topic:\s*(?P<id>[^\s>]+)\s*-->\s*$")
 _HEADING = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<text>.+?)\s*$")
+_NO_VISUAL = re.compile(r"^\s*<!--\s*no-visual:\s*.+-->\s*$")
+_VISUAL_FENCE_KINDS = {"mermaid", "figure", "animate"}
+
+
+def _note_visual(status: dict[str, str], topic_id: str | None, value: str) -> None:
+    """'visual' always wins over 'justified', so a real visual is never
+    downgraded by an incidental no-visual comment elsewhere in the same topic."""
+    if not topic_id:
+        return
+    if value == "visual" or status.get(topic_id) != "visual":
+        status[topic_id] = value
+
+
 _EXTENSIONS = ["extra", "sane_lists"]
 # Same fence-line shape p2c.blocks.extract_fences uses: HANDLED_KINDS fences are
 # already tokenized before the line walk runs, so any ``` line seen there opens or
@@ -265,6 +278,7 @@ class Rendered:
     quizzes_per_topic: dict[str, int] = field(default_factory=dict)
     quiz_count: int = 0
     uses_mermaid: bool = False
+    topics_missing_visual: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -327,6 +341,7 @@ def render_course(course_md: str) -> Rendered:
 
     anchors = AnchorAllocator()
     sections: list[Section] = []
+    topic_visual_status: dict[str, str] = {}
     out: list[str] = []
     buffer: list[str] = []
     token_owner: dict[str, tuple[str, str | None]] = {}
@@ -371,6 +386,11 @@ def render_course(course_md: str) -> Rendered:
             continue
         if line.strip().startswith("P2CBLOCK"):
             token_owner[line.strip()] = current
+        elif current[1]:
+            if "<svg" in line:
+                _note_visual(topic_visual_status, current[1], "visual")
+            elif _NO_VISUAL.match(line):
+                _note_visual(topic_visual_status, current[1], "justified")
         buffer.append(line)
     flush()
 
@@ -382,6 +402,8 @@ def render_course(course_md: str) -> Rendered:
 
     for fence in fences:
         anchor, topic_id = token_owner.get(fence.token, ("course", None))
+        if fence.kind in _VISUAL_FENCE_KINDS:
+            _note_visual(topic_visual_status, topic_id, "visual")
         if fence.kind == "quiz":
             try:
                 quiz = parse_quiz(fence.body)
@@ -437,6 +459,11 @@ def render_course(course_md: str) -> Rendered:
     for topic_id in (s.topic_id for s in sections if s.topic_id):
         quizzes_per_topic.setdefault(topic_id, 0)
 
+    topics_missing_visual = [
+        tid for tid in dict.fromkeys(s.topic_id for s in sections if s.topic_id)
+        if topic_visual_status.get(tid) not in ("visual", "justified")
+    ]
+
     return Rendered(
         front_matter=front_matter,
         html_body=html_body,
@@ -447,5 +474,6 @@ def render_course(course_md: str) -> Rendered:
         quizzes_per_topic=quizzes_per_topic,
         quiz_count=quiz_count,
         uses_mermaid=uses_mermaid,
+        topics_missing_visual=topics_missing_visual,
         errors=errors,
     )

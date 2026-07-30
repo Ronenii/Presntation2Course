@@ -468,3 +468,46 @@ def test_a_broken_animate_block_becomes_an_error_not_a_crash():
     )
     rendered = render_course(md)
     assert any("animate" in e for e in rendered.errors)
+
+
+def test_a_topic_with_a_mermaid_diagram_is_not_missing_a_visual():
+    rendered = render_course(course(MODULE))  # MODULE already has a mermaid block for 'tlb'
+    assert "tlb" not in rendered.topics_missing_visual
+
+
+def test_a_topic_with_no_visual_and_no_justification_is_flagged():
+    md = course(
+        '<!-- topic: bare -->\n### Bare topic\n\nJust prose, no visual at all.\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.topics_missing_visual == ["bare"]
+
+
+def test_a_topic_with_an_inline_svg_is_not_missing_a_visual():
+    md = course(
+        '<!-- topic: bare -->\n### Bare topic\n\n<svg><circle r="1"/></svg>\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.topics_missing_visual == []
+
+
+def test_a_no_visual_comment_justifies_skipping_the_visual():
+    md = course(
+        '<!-- topic: bare -->\n### Bare topic\n\n'
+        '<!-- no-visual: purely definitional, nothing spatial to draw -->\n\n'
+        'Just prose.\n\n```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.topics_missing_visual == []
+
+
+def test_a_figure_or_animate_block_also_counts_as_a_visual():
+    md = course(
+        '<!-- topic: bare -->\n### Bare topic\n\n'
+        '```figure\nsource: week1.pdf#1\ncaption: c\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.topics_missing_visual == []

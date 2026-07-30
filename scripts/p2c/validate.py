@@ -13,7 +13,10 @@ from p2c.outline import iter_topics, topic_ids
 ROUTE_FOR_CODE = {
     "quiz_malformed": "writer",
     "topic_without_quiz": "writer",
+    "topic_without_visual": "writer",
     "mermaid_unparseable": "writer",
+    "figure_malformed": "writer",
+    "animate_malformed": "writer",
     "glossary_malformed": "build",
     "jargon_without_glossary": "writer",
     "placeholder": "writer",
@@ -115,7 +118,14 @@ def validate_course(rendered: Rendered, outline: dict, html_text: str) -> list[F
         if anchor == "glossary block":
             findings.append(_finding("glossary_malformed", message))
             continue
-        code = "mermaid_unparseable" if message.startswith("mermaid ") else "quiz_malformed"
+        if message.startswith("mermaid "):
+            code = "mermaid_unparseable"
+        elif message.startswith("figure "):
+            code = "figure_malformed"
+        elif message.startswith("animate "):
+            code = "animate_malformed"
+        else:
+            code = "quiz_malformed"
         findings.append(
             _finding(
                 code,
@@ -166,6 +176,18 @@ def validate_course(rendered: Rendered, outline: dict, html_text: str) -> list[F
                     module=modules.get(anchor_of_topic.get(topic_id, "")),
                 )
             )
+
+    # 5b: every present topic has a visual, or an explicit non-spatial justification.
+    for topic_id in rendered.topics_missing_visual:
+        findings.append(
+            _finding(
+                "topic_without_visual",
+                f"topic {topic_id!r} has no visual (mermaid, figure, animate, or inline "
+                "<svg>) and no <!-- no-visual: ... --> justification",
+                topic=topic_id,
+                module=modules.get(anchor_of_topic.get(topic_id, "")),
+            )
+        )
 
     # 6: every jargon term has a glossary entry. Reported per topic (rather than
     # pooled across the whole outline) so each finding is attributable to one writer.
