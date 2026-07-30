@@ -10,6 +10,7 @@ from p2c.review import (
     finding_key,
     findings_from_review,
     load_review,
+    main,
     new_blocking,
     oscillating,
     render_known_issues,
@@ -185,3 +186,47 @@ def test_known_issues_lists_only_blocking_findings_with_routes():
 def test_known_issues_is_empty_when_nothing_blocks():
     noted = [Finding(code="verbosity", message="wordy", blocking=False, route="writer")]
     assert render_known_issues(noted, course_title="X") == ""
+
+
+def test_main_check_subcommand_on_valid_review(tmp_path, capsys):
+    path = tmp_path / "pass-1.json"
+    path.write_text(json.dumps(review()))
+    exit_code = main(["check", str(path)])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert output["reviewer"] == "novice-simulator"
+    assert output["pass"] == 1
+    assert output["findings"] == 2
+
+
+def test_main_known_issues_subcommand(tmp_path, capsys):
+    # Case 1: with blocking findings
+    review_path = tmp_path / "pass-1.json"
+    review_path.write_text(json.dumps(review()))
+    out_path = tmp_path / "KNOWN-ISSUES.md"
+    exit_code = main(["known-issues", str(review_path), "--title", "Test Course", "--out", str(out_path)])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert output["written"] == str(out_path)
+    assert output["blocking"] == 1  # only jargon_undefined is blocking
+    assert out_path.exists()
+    content = out_path.read_text()
+    assert "# Known issues — Test Course" in content
+    assert "jargon_undefined" in content
+
+    # Case 2: with no blocking findings
+    noted_review = review(findings=[
+        {"code": "verbosity", "message": "wordy", "module": "m", "topic": "t"}
+    ])
+    review_path2 = tmp_path / "pass-2.json"
+    review_path2.write_text(json.dumps(noted_review))
+    out_path2 = tmp_path / "KNOWN-ISSUES-empty.md"
+    exit_code = main(["known-issues", str(review_path2), "--title", "Empty", "--out", str(out_path2)])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert output["written"] is None
+    assert output["blocking"] == 0
+    assert not out_path2.exists()
