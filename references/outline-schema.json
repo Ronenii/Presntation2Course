@@ -79,6 +79,11 @@
           "type": "array",
           "items": {"type": "string"},
           "description": "Asserted by the deck but never explained. This is the researcher's work order — be aggressive."
+        },
+        "reusable_image": {
+          "type": "string",
+          "pattern": "^.+#[0-9]+$",
+          "description": "Optional. Set only when a slide's own diagram or photo is worth reusing verbatim instead of being redrawn. At most one per topic."
         }
       }
     }

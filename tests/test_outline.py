@@ -116,6 +116,25 @@ def test_rejects_a_malformed_slide_ref():
     assert any("slide_refs" in p and "deck.pdf#12" in p for p in validate_outline(broken))
 
 
+def test_reusable_image_is_optional():
+    obj = outline()
+    assert "reusable_image" not in obj["modules"][0]["topics"][0]
+    assert validate_outline(obj) == []
+
+
+def test_reusable_image_accepts_a_valid_slide_ref():
+    obj = outline()
+    obj["modules"][0]["topics"][0]["reusable_image"] = "week1.pdf#12"
+    assert validate_outline(obj) == []
+
+
+def test_reusable_image_rejects_a_malformed_ref():
+    obj = outline()
+    obj["modules"][0]["topics"][0]["reusable_image"] = "week1.pdf"
+    problems = validate_outline(obj)
+    assert any("reusable_image" in p for p in problems)
+
+
 def test_rejects_a_wrong_typed_modules_field():
     problems = validate_outline(outline(modules="not a list"))
     assert any("modules" in p and "list" in p for p in problems)

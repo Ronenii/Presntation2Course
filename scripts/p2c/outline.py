@@ -131,6 +131,13 @@ def validate_outline(obj: object) -> list[str]:
                         problems.append(
                             f"{twhere}.slide_refs entry {ref!r} must look like 'deck.pdf#12'"
                         )
+            if "reusable_image" in topic:
+                image_ref = topic["reusable_image"]
+                if not isinstance(image_ref, str) or not _SLIDE_REF.match(image_ref):
+                    problems.append(
+                        f"{twhere}.reusable_image must look like 'deck.pdf#12', "
+                        f"got {image_ref!r}"
+                    )
             tid = topic.get("id")
             if isinstance(tid, str):
                 if tid in seen_topics:
