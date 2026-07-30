@@ -317,6 +317,21 @@ def test_an_unresolvable_figure_source_fails_the_build_naming_topic_and_source(t
         build(MINI / "outline.json", modules, out, ASSETS)
 
 
+def test_resolve_figures_raises_if_a_pending_placeholder_survives_the_regex(tmp_path):
+    from p2c.build import _resolve_figures
+
+    # Same content as a real pending figure placeholder, but with the two data-
+    # attributes swapped -- _FIGURE_PENDING is a literal-string regex coupled to
+    # mdrender._figure_html's exact markup, so this simulates the two drifting out of
+    # sync. re.sub matches nothing, and the placeholder must never ship silently.
+    drifted = (
+        '<figure class="figure" data-p2c-topic="tlb" '
+        'data-p2c-image-pending="terse.pdf#1"><img alt="caption"></figure>'
+    )
+    with pytest.raises(ImageryError, match="figure placeholder was left unresolved"):
+        _resolve_figures(drifted, tmp_path)
+
+
 def test_animate_blocks_render_inside_a_built_course(tmp_path):
     modules = tmp_path / "modules"
     modules.mkdir()
@@ -334,5 +349,8 @@ def test_animate_blocks_render_inside_a_built_course(tmp_path):
     )
     result = build(MINI / "outline.json", modules, out, ASSETS)
     html = result.course_html.read_text()
-    assert '<div class="anim__state anim__state--before">Ready</div>' in html
+    assert (
+        '<div class="anim__state anim__state--before">'
+        '<span class="anim__state-label">Before</span>Ready</div>'
+    ) in html
     assert [f.code for f in result.findings] == []

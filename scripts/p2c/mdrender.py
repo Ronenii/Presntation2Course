@@ -166,10 +166,17 @@ def _animate_html(anim: Animate) -> str:
             for i, step in enumerate(anim.steps)
         )
         return f'<div class="anim anim--step-reveal"><ol class="anim__steps">{items}</ol></div>'
+    # "Before"/"After" are literal English UI chrome -- like the "Analogy" callout
+    # label, added by the render layer rather than the course-writer, so they stay
+    # legible regardless of course language (including RTL). They are hidden during
+    # normal animated playback and shown only in the print/reduced-motion static
+    # presentation; see .anim__state-label in layout.css/print.css.
     return (
         '<div class="anim anim--state-toggle">'
-        f'<div class="anim__state anim__state--before">{html.escape(anim.before)}</div>'
-        f'<div class="anim__state anim__state--after">{html.escape(anim.after)}</div>'
+        '<div class="anim__state anim__state--before">'
+        f'<span class="anim__state-label">Before</span>{html.escape(anim.before)}</div>'
+        '<div class="anim__state anim__state--after">'
+        f'<span class="anim__state-label">After</span>{html.escape(anim.after)}</div>'
         '</div>'
     )
 

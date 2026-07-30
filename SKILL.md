@@ -34,17 +34,17 @@ than with an admitted gap.
   resolve. This is never a question to ask — the zero-questions rule holds even
   here, because a wrong guess means redoing the entire run in the wrong language.
 
-Confirm the one runtime dependency:
+Confirm the runtime dependencies:
 
 ```bash
-python3 -c "import markdown; assert markdown.__version_info__ >= (3, 5)" 2>/dev/null || echo MISSING
+python3 -c "import markdown, pypdfium2, PIL; assert markdown.__version_info__ >= (3, 5)" 2>/dev/null || echo MISSING
 ```
 
-If it prints `MISSING`, install it and continue:
+If it prints `MISSING`, install everything the build needs and continue:
 
 ```bash
-python3 -m pip install --user 'markdown>=3.5' || {
-  python3 -m venv "$HOME/.p2c-venv" && "$HOME/.p2c-venv/bin/pip" install 'markdown>=3.5'
+python3 -m pip install --user -r "<SKILL>/requirements.txt" || {
+  python3 -m venv "$HOME/.p2c-venv" && "$HOME/.p2c-venv/bin/pip" install -r "<SKILL>/requirements.txt"
 }
 ```
 
@@ -197,11 +197,15 @@ topic is in its hands, which is why questions do not drift from the prose that t
   Then re-run the build. A malformed mermaid block gets exactly **one** repair attempt from
   its writer; after that the writer must replace it with a prose description, because a
   broken diagram never ships.
-- **exit 1** — a missing module file or invalid outline. Read stderr; if a writer never
-  wrote its file — including if it wrote to a filename it derived itself instead of the
-  literal path it was given, which is the same failure mode Phase 3's up-front filename
-  computation exists to prevent — re-dispatch that one writer with its exact output path
-  restated.
+- **exit 1** — a missing module file, an invalid outline, or an unresolvable `figure`
+  source. Read stderr; if a writer never wrote its file — including if it wrote to a
+  filename it derived itself instead of the literal path it was given, which is the same
+  failure mode Phase 3's up-front filename computation exists to prevent — re-dispatch
+  that one writer with its exact output path restated. If stderr instead names a `figure`
+  block whose `reusable_image` slide reference does not exist in the normalized deck, or
+  is out of page range, the bad value traces back to the summarizer, not the build: fix
+  or re-dispatch the summarizer to correct that topic's `reusable_image` against the
+  actual deck, then re-dispatch that topic's writer forward with the corrected value.
 
 Cap build-repair at **two** rounds — mirroring Phase 5's pass cap, but shorter, because
 re-rendering is cheap and this phase exists to catch narrow mechanical issues, not
@@ -314,4 +318,5 @@ Agents run: <n>
 | Mermaid unparseable | One repair attempt from its writer, then a prose description |
 | Blocking findings after pass 3 | Ship with `KNOWN-ISSUES.md` |
 | A course-writer's file isn't where the build expects it (exit 1) | Re-dispatch that one writer with its exact path restated |
+| A `figure` block's `reusable_image` slide ref doesn't exist or is out of range (exit 1) | Re-dispatch the summarizer to correct the slide ref against the actual deck, then that topic's writer |
 | A subagent produces no file | Re-dispatch that one agent once, then stop and report it |

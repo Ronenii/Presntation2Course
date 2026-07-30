@@ -48,7 +48,17 @@ def _resolve_figures(html_text: str, out_dir: Path) -> str:
             f'<img alt="{match.group("alt")}" src="data:image/png;base64,{b64}">'
         )
 
-    return _FIGURE_PENDING.sub(replace, html_text)
+    resolved = _FIGURE_PENDING.sub(replace, html_text)
+    if "data-p2c-image-pending" in resolved:
+        # _FIGURE_PENDING is a literal-string regex coupled to mdrender._figure_html's
+        # exact markup. If the two ever drift apart, re.sub silently matches nothing and
+        # a pending placeholder would ship as a broken <img> with no src -- exactly the
+        # silent fallback this feature is designed never to produce. Fail loudly instead.
+        raise ImageryError(
+            "a figure placeholder was left unresolved after _resolve_figures ran; "
+            "_FIGURE_PENDING no longer matches mdrender._figure_html's markup"
+        )
+    return resolved
 
 
 @dataclass

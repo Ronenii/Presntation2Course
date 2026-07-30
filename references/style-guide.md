@@ -11,8 +11,12 @@ page. They are intelligent and have no shame about not knowing your vocabulary.
    after. This ordering is the entire point of the project.
 3. **Technical content.** Now name the thing and be precise. Introduce each jargon term
    the moment you first use it.
-4. **Visual.** A `mermaid` diagram, or inline `<svg>` when the idea is not a flow,
-   sequence, state, or architecture. Skip it only when the topic is genuinely non-spatial.
+4. **Visual.** One of: a `mermaid` diagram, an inline `<svg>` when the idea is not a flow,
+   sequence, state, or architecture, a `figure` block when the topic already has a
+   `reusable_image`, or an `animate` block when the topic is a sequence or a before/after
+   comparison. The build fails a topic with none of these. Skip it only when the topic is
+   genuinely non-spatial, and only with an explicit `<!-- no-visual: <reason> -->` HTML
+   comment — there is no silent skip.
 5. **Worked example.** Concrete numbers, a concrete trace, or a concrete scenario.
 6. **Quiz.** One or more `quiz` blocks. Every topic ends with at least one.
 

@@ -167,19 +167,26 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   display: grid; gap: var(--space-2);
 }
 .anim__step {
-  opacity: 0.35; font-weight: 400;
+  /* 0.65 keeps the not-yet-highlighted step legible (~4.5:1 against the
+     background) while still visually receding behind the highlighted step;
+     0.35 (~1.5:1) was effectively unreadable while a student waited their turn. */
+  opacity: 0.65; font-weight: 400;
   animation-name: anim-step-pulse; animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
 }
 @keyframes anim-step-pulse {
   0%   { opacity: 1;    font-weight: 600; }
   15%  { opacity: 1;    font-weight: 600; }
-  25%  { opacity: 0.35; font-weight: 400; }
-  100% { opacity: 0.35; font-weight: 400; }
+  25%  { opacity: 0.65; font-weight: 400; }
+  100% { opacity: 0.65; font-weight: 400; }
 }
-.anim--state-toggle { position: relative; min-block-size: 3em; }
+/* display: grid + a shared grid-area (rather than position: absolute) sizes the
+   container to the tallest state's content, so realistic caption-length text that
+   wraps to 2-3 lines doesn't overflow into whatever follows -- an absolutely
+   positioned child never contributes to its parent's size. */
+.anim--state-toggle { display: grid; min-block-size: 3em; }
 .anim__state {
-  position: absolute; inset-block-start: 0; inset-inline-start: 0;
+  grid-area: 1 / 1;
   animation-name: anim-state-crossfade; animation-duration: 4s;
   animation-timing-function: ease-in-out; animation-iteration-count: infinite;
 }
@@ -191,10 +198,19 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   55%  { opacity: 0; }
   100% { opacity: 0; }
 }
+/* Literal English UI chrome (see mdrender._animate_html), language-agnostic like the
+   "Analogy" callout label. Hidden during normal animated playback; shown only under
+   the static print/reduced-motion presentation below and in print.css. */
+.anim__state-label { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .anim__step, .anim__state {
-    animation: none; opacity: 1; font-weight: 400; position: static;
+    animation: none; opacity: 1; font-weight: 400;
   }
+  /* Both states are shown at once (no animation to convey them over time), so lay
+     them out labeled side-by-side instead of stacked on top of each other. */
+  .anim--state-toggle { grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+  .anim__state { grid-area: auto; }
+  .anim__state-label { display: block; font-weight: 600; margin-block-end: var(--space-1); }
 }

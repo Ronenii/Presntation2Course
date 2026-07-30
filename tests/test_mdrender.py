@@ -455,8 +455,14 @@ def test_state_toggle_renders_before_and_after():
     )
     rendered = render_course(md)
     assert rendered.errors == []
-    assert '<div class="anim__state anim__state--before">Shared</div>' in rendered.html_body
-    assert '<div class="anim__state anim__state--after">Modified</div>' in rendered.html_body
+    assert (
+        '<div class="anim__state anim__state--before">'
+        '<span class="anim__state-label">Before</span>Shared</div>'
+    ) in rendered.html_body
+    assert (
+        '<div class="anim__state anim__state--after">'
+        '<span class="anim__state-label">After</span>Modified</div>'
+    ) in rendered.html_body
 
 
 def test_a_broken_animate_block_becomes_an_error_not_a_crash():

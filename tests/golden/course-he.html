@@ -234,19 +234,26 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   display: grid; gap: var(--space-2);
 }
 .anim__step {
-  opacity: 0.35; font-weight: 400;
+  /* 0.65 keeps the not-yet-highlighted step legible (~4.5:1 against the
+     background) while still visually receding behind the highlighted step;
+     0.35 (~1.5:1) was effectively unreadable while a student waited their turn. */
+  opacity: 0.65; font-weight: 400;
   animation-name: anim-step-pulse; animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
 }
 @keyframes anim-step-pulse {
   0%   { opacity: 1;    font-weight: 600; }
   15%  { opacity: 1;    font-weight: 600; }
-  25%  { opacity: 0.35; font-weight: 400; }
-  100% { opacity: 0.35; font-weight: 400; }
+  25%  { opacity: 0.65; font-weight: 400; }
+  100% { opacity: 0.65; font-weight: 400; }
 }
-.anim--state-toggle { position: relative; min-block-size: 3em; }
+/* display: grid + a shared grid-area (rather than position: absolute) sizes the
+   container to the tallest state's content, so realistic caption-length text that
+   wraps to 2-3 lines doesn't overflow into whatever follows -- an absolutely
+   positioned child never contributes to its parent's size. */
+.anim--state-toggle { display: grid; min-block-size: 3em; }
 .anim__state {
-  position: absolute; inset-block-start: 0; inset-inline-start: 0;
+  grid-area: 1 / 1;
   animation-name: anim-state-crossfade; animation-duration: 4s;
   animation-timing-function: ease-in-out; animation-iteration-count: infinite;
 }
@@ -258,12 +265,21 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   55%  { opacity: 0; }
   100% { opacity: 0; }
 }
+/* Literal English UI chrome (see mdrender._animate_html), language-agnostic like the
+   "Analogy" callout label. Hidden during normal animated playback; shown only under
+   the static print/reduced-motion presentation below and in print.css. */
+.anim__state-label { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .anim__step, .anim__state {
-    animation: none; opacity: 1; font-weight: 400; position: static;
+    animation: none; opacity: 1; font-weight: 400;
   }
+  /* Both states are shown at once (no animation to convey them over time), so lay
+     them out labeled side-by-side instead of stacked on top of each other. */
+  .anim--state-toggle { grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+  .anim__state { grid-area: auto; }
+  .anim__state-label { display: block; font-weight: 600; margin-block-end: var(--space-1); }
 }
 </style>
 <style>/* Shared print layout. Used by the in-page Download PDF button and export-pdf. */
@@ -282,8 +298,11 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .figure, .anim { break-inside: avoid; page-break-inside: avoid; }
   .anim__step, .anim__state { animation: none !important; opacity: 1 !important; }
   .anim__step { font-weight: 400 !important; }
-  .anim--state-toggle { display: grid !important; gap: 0.5em; }
-  .anim__state { position: static !important; }
+  /* Both states are shown at once in print (no animation on paper), labeled and
+     side-by-side rather than sharing the animated view's stacked grid cell. */
+  .anim--state-toggle { grid-template-columns: 1fr 1fr !important; gap: 0.5em; }
+  .anim__state { grid-area: auto !important; }
+  .anim__state-label { display: block !important; font-weight: 600; margin-block-end: 0.25em; }
 
   /* In print every question is immediately followed by its answer and explanation. */
   .quiz__answer, .quiz__why { display: block !important; }
@@ -365,7 +384,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 לתרשיש: קצב תפוקת ה-CPU צונח, למרות שהמערכת "עסוקה" כל הזמן בהבאת עמודים.</p>
 <p>לדוגמה: מערכת עם 100 מסגרות זיכרון שמריצה חמישה תהליכים שכל אחד מהם צריך 30
 מסגרות תיכנס לתרשיש — 150 חורג מ-100 — עוד לפני שהמעבד עשה עבודה שימושית.</p>
-<div class="anim anim--state-toggle"><div class="anim__state anim__state--before">קבוצת העבודה בתוך הזיכרון הפיזי</div><div class="anim__state anim__state--after">קבוצת העבודה מוחלפת (thrashing)</div></div>
+<div class="anim anim--state-toggle"><div class="anim__state anim__state--before"><span class="anim__state-label">Before</span>קבוצת העבודה בתוך הזיכרון הפיזי</div><div class="anim__state anim__state--after"><span class="anim__state-label">After</span>קבוצת העבודה מוחלפת (thrashing)</div></div>
 <div class="quiz" data-quiz="thrashing-q1">
 <p class="quiz__q">מה קורה בפועל כשמערכת נכנסת לתרשיש?</p>
 <ol class="quiz__options">

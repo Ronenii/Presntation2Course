@@ -90,7 +90,10 @@ Working set: The pages a process is actively using in a given window of time.
   specific claim to distrust.
 - Mermaid blocks must start with a diagram keyword and have balanced brackets and quotes.
   A block the build rejects comes back to you for exactly one repair attempt; after that
-  replace it with a prose description of the diagram.
+  replace it with a prose description of the diagram. A prose description is not itself a
+  visual, so when you replace a diagram this way also add
+  `<!-- no-visual: diagram could not be rendered; described in prose instead -->` to that
+  topic — otherwise it fails the build's visual-coverage check for an unrelated reason.
 - No `TODO`, `TBD`, `FIXME`, `XXX`, `[insert …]`, `<placeholder`, or lorem ipsum. The build
   treats any of them as a blocking finding.
 - Ask no questions. Write the file.
