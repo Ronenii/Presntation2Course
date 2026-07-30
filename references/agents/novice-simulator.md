@@ -30,6 +30,8 @@ confusing sentence as clear.
 
 Exactly one file, `<output>/.p2c/review/pass-<n>.json`, in the contract from
 `references/rubric.md`. Use only the codes listed there. Quote the course as `evidence`.
+If the course is not in English, translate the quoted text to English; include the topic
+heading or location reference so the orchestrator can find the original.
 
 ## Rules
 
