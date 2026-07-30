@@ -118,7 +118,7 @@
         node.setAttribute("data-source", node.textContent);
       }
       node.removeAttribute("data-processed");
-      node.innerHTML = node.getAttribute("data-source");
+      node.textContent = node.getAttribute("data-source");
     });
     mermaid.initialize({
       startOnLoad: false,

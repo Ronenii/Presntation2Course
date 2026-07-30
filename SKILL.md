@@ -29,14 +29,14 @@ than with an admitted gap.
 Confirm the one runtime dependency:
 
 ```bash
-python3 -c "import markdown" 2>/dev/null || echo MISSING
+python3 -c "import markdown; assert markdown.__version_info__ >= (3, 5)" 2>/dev/null || echo MISSING
 ```
 
 If it prints `MISSING`, install it and continue:
 
 ```bash
-python3 -m pip install --user markdown || {
-  python3 -m venv "$HOME/.p2c-venv" && "$HOME/.p2c-venv/bin/pip" install markdown
+python3 -m pip install --user 'markdown>=3.5' || {
+  python3 -m venv "$HOME/.p2c-venv" && "$HOME/.p2c-venv/bin/pip" install 'markdown>=3.5'
 }
 ```
 
@@ -58,6 +58,8 @@ independently testable:
     research/<topic-id>.md
     modules/<nn>-<slug>.md
     review/pass-<n>.json
+    review/pass-<n>-auditor.json
+    review/build-findings.json
 ```
 
 ## Phase 0 — normalize (script, no agent)
@@ -149,14 +151,31 @@ topic is in its hands, which is why questions do not drift from the prose that t
   - `route: "writer"` → that one module's course-writer, given the findings for its module.
   - `route: "researcher"` → that one topic's researcher.
   - `route: "summarizer"` → the summarizer, to extend its gap list, then that topic forward.
-  - `route: "build"` → no agent; fix the input and re-run the build.
+  - `route: "build"` → no agent by default; fix the input and re-run the build. But if the
+    finding's underlying content was itself written by an agent, rather than being a
+    structural/template defect with no corresponding agent at all, re-dispatch that
+    content's owning agent instead of treating it as un-fixable script-only work: for
+    example `glossary_malformed` traces to a course-writer's malformed glossary block, not
+    to the build script, so it re-dispatches that module's course-writer — the same
+    "writer" case above — because re-running the build without changing the input
+    reproduces the identical finding forever.
   Then re-run the build. A malformed mermaid block gets exactly **one** repair attempt from
   its writer; after that the writer must replace it with a prose description, because a
   broken diagram never ships.
 - **exit 1** — a missing module file or invalid outline. Read stderr; if a writer never
   wrote its file, re-dispatch that one writer.
 
-Re-rendering is free, which is what makes three passes affordable.
+Cap build-repair at **two** rounds — mirroring Phase 5's pass cap, but shorter, because
+re-rendering is cheap and this phase exists to catch narrow mechanical issues, not
+open-ended content problems: a defect a writer won't fix in two rounds needs the fuller
+review loop, not a third build round. If blocking findings are still open after two repair
+rounds, do not loop Phase 4 a third time — carry those findings forward into Phase 5's
+review-loop finding set, where they get the same seen/oscillation tracking as any
+reviewer finding and, if they survive that loop too, the same `KNOWN-ISSUES.md`
+disclosure path.
+
+Re-rendering is free, which is what makes two build-repair rounds and three review passes
+affordable.
 
 ## Phase 5 — review panel (2 agents, in parallel), then the loop
 
@@ -181,11 +200,16 @@ PYTHONPATH="<SKILL>/scripts" python3 -m p2c.review check "<output>/.p2c/review/p
 
 Then apply the guards:
 
-1. Collect both reviewers' findings. `blocking` and `route` come from the code, never from
-   the reviewer.
-2. Drop any finding already in the seen set — that is the **oscillation guard**. A finding
-   that reappears after being marked fixed is recorded, not re-fixed.
-3. If there are **no new blocking findings**, exit the loop early.
+1. Collect both reviewers' findings for pass `n`. `blocking` and `route` come from the
+   code, never from the reviewer. Keep the **full** blocking-findings list for this pass —
+   call it `blocking_n`, every blocking finding from both `pass-<n>.json` and
+   `pass-<n>-auditor.json`, regardless of whether it is new — separately from the *new*
+   subset the next guard computes. `blocking_n` is what guard 3's exit and guard 5's cap
+   check for disclosure below; it is never itself filtered by the oscillation guard.
+2. From `blocking_n`, drop any finding already in the seen set to get this pass's *new*
+   blocking findings — that is the **oscillation guard**. A finding that reappears after
+   being marked fixed is recorded, not re-fixed, and does not by itself force another pass.
+3. If there are **no new blocking findings**, exit the loop after this pass.
 4. Otherwise re-dispatch only the routed units (same routing table as Phase 4), re-run the
    build, and start pass `n + 1`.
 5. Stop unconditionally after **three passes**. This is a hard cap: "until it's good" never
@@ -193,13 +217,21 @@ Then apply the guards:
 
 Noted findings are recorded and never cost a pass.
 
-If blocking findings survive pass 3, write `KNOWN-ISSUES.md` and ship anyway:
+Whichever guard actually stops the loop — the early exit at guard 3, or the hard cap at
+guard 5 — check `blocking_n` for the pass the loop stopped at, not the new-since-seen delta
+guard 2 computed: a finding recorded in an earlier pass, marked fixed, and reappearing in
+this pass is dropped by guard 2 (it is not "new") but still belongs in `blocking_n`, so it
+must still trigger disclosure even though it did not trigger another pass. If `blocking_n`
+is non-empty, write `KNOWN-ISSUES.md` from **that pass's** two files and ship anyway:
 
 ```bash
 PYTHONPATH="<SKILL>/scripts" python3 -m p2c.review known-issues \
-  "<output>/.p2c/review/pass-3.json" "<output>/.p2c/review/pass-3-auditor.json" \
+  "<output>/.p2c/review/pass-<n>.json" "<output>/.p2c/review/pass-<n>-auditor.json" \
   --title "<course title>" --out "<output>/KNOWN-ISSUES.md"
 ```
+
+where `<n>` is whichever pass the loop actually stopped at — not necessarily pass 3, since
+guard 3 can exit the loop as early as pass 1.
 
 Silently shipping a course with weak sections is the one outcome this design makes
 impossible: the student needs to know which parts to distrust.

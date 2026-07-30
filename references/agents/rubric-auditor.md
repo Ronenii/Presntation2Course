@@ -28,7 +28,8 @@ ask "is this what the deck and the sources actually say?"
 5. **Citation traceability.** Where the course states a specific number, date, standard, or
    name, the research file supports it with a URL.
 6. **Diagram fidelity.** Each diagram matches what the outline's `diagrams` description
-   says the slide showed. A diagram that contradicts the slide is `render_failure`.
+   says the slide showed. A diagram that contradicts the slide is `unsupported_claim` — it
+   asserts something the deck does not support.
 
 ## Output
 

@@ -20,7 +20,6 @@ ROUTE_FOR_CODE = {
     "topic_missing": "summarizer",
     "topic_unknown": "writer",
     "external_request": "build",
-    "render_error": "build",
 }
 
 PLACEHOLDER_PATTERNS = (

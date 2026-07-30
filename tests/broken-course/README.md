@@ -27,7 +27,7 @@ missed = missed_expected(load_review(sys.argv[1]),
                          json.load(open('tests/broken-course/expected-findings.json')))
 print('\n'.join(missed) or 'reviewer caught both defects')
 sys.exit(1 if missed else 0)
-" /tmp/p2c-broken/review.json
+" /tmp/p2c-broken/.p2c/review/pass-1.json
 ```
 
 A miss means the reviewer prompt has regressed. Fix the prompt, not the fixture.

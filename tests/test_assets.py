@@ -102,6 +102,15 @@ def test_course_js_drives_the_dom_contract_the_renderers_emit():
     assert "localStorage" not in js  # stateless by design
 
 
+def test_the_mermaid_rerender_uses_textcontent_not_innerhtml():
+    """innerHTML would re-parse an HTML-escaped diagram body as markup, undoing
+    mdrender's html.escape() and executing anything embedded in the deck or research
+    content that ended up inside a mermaid fence."""
+    js = (ASSETS / "base" / "course.js").read_text()
+    assert 'node.innerHTML = node.getAttribute("data-source")' not in js
+    assert 'node.textContent = node.getAttribute("data-source")' in js
+
+
 def test_layout_css_styles_every_component_the_renderers_emit():
     css = (ASSETS / "base" / "layout.css").read_text()
     for selector in (

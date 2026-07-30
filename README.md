@@ -44,14 +44,14 @@ context to contribute — everything is reported at the end instead.
 
 | | |
 |---|---|
-| Python 3.12+ with `markdown` | Required. `python3 -m pip install --user markdown`. The only runtime dependency. |
+| Python 3.12+ with `markdown>=3.5` | Required. `python3 -m pip install --user 'markdown>=3.5'`. The only runtime dependency. |
 | LibreOffice (`soffice`) | Required **only** for PPTX input. Missing it is a hard failure, because falling back to text extraction would silently throw away every diagram on the slides. |
 | Headless Chromium | Optional. Produces `course.pdf`. Without it you get the HTML plus a working Download PDF button. |
 | Network | Used by the research phase to ground explanations in real sources. |
 
 ## How it works
 
-Four agent roles, three deterministic scripts, and a review loop that terminates.
+Five agent roles, three deterministic scripts, and a review loop that terminates.
 
 ```mermaid
 flowchart TD
