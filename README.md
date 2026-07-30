@@ -147,6 +147,40 @@ This repository *is* the skill. Copy or symlink it into your skills directory:
 ln -s "$PWD" ~/.claude/skills/presentation2course
 ```
 
+## Reducing approval prompts
+
+Every phase after the agents run is a plain script or a `p2c.review`/`p2c.invariants`
+CLI call — deterministic, side-effect-limited to the course's own output directory, and
+safe to allowlist so a run doesn't stop for approval at every phase boundary. Add this to
+the `.claude/settings.json` of wherever you invoke the skill from (adjust the path to
+match where you installed it — this example assumes the symlink above):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(~/.claude/skills/presentation2course/scripts/normalize *)",
+      "Bash(~/.claude/skills/presentation2course/scripts/build *)",
+      "Bash(~/.claude/skills/presentation2course/scripts/export-pdf *)",
+      "Bash(PYTHONPATH=~/.claude/skills/presentation2course/scripts python3 -m p2c.review *)",
+      "Bash(PYTHONPATH=~/.claude/skills/presentation2course/scripts python3 -m p2c.invariants *)"
+    ]
+  }
+}
+```
+
+Bash permission rules match a literal command prefix — they can't glob on a script's
+basename regardless of its directory — so the path in each entry must match the one
+`<SKILL>` actually resolves to for your install. The reliable way to get an exact match:
+run the skill once, and the first time each command prompts for approval, choose "yes,
+don't ask again for this command" — Claude Code writes the exact working entry for you.
+
+This intentionally does not cover the five agent dispatches (summarizer, researcher,
+course-writer, novice-simulator, rubric-auditor) or their own tool use (Read, WebSearch,
+WebFetch, Write) — those touch the network and the filesystem more broadly, and whether
+to let them run unattended is a bigger trust decision than allowlisting a fixed-purpose
+script. Leave those prompted unless you've decided otherwise.
+
 ## Development
 
 ```bash
