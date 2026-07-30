@@ -1,0 +1,216 @@
+/* Fixed layout, spacing scale, and component structure. Themes may not change these. */
+:root {
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --radius: 6px;
+  --measure: 70ch;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: var(--space-8); }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  line-height: 1.65;
+  -webkit-text-size-adjust: 100%;
+}
+h1, h2, h3, h4 { font-family: var(--font-heading); line-height: 1.25; }
+h1 { font-size: 2rem; margin: 0 0 var(--space-6); }
+h2 { font-size: 1.5rem; margin: var(--space-12) 0 var(--space-4); }
+h3 { font-size: 1.2rem; margin: var(--space-8) 0 var(--space-3); }
+a { color: var(--color-accent); }
+code, pre { font-family: var(--font-mono); font-size: 0.9em; }
+pre {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  overflow-x: auto;
+}
+table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--space-3); text-align: start; }
+
+.skip-link {
+  position: absolute; inset-inline-start: -9999px;
+  background: var(--color-accent); color: var(--color-accent-contrast);
+  padding: var(--space-2) var(--space-4);
+}
+.skip-link:focus { inset-inline-start: var(--space-4); top: var(--space-4); z-index: 10; }
+
+.shell { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: var(--space-8); }
+.sidebar {
+  position: sticky; top: 0; align-self: start;
+  height: 100vh; overflow-y: auto;
+  padding: var(--space-6);
+  border-inline-end: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.sidebar__eyebrow {
+  margin: 0; text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: 0.7rem; color: var(--color-muted);
+}
+.sidebar__title { margin: var(--space-1) 0 var(--space-4); font-family: var(--font-heading); font-weight: 600; }
+.sidebar__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-6); }
+.btn {
+  font: inherit; font-size: 0.85rem; cursor: pointer;
+  background: var(--color-bg); color: var(--color-fg);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
+.btn:hover { border-color: var(--color-accent); }
+.btn--accent { background: var(--color-accent); color: var(--color-accent-contrast); border-color: transparent; }
+
+.toc__list, .toc__topics { list-style: none; margin: 0; padding: 0; }
+.toc__topics { margin-block: var(--space-1) var(--space-4); margin-inline: var(--space-3) 0; }
+.toc a {
+  display: block; padding: var(--space-1) var(--space-2);
+  text-decoration: none; color: var(--color-muted);
+  border-inline-start: 2px solid transparent;
+  border-start-start-radius: 0; border-end-start-radius: 0;
+  border-start-end-radius: var(--radius); border-end-end-radius: var(--radius);
+  font-size: 0.9rem;
+}
+.toc__module > a { color: var(--color-fg); font-weight: 600; margin-top: var(--space-3); }
+.toc a:hover { color: var(--color-fg); background: var(--color-bg); }
+.toc a[aria-current="true"] {
+  color: var(--color-accent); border-inline-start-color: var(--color-accent); background: var(--color-bg);
+}
+
+.content { max-width: var(--measure); padding: var(--space-8) var(--space-6) var(--space-12); }
+
+.callout {
+  margin: var(--space-6) 0; padding: var(--space-4) var(--space-6);
+  border-inline-start: 4px solid var(--color-border);
+  border-start-start-radius: 0; border-end-start-radius: 0;
+  border-start-end-radius: var(--radius); border-end-end-radius: var(--radius);
+  background: var(--color-surface);
+}
+.callout__label {
+  margin: 0 0 var(--space-2); font-family: var(--font-heading);
+  text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.72rem;
+  color: var(--color-muted);
+}
+.callout > :last-child { margin-bottom: 0; }
+.callout--analogy { border-inline-start-color: var(--color-analogy); }
+.callout--prereq { border-inline-start-color: var(--color-prereq); }
+.callout--unverified { border-inline-start-color: var(--color-warn); }
+
+.term-wrap { position: relative; }
+.term {
+  font: inherit; cursor: help; padding: 0; background: none; border: none;
+  color: inherit; border-bottom: 1px dotted var(--color-accent);
+}
+.term:hover { border-bottom-style: solid; }
+.term__def {
+  display: block; margin: var(--space-2) 0; padding: var(--space-3);
+  border: 1px solid var(--color-border); border-inline-start: 3px solid var(--color-accent);
+  border-radius: var(--radius); background: var(--color-surface);
+  font-size: 0.92rem; color: var(--color-fg);
+}
+.term__def[hidden] { display: none; }
+
+.quiz {
+  margin: var(--space-8) 0; padding: var(--space-4) var(--space-6) var(--space-6);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  background: var(--color-surface);
+}
+.quiz__q { font-weight: 600; margin: var(--space-2) 0 var(--space-4); }
+.quiz__options { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.quiz__option {
+  font: inherit; text-align: start; width: 100%; cursor: pointer;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg); color: var(--color-fg);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+}
+.quiz__option:hover { border-color: var(--color-accent); }
+.quiz__option[data-state="correct"] { border-color: var(--color-correct); border-inline-start: 3px solid var(--color-correct); }
+.quiz__option[data-state="incorrect"] { border-color: var(--color-incorrect); border-inline-start: 3px solid var(--color-incorrect); }
+.quiz__answer, .quiz__why {
+  margin: var(--space-4) 0 0; padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border); font-size: 0.95rem;
+}
+.quiz__answer[hidden], .quiz__why[hidden] { display: none; }
+
+.mermaid { margin: var(--space-6) 0; text-align: center; overflow-x: auto; direction: ltr; }
+.mermaid svg { max-width: 100%; height: auto; }
+.diagram-fallback {
+  margin: var(--space-6) 0; padding: var(--space-4);
+  border: 1px dashed var(--color-warn); border-radius: var(--radius);
+  color: var(--color-muted);
+}
+
+.appendix { margin-top: var(--space-12); border-top: 1px solid var(--color-border); }
+.glossary { display: grid; grid-template-columns: minmax(8rem, 14rem) 1fr; gap: var(--space-2) var(--space-6); }
+.glossary dt { font-weight: 600; font-family: var(--font-heading); }
+.glossary dd { margin: 0; color: var(--color-fg); }
+.footer { margin-top: var(--space-12); color: var(--color-muted); font-size: 0.85rem; }
+
+@media (max-width: 860px) {
+  .shell { grid-template-columns: 1fr; gap: 0; }
+  .sidebar { position: static; height: auto; border-inline-end: none; border-bottom: 1px solid var(--color-border); }
+  .content { padding: var(--space-6) var(--space-4); }
+  .glossary { grid-template-columns: 1fr; }
+}
+.figure { margin: var(--space-6) 0; text-align: center; }
+.figure img { max-width: 100%; height: auto; border-radius: var(--radius); }
+.figure figcaption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
+
+.anim { margin: var(--space-6) 0; }
+.anim__steps {
+  list-style: decimal; padding-inline-start: var(--space-6); margin: 0;
+  display: grid; gap: var(--space-2);
+}
+.anim__step {
+  /* 0.65 keeps the not-yet-highlighted step legible (~4.5:1 against the
+     background) while still visually receding behind the highlighted step;
+     0.35 (~1.5:1) was effectively unreadable while a student waited their turn. */
+  opacity: 0.65; font-weight: 400;
+  animation-name: anim-step-pulse; animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+@keyframes anim-step-pulse {
+  0%   { opacity: 1;    font-weight: 600; }
+  15%  { opacity: 1;    font-weight: 600; }
+  25%  { opacity: 0.65; font-weight: 400; }
+  100% { opacity: 0.65; font-weight: 400; }
+}
+/* display: grid + a shared grid-area (rather than position: absolute) sizes the
+   container to the tallest state's content, so realistic caption-length text that
+   wraps to 2-3 lines doesn't overflow into whatever follows -- an absolutely
+   positioned child never contributes to its parent's size. */
+.anim--state-toggle { display: grid; min-block-size: 3em; }
+.anim__state {
+  grid-area: 1 / 1;
+  animation-name: anim-state-crossfade; animation-duration: 4s;
+  animation-timing-function: ease-in-out; animation-iteration-count: infinite;
+}
+.anim__state--before { animation-delay: 0s; }
+.anim__state--after { animation-delay: -2s; }
+@keyframes anim-state-crossfade {
+  0%   { opacity: 1; }
+  45%  { opacity: 1; }
+  55%  { opacity: 0; }
+  100% { opacity: 0; }
+}
+/* Literal English UI chrome (see mdrender._animate_html), language-agnostic like the
+   "Analogy" callout label. Hidden during normal animated playback; shown only under
+   the static print/reduced-motion presentation below and in print.css. */
+.anim__state-label { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .anim__step, .anim__state {
+    animation: none; opacity: 1; font-weight: 400;
+  }
+  /* Both states are shown at once (no animation to convey them over time), so lay
+     them out labeled side-by-side instead of stacked on top of each other. */
+  .anim--state-toggle { grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+  .anim__state { grid-area: auto; }
+  .anim__state-label { display: block; font-weight: 600; margin-block-end: var(--space-1); }
+}

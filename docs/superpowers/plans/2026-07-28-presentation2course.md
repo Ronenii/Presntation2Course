@@ -5599,11 +5599,11 @@ from p2c.outline import REQUIRED_TOPIC, SUBJECT_DOMAINS
 REFS = Path(__file__).resolve().parents[1] / "references"
 
 
+# Task 17 adds rubric.md and the two reviewer prompts to this list when it writes them.
 @pytest.mark.parametrize(
     "name",
-    ["rubric.md", "style-guide.md", "quiz-format.md", "outline-schema.json",
-     "agents/summarizer.md", "agents/researcher.md", "agents/course-writer.md",
-     "agents/novice-simulator.md", "agents/rubric-auditor.md"],
+    ["style-guide.md", "quiz-format.md", "outline-schema.json",
+     "agents/summarizer.md", "agents/researcher.md", "agents/course-writer.md"],
 )
 def test_every_reference_file_exists_and_is_substantial(name):
     text = (REFS / name).read_text()
@@ -5659,8 +5659,9 @@ def test_course_writer_prompt_states_every_mechanical_requirement():
 - [ ] **Step 2: Run it to make sure it fails**
 
 Run: `.venv/bin/pytest tests/test_references.py -v`
-Expected: `FileNotFoundError` for `references/style-guide.md` (Task 16 supplies the two
-reviewer files and `rubric.md`; those parametrized cases stay red until then).
+Expected: `FileNotFoundError` for `references/style-guide.md`. The list covers only the
+files this task writes; Task 17 extends it when it adds `rubric.md` and the two reviewer
+prompts, so this task ends with a fully green suite.
 
 - [ ] **Step 3: Write `references/style-guide.md`**
 
@@ -5956,9 +5957,8 @@ Working set: The pages a process is actively using in a given window of time.
 - [ ] **Step 7: Run the tests**
 
 Run: `.venv/bin/pytest tests/test_references.py -v`
-Expected: 10 passed, 3 failed — the parametrized existence cases for `rubric.md`,
-`agents/novice-simulator.md`, and `agents/rubric-auditor.md`, which Task 16 writes. Do not
-paper over them; they are the next task's red tests.
+Expected: 10 passed, 0 failed (6 existence cases plus the 4 content assertions). Task 17
+extends the existence list when it writes `rubric.md` and the two reviewer prompts.
 
 - [ ] **Step 8: Commit**
 
@@ -6861,12 +6861,29 @@ fidelity finding, cite the slide ref or the source URL you checked against.
 - Ask no questions.
 ```
 
-- [ ] **Step 9: Run the reference tests, which should now be fully green**
+- [ ] **Step 9: Extend the reference existence list to cover the three new files**
+
+In `tests/test_references.py`, add the three files this task wrote to the parametrized
+list, so it reads:
+
+```python
+@pytest.mark.parametrize(
+    "name",
+    ["rubric.md", "style-guide.md", "quiz-format.md", "outline-schema.json",
+     "agents/summarizer.md", "agents/researcher.md", "agents/course-writer.md",
+     "agents/novice-simulator.md", "agents/rubric-auditor.md"],
+)
+def test_every_reference_file_exists_and_is_substantial(name):
+```
+
+Delete the now-stale comment above it that said Task 17 would extend the list.
+
+- [ ] **Step 10: Run the reference tests, which should now cover every prompt**
 
 Run: `.venv/bin/pytest tests/test_references.py tests/test_broken_course.py -v`
-Expected: 20 passed.
+Expected: 20 passed (9 existence cases, 4 content assertions, 7 broken-course tests).
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add references/rubric.md references/agents/novice-simulator.md \

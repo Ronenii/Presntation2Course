@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://presentation2course/outline-schema.json",
+  "title": "Presentation2Course outline",
+  "description": "The summarizer's only output. Every later phase reads it.",
+  "type": "object",
+  "required": ["title", "subject_domain", "source_decks", "modules", "language"],
+  "properties": {
+    "title": {"type": "string", "minLength": 1},
+    "subject_domain": {
+      "enum": ["systems", "theory", "life-sciences", "other"],
+      "description": "Selects the shipped theme. Affects nothing else."
+    },
+    "source_decks": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Normalized PDF filenames this outline was read from."
+    },
+    "language": {
+      "type": "object",
+      "required": ["name", "code"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "description": "Full language name, e.g. 'Hebrew'. Human-readable/documentation only -- validated as a non-empty string but never read by any code path. Changing it changes nothing about rendering; only 'code' drives behavior."},
+        "code": {"type": "string", "minLength": 1, "pattern": "^[a-zA-Z]{2}$", "description": "ISO 639-1 code, e.g. 'he'. Must be exactly two letters (validated against that shape, not just non-empty); looked up against a fixed known-RTL-code list to decide layout direction."}
+      },
+      "description": "The language every piece of student-authored content (prose, analogies, quizzes, glossary definitions) is written in. Required -- resolved once in Phase 0 from what the user explicitly stated, never defaulted. UI chrome, KNOWN-ISSUES.md's scaffolding, and the final report stay in English regardless -- see the design spec's Amendments section."
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/module"}
+    }
+  },
+  "$defs": {
+    "module": {
+      "type": "object",
+      "required": ["id", "title", "prerequisites", "topics"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "minLength": 1},
+        "prerequisites": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Rendered as a callout at the start of the module."
+        },
+        "topics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/topic"}
+        }
+      }
+    },
+    "topic": {
+      "type": "object",
+      "required": ["id", "title", "slide_refs", "jargon", "diagrams", "gaps"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique course-wide. Becomes the <!-- topic: id --> marker."
+        },
+        "title": {"type": "string", "minLength": 1},
+        "slide_refs": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^.+#[0-9]+$"},
+          "description": "Normalized deck filename and 1-based page, e.g. week1.pdf#12."
+        },
+        "jargon": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Every term a first-time reader would not know. Each one must end up with a glossary entry."
+        },
+        "diagrams": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Prose description of what each slide diagram shows, since the writer never sees the slide."
+        },
+        "gaps": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Asserted by the deck but never explained. This is the researcher's work order — be aggressive."
+        },
+        "reusable_image": {
+          "type": "string",
+          "pattern": "^.+#[0-9]+$",
+          "description": "Optional. Set only when a slide's own diagram or photo is worth reusing verbatim instead of being redrawn. At most one per topic."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""CLI wrapper. Exit codes: 0 exported, 1 error, 2 usage, 6 skipped (no Chromium)."""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from p2c.exportpdf import ExportError, main  # noqa: E402
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except ExportError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)

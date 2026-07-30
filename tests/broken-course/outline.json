@@ -1,0 +1,23 @@
+{
+  "title": "Cache Coherence (deliberately defective)",
+  "subject_domain": "systems",
+  "language": {"name": "English", "code": "en"},
+  "source_decks": ["week5.pdf"],
+  "modules": [
+    {
+      "id": "m-cache",
+      "title": "Cache Coherence",
+      "prerequisites": ["Caches"],
+      "topics": [
+        {
+          "id": "coherence",
+          "title": "Keeping caches consistent",
+          "slide_refs": ["week5.pdf#4"],
+          "jargon": ["Cache line"],
+          "diagrams": [],
+          "gaps": ["Why two caches disagreeing is a problem"]
+        }
+      ]
+    }
+  ]
+}

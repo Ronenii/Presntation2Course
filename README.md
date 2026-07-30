@@ -2,9 +2,10 @@
 
 Turns a lecturer's slide deck into a course you can actually learn from.
 
-> **Status: designed, not yet built.** The design is settled and written up in
-> [2026-07-28-presentation2course-design.md](docs/superpowers/specs/2026-07-28-presentation2course-design.md).
-> No pipeline code exists yet. Everything below describes the intended behaviour.
+> **Status: built.** The design is in
+> [2026-07-28-presentation2course-design.md](docs/superpowers/specs/2026-07-28-presentation2course-design.md);
+> the implementation plan is in
+> [2026-07-28-presentation2course.md](docs/superpowers/plans/2026-07-28-presentation2course.md).
 
 ## The problem
 
@@ -29,27 +30,39 @@ a comprehension check after every single topic.
 ## Usage
 
 ```
-Turn ./lectures/week3.pdf into a course
-Turn ./lectures/ into a course
+Turn ./lectures/week3.pdf into a course, language: English
+Turn ./lectures/week3.pdf into a course, language: Hebrew
+Turn ./lectures/ into a course, language: Spanish
 ```
 
 A single file becomes a single course. A directory becomes one multi-module course
 covering the whole set. Both PDF and PPTX work.
 
-The skill asks you **nothing** while it runs. You didn't write the deck, so you have no
-context to contribute — everything is reported at the end instead.
+**The target language is required, every time** — there is no default. Every piece of
+student-authored content — prose, analogies, quizzes, and glossary definitions — is
+written in that language; jargon terms themselves stay in their original form inline,
+only their definitions translate. The UI chrome, `KNOWN-ISSUES.md`'s scaffolding, and
+the final report stay in English, since they're build/reviewer bookkeeping, not authored
+content. Right-to-left languages (Hebrew, Arabic, Persian, Urdu, Yiddish, Divehi,
+Pashto, and Sindhi today) get correct RTL layout automatically — any other stated
+language renders left-to-right. If the request doesn't state a language, or states one
+that can't be resolved, the run stops rather than guessing.
+
+The skill otherwise asks you **nothing** while it runs. You didn't write the deck, so
+you have no context to contribute — everything is reported at the end instead.
 
 ## Requirements
 
 | | |
 |---|---|
+| Python 3.12+ with the packages in `requirements.txt` (`markdown`, `pypdfium2`, `Pillow`) | Required. `python3 -m pip install --user -r requirements.txt`. |
 | LibreOffice (`soffice`) | Required **only** for PPTX input. Missing it is a hard failure, because falling back to text extraction would silently throw away every diagram on the slides. |
 | Headless Chromium | Optional. Produces `course.pdf`. Without it you get the HTML plus a working Download PDF button. |
 | Network | Used by the research phase to ground explanations in real sources. |
 
 ## How it works
 
-Four agent roles, three deterministic scripts, and a review loop that terminates.
+Five agent roles, three deterministic scripts, and a review loop that terminates.
 
 ```mermaid
 flowchart TD
@@ -114,9 +127,16 @@ no stale-state bugs.
 can always find something. Findings are split into blocking and noted, and only blocking
 ones cost another pass.
 
+**Every topic gets a visual, enforced.** A `mermaid` diagram, an inline
+`<svg>`, a reused slide image (`figure`), or a bounded animation pattern
+(`animate`) — the build fails a topic that has none of these and no explicit
+`<!-- no-visual: ... -->` justification. Reused images come from the deck
+itself only: no web search, no generation, so there is never a licensing
+question to answer.
+
 ## What this won't do
 
-No video or audio. No LMS export. No multi-language output. No student accounts or
+No video or audio. No LMS export. No student accounts or
 cross-session progress. It won't edit your source deck, and it can't recover content the
 lecturer never put on a slide and no source discusses — that becomes an admitted gap,
 by design.
@@ -144,3 +164,71 @@ This repository *is* the skill. Copy or symlink it into your skills directory:
 ```bash
 ln -s "$PWD" ~/.claude/skills/presentation2course
 ```
+
+## Reducing approval prompts
+
+Every phase after the agents run is a plain script or a `p2c.review`/`p2c.invariants`
+CLI call — deterministic, side-effect-limited to the course's own output directory, and
+safe to allowlist so a run doesn't stop for approval at every phase boundary. Add this to
+the `.claude/settings.json` of wherever you invoke the skill from (adjust the path to
+match where you installed it — this example assumes the symlink above):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(~/.claude/skills/presentation2course/scripts/normalize *)",
+      "Bash(~/.claude/skills/presentation2course/scripts/build *)",
+      "Bash(~/.claude/skills/presentation2course/scripts/export-pdf *)",
+      "Bash(PYTHONPATH=~/.claude/skills/presentation2course/scripts python3 -m p2c.review *)",
+      "Bash(PYTHONPATH=~/.claude/skills/presentation2course/scripts python3 -m p2c.invariants *)"
+    ]
+  }
+}
+```
+
+Bash permission rules match a literal command prefix — they can't glob on a script's
+basename regardless of its directory — so the path in each entry must match the one
+`<SKILL>` actually resolves to for your install. The reliable way to get an exact match:
+run the skill once, and the first time each command prompts for approval, choose "yes,
+don't ask again for this command" — Claude Code writes the exact working entry for you.
+
+This intentionally does not cover the five agent dispatches (summarizer, researcher,
+course-writer, novice-simulator, rubric-auditor) or their own tool use (Read, WebSearch,
+WebFetch, Write) — those touch the network and the filesystem more broadly, and whether
+to let them run unattended is a bigger trust decision than allowlisting a fixed-purpose
+script. Leave those prompted unless you've decided otherwise.
+
+## Development
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pytest
+```
+
+Two tests skip unless the optional tools are installed: PPTX conversion needs `soffice`,
+and the real PDF export needs Chromium.
+
+The deterministic half — quiz and glossary grammars, front matter, anchors, theme mapping,
+validation, and a golden `course.md` → `course.html` snapshot — is unit tested and is most
+of the risk surface. Regenerate the snapshot deliberately, never casually:
+
+```bash
+P2C_UPDATE_GOLDEN=1 .venv/bin/pytest tests/test_build.py -k golden
+```
+
+The agent half is tested by invariants instead of snapshots, since its output is not
+deterministic. Grade any produced course:
+
+```bash
+PYTHONPATH=scripts .venv/bin/python -m p2c.invariants ./week3-course
+P2C_COURSE_DIR=./week3-course .venv/bin/pytest tests/test_invariants.py
+```
+
+The novice-simulator is the highest-value agent in the pipeline, so its regression is a
+fixture rather than an article of faith: `tests/broken-course/` is a course with two
+defects that pass every mechanical validation. See
+[tests/broken-course/README.md](tests/broken-course/README.md) for the procedure. Vendored
+Mermaid is pinned at 11.16.0 by sha256 in `tests/test_assets.py`; changing the version
+means changing that hash on purpose.

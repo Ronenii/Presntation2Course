@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="{{LANG}}" dir="{{DIR}}" data-course-theme="{{THEME_NAME}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Presentation2Course">
+<title>{{TITLE}}</title>
+<style>{{THEME_CSS}}</style>
+<style>{{LAYOUT_CSS}}</style>
+<style>{{PRINT_CSS}}</style>
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to course content</a>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="sidebar__head">
+      <p class="sidebar__eyebrow">Course</p>
+      <p class="sidebar__title">{{TITLE}}</p>
+      <div class="sidebar__actions">
+        <button type="button" class="btn" id="theme-toggle" aria-pressed="false">Dark mode</button>
+        <button type="button" class="btn btn--accent" id="print-pdf">Download PDF</button>
+      </div>
+    </div>
+    <nav class="toc" aria-label="Course contents">
+      {{TOC}}
+    </nav>
+  </aside>
+  <main class="content" id="content" tabindex="-1">
+    {{CONTENT}}
+    <section class="appendix">
+      <h2 id="glossary">Glossary</h2>
+      {{GLOSSARY}}
+    </section>
+    <footer class="footer">
+      <p>Built from {{SOURCE_DECKS}}. Quizzes are ungraded — retry as often as you like.</p>
+    </footer>
+  </main>
+</div>
+<script>{{MERMAID_JS}}</script>
+<script>{{COURSE_JS}}</script>
+</body>
+</html>

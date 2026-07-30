@@ -1,0 +1,32 @@
+{
+  "title": "יסודות מערכות הפעלה",
+  "subject_domain": "systems",
+  "language": {"name": "Hebrew", "code": "he"},
+  "source_decks": ["week1.pdf"],
+  "modules": [
+    {
+      "id": "m-memory",
+      "title": "זיכרון וירטואלי",
+      "prerequisites": ["חשבון בינארי"],
+      "topics": [
+        {
+          "id": "tlb",
+          "title": "מה ה-TLB שומר במטמון",
+          "slide_refs": ["week1.pdf#12"],
+          "jargon": ["TLB", "טבלת עמודים"],
+          "diagrams": ["תרשים תיבות המראה כתובת וירטואלית הופכת לכתובת פיזית"],
+          "gaps": ["למה תרגום כתובות דורש מטמון בכלל"],
+          "reusable_image": "terse.pdf#1"
+        },
+        {
+          "id": "thrashing",
+          "title": "תרשיש (Thrashing)",
+          "slide_refs": ["week1.pdf#20"],
+          "jargon": ["קבוצת עבודה"],
+          "diagrams": [],
+          "gaps": ["מה מייחד תרשיש מהחלפת עמודים רגילה"]
+        }
+      ]
+    }
+  ]
+}
