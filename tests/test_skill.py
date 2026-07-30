@@ -70,3 +70,19 @@ def test_parallel_fan_out_is_explicit():
     assert "one agent per topic" in lowered
     assert "one agent per module" in lowered
     assert "parallel" in lowered
+
+
+def test_language_is_required_and_unresolvable_is_a_hard_stop_not_a_question():
+    lowered = SKILL.lower()
+    assert "iso 639" in lowered
+    idx = lowered.index("<language>")
+    window = lowered[idx : idx + 800]
+    assert "required" in window
+    assert "hard fail" in window or "hard stop" in window
+    assert "never a question" in window or "not a question" in window
+
+
+def test_course_writer_dispatch_receives_the_resolved_language():
+    phase3 = SKILL.index("Phase 3")
+    phase4 = SKILL.index("Phase 4")
+    assert "<language>" in SKILL[phase3:phase4]

@@ -25,6 +25,14 @@ than with an admitted gap.
 - `<output>`: `./<stem>-course/` in the current working directory, where `<stem>` is the
   input's filename without extension (single file) or its directory name (folder). If the
   user named an output directory, use theirs.
+- `<language>`: the target language for this course. **Required — the user must
+  state it explicitly every time; there is no default.** Resolve whatever they said
+  (a name, a demonym, an ISO code, "in Hebrew") to its English name and ISO 639-1
+  code, e.g. `{"name": "Hebrew", "code": "he"}`. If the request states no language
+  at all, or states something you cannot confidently resolve to a real language,
+  **hard fail before Phase 0 begins** and print the exact wording you could not
+  resolve. This is never a question to ask — the zero-questions rule holds even
+  here, because a wrong guess means redoing the entire run in the wrong language.
 
 Confirm the one runtime dependency:
 
@@ -79,7 +87,7 @@ Read the JSON on stdout for `pdfs`, `converted`, `pages`, `total_pages`.
 ## Phase 1 — summarizer (1 agent)
 
 Dispatch one subagent with `<SKILL>/references/agents/summarizer.md` as its instructions,
-plus the paths of the normalized PDFs and the output path
+plus the paths of the normalized PDFs, the resolved `<language>`, and the output path
 `<output>/.p2c/outline.json`. It reads pages **visually, in batches of 20** — never by text
 extraction.
 
@@ -126,6 +134,8 @@ For every module, dispatch one subagent with
 `<SKILL>/references/agents/course-writer.md`, giving it:
 
 - its module object, with its topics in order,
+- the resolved `<language>`, so its prose, analogies, and quizzes are written in it
+  (jargon terms stay in their original form — see `course-writer.md`),
 - the contents of `<output>/.p2c/research/<topic-id>.md` for each of its topics,
 - the paths `<SKILL>/references/style-guide.md` and `<SKILL>/references/quiz-format.md`,
 - its output path `<output>/.p2c/modules/<nn>-<slug>.md`.
@@ -270,6 +280,7 @@ Agents run: <n>
 |---|---|
 | `soffice` missing, PPTX input | Hard fail (`normalize` exit 4), print the install command |
 | Chromium missing | Skip `course.pdf` (`export-pdf` exit 6), note it, HTML print button still works |
+| No language stated, or unresolvable | Hard fail before Phase 0, print the offending wording |
 | Deck pages unreadable or blank | Hard fail (`normalize` exit 5, or the summarizer's report) with the page refs |
 | Research unsubstantiated | Mark the topic `unverified`, the writer hedges, never invents |
 | Mermaid unparseable | One repair attempt from its writer, then a prose description |

@@ -30,15 +30,25 @@ a comprehension check after every single topic.
 ## Usage
 
 ```
-Turn ./lectures/week3.pdf into a course
-Turn ./lectures/ into a course
+Turn ./lectures/week3.pdf into a course, language: English
+Turn ./lectures/week3.pdf into a course, language: Hebrew
+Turn ./lectures/ into a course, language: Spanish
 ```
 
 A single file becomes a single course. A directory becomes one multi-module course
 covering the whole set. Both PDF and PPTX work.
 
-The skill asks you **nothing** while it runs. You didn't write the deck, so you have no
-context to contribute — everything is reported at the end instead.
+**The target language is required, every time** — there is no default. Every
+student-facing artifact (prose, analogies, quizzes, glossary, `KNOWN-ISSUES.md`, the
+final report) is written in that language; jargon terms themselves stay in their
+original form inline, only their definitions translate. Right-to-left languages
+(Hebrew, Arabic, Persian, Urdu, Yiddish, Divehi, Pashto, and Sindhi today) get correct
+RTL layout automatically — any other stated language renders left-to-right. If the
+request doesn't state a language, or states one that can't be resolved, the run stops
+rather than guessing.
+
+The skill otherwise asks you **nothing** while it runs. You didn't write the deck, so
+you have no context to contribute — everything is reported at the end instead.
 
 ## Requirements
 
@@ -118,7 +128,7 @@ ones cost another pass.
 
 ## What this won't do
 
-No video or audio. No LMS export. No multi-language output. No student accounts or
+No video or audio. No LMS export. No student accounts or
 cross-session progress. It won't edit your source deck, and it can't recover content the
 lecturer never put on a slide and no source discusses — that becomes an admitted gap,
 by design.
