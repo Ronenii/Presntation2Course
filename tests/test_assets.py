@@ -157,6 +157,7 @@ def test_layout_css_uses_logical_directional_properties_not_physical_ones():
         "border-right-color:",
         "left: -9999px",
         "left: var(--space-4)",
+        "box-shadow: inset 3px 0 0",  # physical offset instead of logical border
     ):
         assert forbidden not in css, forbidden
     for required in (

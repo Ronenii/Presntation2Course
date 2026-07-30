@@ -196,8 +196,8 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   border: 1px solid var(--color-border); border-radius: var(--radius);
 }
 .quiz__option:hover { border-color: var(--color-accent); }
-.quiz__option[data-state="correct"] { border-color: var(--color-correct); box-shadow: inset 3px 0 0 var(--color-correct); }
-.quiz__option[data-state="incorrect"] { border-color: var(--color-incorrect); box-shadow: inset 3px 0 0 var(--color-incorrect); }
+.quiz__option[data-state="correct"] { border-color: var(--color-correct); border-inline-start: 3px solid var(--color-correct); }
+.quiz__option[data-state="incorrect"] { border-color: var(--color-incorrect); border-inline-start: 3px solid var(--color-incorrect); }
 .quiz__answer, .quiz__why {
   margin: var(--space-4) 0 0; padding-top: var(--space-3);
   border-top: 1px solid var(--color-border); font-size: 0.95rem;
