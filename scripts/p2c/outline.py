@@ -11,9 +11,10 @@ from collections.abc import Iterator
 from pathlib import Path
 
 SUBJECT_DOMAINS = ("systems", "theory", "life-sciences", "other")
-REQUIRED_TOP = ("title", "subject_domain", "source_decks", "modules")
+REQUIRED_TOP = ("title", "subject_domain", "source_decks", "modules", "language")
 REQUIRED_MODULE = ("id", "title", "prerequisites", "topics")
 REQUIRED_TOPIC = ("id", "title", "slide_refs", "jargon", "diagrams", "gaps")
+REQUIRED_LANGUAGE = ("name", "code")
 _SLIDE_REF = re.compile(r"^.+#\d+$")
 
 
@@ -32,6 +33,18 @@ def _check_str_list(obj: dict, key: str, where: str, problems: list[str]) -> Non
         problems.append(f"{where}.{key} must be a list of strings")
 
 
+def _check_language(obj: dict, where: str, problems: list[str]) -> None:
+    value = obj.get("language")
+    if not isinstance(value, dict):
+        problems.append(f"{where}.language must be an object")
+        return
+    for key in REQUIRED_LANGUAGE:
+        if key not in value:
+            problems.append(f"{where}.language is missing required key '{key}'")
+        elif not isinstance(value[key], str) or not value[key].strip():
+            problems.append(f"{where}.language.{key} must be a non-empty string")
+
+
 def validate_outline(obj: object) -> list[str]:
     problems: list[str] = []
     if not isinstance(obj, dict):
@@ -48,6 +61,8 @@ def validate_outline(obj: object) -> list[str]:
         )
     if "source_decks" in obj:
         _check_str_list(obj, "source_decks", "outline", problems)
+    if "language" in obj:
+        _check_language(obj, "outline", problems)
 
     modules = obj.get("modules")
     if not isinstance(modules, list):

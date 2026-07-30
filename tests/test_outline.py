@@ -24,6 +24,7 @@ def outline(**overrides):
     base = {
         "title": "Operating Systems",
         "subject_domain": "systems",
+        "language": {"name": "English", "code": "en"},
         "source_decks": ["week1.pdf"],
         "modules": [
             {
@@ -130,6 +131,27 @@ def test_rejects_a_wrong_typed_topics_field():
 def test_rejects_a_blank_top_level_title():
     problems = validate_outline(outline(title="   "))
     assert any("title" in p for p in problems)
+
+
+def test_a_hebrew_language_outline_validates():
+    assert validate_outline(outline(language={"name": "Hebrew", "code": "he"})) == []
+
+
+def test_rejects_a_non_object_language():
+    problems = validate_outline(outline(language="Hebrew"))
+    assert any("outline.language must be an object" in p for p in problems)
+
+
+def test_rejects_a_language_missing_name_or_code():
+    problems = validate_outline(outline(language={"name": "Hebrew"}))
+    assert any("outline.language" in p and "code" in p for p in problems)
+    problems = validate_outline(outline(language={"code": "he"}))
+    assert any("outline.language" in p and "name" in p for p in problems)
+
+
+def test_rejects_an_empty_language_code():
+    problems = validate_outline(outline(language={"name": "Hebrew", "code": "  "}))
+    assert any("outline.language.code" in p for p in problems)
 
 
 def test_helpers_walk_the_structure():

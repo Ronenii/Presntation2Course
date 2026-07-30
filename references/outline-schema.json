@@ -4,7 +4,7 @@
   "title": "Presentation2Course outline",
   "description": "The summarizer's only output. Every later phase reads it.",
   "type": "object",
-  "required": ["title", "subject_domain", "source_decks", "modules"],
+  "required": ["title", "subject_domain", "source_decks", "modules", "language"],
   "properties": {
     "title": {"type": "string", "minLength": 1},
     "subject_domain": {
@@ -15,6 +15,15 @@
       "type": "array",
       "items": {"type": "string"},
       "description": "Normalized PDF filenames this outline was read from."
+    },
+    "language": {
+      "type": "object",
+      "required": ["name", "code"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "description": "Full language name, e.g. 'Hebrew'."},
+        "code": {"type": "string", "minLength": 1, "description": "ISO 639-1 code, e.g. 'he'. Looked up against a fixed known-RTL-code list to decide layout direction."}
+      },
+      "description": "The language every student-facing artifact is written in. Required -- resolved once in Phase 0 from what the user explicitly stated, never defaulted."
     },
     "modules": {
       "type": "array",
