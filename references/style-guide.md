@@ -18,7 +18,8 @@ page. They are intelligent and have no shame about not knowing your vocabulary.
    genuinely non-spatial, and only with an explicit `<!-- no-visual: <reason> -->` HTML
    comment — there is no silent skip.
 5. **Worked example.** Concrete numbers, a concrete trace, or a concrete scenario.
-6. **Quiz.** One or more `quiz` blocks. Every topic ends with at least one.
+6. **Quiz.** One or more `quiz` blocks. Every topic ends with at least one, except a
+   `brief` topic — see "Brief topics" below.
 
 ## Brief topics — the exception to the rhythm
 

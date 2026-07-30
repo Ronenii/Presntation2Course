@@ -31,8 +31,10 @@ Grammar, enforced by the build:
 `why:` must address the **tempting wrong answer**, not restate the right one. That is
 where the teaching happens. See `style-guide.md`.
 
-One or more quiz blocks per topic. Every topic needs at least one. Quizzes are
-ungraded with unlimited retries, so never write "you scored" or "try again later".
+One or more quiz blocks per topic. Every `full`-depth topic needs at least one; a
+`brief`-depth topic uses `<!-- no-quiz: ... -->` instead (see `references/style-guide.md`'s
+"Brief topics" section). Quizzes are ungraded with unlimited retries, so never write
+"you scored" or "try again later".
 
 ## `mermaid` — a diagram
 
