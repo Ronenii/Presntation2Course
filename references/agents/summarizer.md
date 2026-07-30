@@ -47,6 +47,13 @@ Required keys per topic: `id`, `title`, `slide_refs`, `jargon`, `diagrams`, `gap
   A thin `gaps` list produces a course no better than the deck.
 - **`diagrams` must be prose.** The course-writer never sees the slide. If you do not
   describe the diagram, its content is lost for the rest of the run.
+- **`reusable_image`** (optional, at most one per topic): set it to the same
+  `deck.pdf#page` form as `slide_refs` when — and only when — that slide's own
+  diagram or photo is worth reusing verbatim rather than being redrawn. You are
+  the only agent who ever sees the slide, so this is your call alone; the
+  course-writer will be told this value and will not re-derive it. Leave it
+  unset for anything better explained as a fresh diagram than reused as a
+  picture of the original slide.
 - **`jargon`**: every term a first-time reader would not know, in the form it appears on
   the slide. Each one must later get a glossary entry, so do not pad the list with
   ordinary words.

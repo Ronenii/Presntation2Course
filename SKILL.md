@@ -156,6 +156,10 @@ For every module, dispatch one subagent with
 - its module object, with its topics in order,
 - the resolved `<language>`, so its prose, analogies, and quizzes are written in it
   (jargon terms stay in their original form — see `course-writer.md`),
+- each topic's `reusable_image`, if it set one, flows through automatically
+  since topic objects are passed verbatim — no separate step needed here,
+  but the writer must be told about it via the dispatch text, not left to
+  notice it buried in the JSON.
 - the contents of `<output>/.p2c/research/<topic-id>.md` for each of its topics,
 - the paths `<SKILL>/references/style-guide.md` and `<SKILL>/references/quiz-format.md`,
 - its literal, exact output path — `<output>/.p2c/modules/<the-computed-filename>` from

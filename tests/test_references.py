@@ -91,3 +91,14 @@ def test_reviewer_prompts_keep_their_own_findings_in_english():
     for name in ("novice-simulator.md", "rubric-auditor.md"):
         text = (REFS / "agents" / name).read_text().lower()
         assert "english" in text, name
+
+
+def test_summarizer_documents_reusable_image():
+    text = (REFS / "agents/summarizer.md").read_text()
+    assert "reusable_image" in text
+
+
+def test_rubric_notes_figure_and_animate_are_covered_by_existing_codes():
+    text = (REFS / "rubric.md").read_text()
+    assert "figure" in text
+    assert "animate" in text

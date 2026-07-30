@@ -16,7 +16,7 @@ improve.
 | `missing_background` | The course asserts something it never explains — a gap the research missed. |
 | `topic_missing` | A topic in `outline.json` does not appear in the course. |
 | `analogy_misleading` | An analogy breaks down in a way that teaches something false. |
-| `render_failure` | The page is structurally broken: a diagram did not render, a quiz has no options. |
+| `render_failure` | The page is structurally broken: a diagram, figure, or animate block did not render, or a quiz has no options. |
 
 ## Noted findings
 
@@ -24,7 +24,7 @@ improve.
 |---|---|
 | `verbosity` | Longer than it needs to be. |
 | `style` | Tone, rhythm, or wording that could be better. |
-| `missing_visual` | A diagram would help but its absence does not block understanding. |
+| `missing_visual` | A diagram, reused figure, or animate block would help but its absence does not block understanding (the build's own `topic_without_visual` check already catches complete absence; this code is for "present but could be better"). |
 | `other` | Anything else worth recording. |
 
 An analogy you merely dislike is `style`. An analogy that would leave a student with a

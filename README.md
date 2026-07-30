@@ -55,7 +55,7 @@ you have no context to contribute — everything is reported at the end instead.
 
 | | |
 |---|---|
-| Python 3.12+ with `markdown>=3.5` | Required. `python3 -m pip install --user 'markdown>=3.5'`. The only runtime dependency. |
+| Python 3.12+ with the packages in `requirements.txt` (`markdown`, `pypdfium2`, `Pillow`) | Required. `python3 -m pip install --user -r requirements.txt`. |
 | LibreOffice (`soffice`) | Required **only** for PPTX input. Missing it is a hard failure, because falling back to text extraction would silently throw away every diagram on the slides. |
 | Headless Chromium | Optional. Produces `course.pdf`. Without it you get the HTML plus a working Download PDF button. |
 | Network | Used by the research phase to ground explanations in real sources. |
@@ -126,6 +126,13 @@ no stale-state bugs.
 **The loop has a hard cap.** "Iterate until it's good" does not terminate — a reviewer
 can always find something. Findings are split into blocking and noted, and only blocking
 ones cost another pass.
+
+**Every topic gets a visual, enforced.** A `mermaid` diagram, an inline
+`<svg>`, a reused slide image (`figure`), or a bounded animation pattern
+(`animate`) — the build fails a topic that has none of these and no explicit
+`<!-- no-visual: ... -->` justification. Reused images come from the deck
+itself only: no web search, no generation, so there is never a licensing
+question to answer.
 
 ## What this won't do
 
