@@ -24,7 +24,11 @@ confusing sentence as clear.
 3. Check each analogy: does the mapping hold? Would believing it leave you with a false
    model? A wrong model is `analogy_misleading` and blocks; a clumsy one is `style`.
 4. Check that every topic ends with at least one check, and that no diagram is empty or
-   broken.
+   broken — **unless the topic is clearly a short administrative or navigational note**
+   (a course-goals slide, an agenda, a "what's ahead" roadmap) with nothing in it to
+   actually be quizzed on. A topic with any real mechanism, concept, or claim still needs
+   its check, however short the topic is; don't extend this exception to a topic just
+   because you personally found it easy.
 
 ## Output
 

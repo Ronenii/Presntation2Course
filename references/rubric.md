@@ -18,6 +18,14 @@ improve.
 | `analogy_misleading` | An analogy breaks down in a way that teaches something false. |
 | `render_failure` | The page is structurally broken: a diagram, figure, or animate block did not render, or a quiz has no options. |
 
+A topic whose outline entry has `"depth": "brief"` is exempt from `topic_without_quiz`,
+`analogy_misleading` (it has no analogy to begin with), and the visual-related findings —
+its `<!-- no-quiz: ... -->` comment and absence of an analogy/visual are intentional, not
+defects. Still apply every other check normally: a `brief` topic must still exist in the
+course (`topic_missing`), and any prose it does contain must not assert something
+unsupported (`unsupported_claim`) or leave a jargon term undefined
+(`jargon_undefined`).
+
 ## Noted findings
 
 | Code | Meaning |
