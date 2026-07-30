@@ -69,6 +69,7 @@ translated, why caching translations matters, and what happens when memory press
 forces the system to choose what to evict.
 
 <!-- no-quiz: brief administrative topic, nothing to check -->
+<!-- no-visual: brief administrative topic, nothing to check -->
 
 ```glossary
 TLB: A small, fast cache holding recently used virtual-to-physical page mappings.
@@ -117,8 +118,11 @@ Every `full`-depth topic needs one of: a `mermaid` diagram, an inline `<svg>`, a
 block, or an `animate` block. The build fails otherwise, unless you also write an
 explicit `<!-- no-visual: <reason> -->` HTML comment for a topic that is genuinely
 non-spatial — use that sparingly; it is an escape hatch, not a way to skip the visual
-step because a diagram is inconvenient to write. A `brief`-depth topic needs neither a
-visual nor a `no-visual` comment — it has no visual step at all.
+step because a diagram is inconvenient to write. A `brief`-depth topic also has no visual
+step, but the build's visual check is not `depth`-aware — it only ever recognizes the
+`no-visual` comment itself — so a `brief` topic must still write
+`<!-- no-visual: <reason> -->` alongside its `<!-- no-quiz: ... -->`, even though it has
+nothing to draw.
 
 Pick the diagram type that matches the idea: `flowchart` for a process,
 `sequenceDiagram` for an interaction between parties, `stateDiagram-v2` for a
