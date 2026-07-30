@@ -38,14 +38,15 @@ Turn ./lectures/ into a course, language: Spanish
 A single file becomes a single course. A directory becomes one multi-module course
 covering the whole set. Both PDF and PPTX work.
 
-**The target language is required, every time** — there is no default. Every
-student-facing artifact (prose, analogies, quizzes, glossary, `KNOWN-ISSUES.md`, the
-final report) is written in that language; jargon terms themselves stay in their
-original form inline, only their definitions translate. Right-to-left languages
-(Hebrew, Arabic, Persian, Urdu, Yiddish, Divehi, Pashto, and Sindhi today) get correct
-RTL layout automatically — any other stated language renders left-to-right. If the
-request doesn't state a language, or states one that can't be resolved, the run stops
-rather than guessing.
+**The target language is required, every time** — there is no default. Every piece of
+student-authored content — prose, analogies, quizzes, and glossary definitions — is
+written in that language; jargon terms themselves stay in their original form inline,
+only their definitions translate. The UI chrome, `KNOWN-ISSUES.md`'s scaffolding, and
+the final report stay in English, since they're build/reviewer bookkeeping, not authored
+content. Right-to-left languages (Hebrew, Arabic, Persian, Urdu, Yiddish, Divehi,
+Pashto, and Sindhi today) get correct RTL layout automatically — any other stated
+language renders left-to-right. If the request doesn't state a language, or states one
+that can't be resolved, the run stops rather than guessing.
 
 The skill otherwise asks you **nothing** while it runs. You didn't write the deck, so
 you have no context to contribute — everything is reported at the end instead.

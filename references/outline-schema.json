@@ -20,10 +20,10 @@
       "type": "object",
       "required": ["name", "code"],
       "properties": {
-        "name": {"type": "string", "minLength": 1, "description": "Full language name, e.g. 'Hebrew'."},
-        "code": {"type": "string", "minLength": 1, "description": "ISO 639-1 code, e.g. 'he'. Looked up against a fixed known-RTL-code list to decide layout direction."}
+        "name": {"type": "string", "minLength": 1, "description": "Full language name, e.g. 'Hebrew'. Human-readable/documentation only -- validated as a non-empty string but never read by any code path. Changing it changes nothing about rendering; only 'code' drives behavior."},
+        "code": {"type": "string", "minLength": 1, "pattern": "^[a-zA-Z]{2}$", "description": "ISO 639-1 code, e.g. 'he'. Must be exactly two letters (validated against that shape, not just non-empty); looked up against a fixed known-RTL-code list to decide layout direction."}
       },
-      "description": "The language every student-facing artifact is written in. Required -- resolved once in Phase 0 from what the user explicitly stated, never defaulted."
+      "description": "The language every piece of student-authored content (prose, analogies, quizzes, glossary definitions) is written in. Required -- resolved once in Phase 0 from what the user explicitly stated, never defaulted. UI chrome, KNOWN-ISSUES.md's scaffolding, and the final report stay in English regardless -- see the design spec's Amendments section."
     },
     "modules": {
       "type": "array",

@@ -58,6 +58,12 @@ def test_is_rtl_is_case_insensitive():
     assert is_rtl("HE") is True
 
 
+def test_is_rtl_normalizes_away_a_region_subtag():
+    # Belt and suspenders: outline.py's validator should already reject "he-IL", but
+    # is_rtl degrades gracefully if a region-tagged code ever reaches it anyway.
+    assert is_rtl("he-IL") is True
+
+
 def test_rtl_languages_are_lowercase_iso_codes():
     assert all(code == code.lower() for code in RTL_LANGUAGES)
     assert {"he", "ar", "fa", "ur"} <= RTL_LANGUAGES

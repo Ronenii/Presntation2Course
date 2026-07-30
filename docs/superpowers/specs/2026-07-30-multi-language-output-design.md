@@ -3,6 +3,33 @@
 **Date:** 2026-07-30
 **Status:** Approved
 
+## Amendments
+
+Found during the final whole-branch review (after all 7 tasks landed): the original
+Scope/Decisions wording below promised "every student-facing artifact ... written in
+that language," naming `KNOWN-ISSUES.md` and the final report explicitly. That promise
+does not hold and was never actually implemented that way:
+
+- **UI chrome** — sidebar labels, button text ("Dark mode"/"Download PDF"), callout
+  labels ("Analogy", "Before this module", ...), and quiz UI labels ("Correct answer:")
+  are hardcoded English strings in `assets/base/template.html`, `assets/base/course.js`,
+  `scripts/p2c/mdrender.py`, and `scripts/p2c/quiz.py`. None of it is language-aware.
+- **`KNOWN-ISSUES.md`** is emitted by `scripts/p2c/review.py`'s `render_known_issues()`,
+  which wraps reviewer `message` fields in fixed English scaffolding — and those
+  `message` fields are themselves mandated to stay English by this same plan's Task 5.
+  The file is therefore structurally English by construction; it cannot be "entirely in
+  the target language."
+- **The final report** template in `SKILL.md` was never given a language instruction in
+  Task 6 and is operator/build-facing prose, not student content.
+
+**Corrected promise:** only student-*authored* content — prose, analogies, quizzes, and
+glossary definitions, i.e. what `course-writer` actually writes — translates. UI chrome,
+`KNOWN-ISSUES.md`'s scaffolding, and the final report stay English always, regardless of
+course language, the same way reviewer findings already do by design. This is a
+documentation correction only (see the final-review fix report for the fix wave this
+came out of); no code changes were made to localize any of the above, since doing so
+would be substantial new scope, not a bug fix.
+
 ## Problem
 
 The skill only ever produces English courses today. A student whose deck — and whose
@@ -13,10 +40,11 @@ supported language and the first right-to-left one.
 
 ## Scope
 
-**In:** a required, per-invocation target-language parameter; every student-facing
-artifact (prose, analogies, quizzes, glossary, `KNOWN-ISSUES.md`, the final report)
-written in that language; correct right-to-left layout for RTL languages; jargon terms
-kept in their original form inline even when their definitions are translated.
+**In:** a required, per-invocation target-language parameter; every piece of
+student-*authored* content (prose, analogies, quizzes, glossary definitions) written in
+that language; correct right-to-left layout for RTL languages; jargon terms kept in
+their original form inline even when their definitions are translated. UI chrome,
+`KNOWN-ISSUES.md`'s scaffolding, and the final report stay English — see Amendments.
 
 **Out:** auto-detecting the deck's own language and translating *from* it (research
 and reasoning may still draw on English sources; only the course's own output language
@@ -30,7 +58,7 @@ stay kebab-case/Latin, they are plumbing, never shown to the student).
 |---|---|---|
 | How language is specified | Required, explicit, every invocation — no default | Silently defaulting to English (or guessing) risks generating an entire course in the wrong language, which is expensive to discover late and to redo |
 | Unresolvable language | Hard-fail Phase 0, like a bad deck | Keeps `SKILL.md`'s "ask no questions" rule uniform instead of carving out a one-off exception |
-| What gets translated | Everything student-facing | A course half in Hebrew and half in English (e.g. an English glossary) is a worse artifact than an all-English one — inconsistency reads as a bug |
+| What gets translated | Student-*authored* content only — prose, analogies, quizzes, glossary definitions | A course half in Hebrew and half in English (e.g. an English glossary) is a worse artifact than an all-English one — inconsistency reads as a bug. UI chrome, `KNOWN-ISSUES.md`'s scaffolding, and the final report are build/reviewer bookkeeping, not authored content, and stay English regardless of course language — see Amendments |
 | Jargon terms themselves | Kept in original form inline; only the *definition* is translated | Matches how Hebrew (and most) technical writing actually handles loanwords/acronyms; translating "TLB" itself would be actively confusing |
 | Internal ids/filenames | Always Latin/kebab-case, regardless of course language | They are anchors and filenames the pipeline depends on being stable; the student never sees them |
 | Reviewer findings (`pass-<n>.json`, `pass-<n>-auditor.json`) | Always English | Pipeline bookkeeping, not student-facing; keeps the orchestrator's own reasoning language-independent |
@@ -83,8 +111,8 @@ stay kebab-case/Latin, they are plumbing, never shown to the student).
    existing template-placeholder mechanism.
 5. Phase 5's reviewers read the (already-translated) `course.html` and write findings
    in English, per the Decisions table above.
-6. The final report and `KNOWN-ISSUES.md` (if written) are in the target language,
-   since both are student-facing.
+6. The final report and `KNOWN-ISSUES.md` (if written) stay in English — both are
+   build/reviewer bookkeeping, not student-authored content; see Amendments.
 
 ## Error handling
 

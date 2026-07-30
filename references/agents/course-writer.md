@@ -13,9 +13,12 @@ taught.
 
 ## Output
 
-Exactly one file: `<output>/.p2c/modules/<nn>-<slug>.md`, where `<nn>` is your module's
-1-based position zero-padded to two digits and `<slug>` is its title lowercased with
-non-alphanumerics collapsed to hyphens — module 2 "Scheduling" is `02-scheduling.md`.
+Exactly one file: write to the exact output path the orchestrator gives you in your
+dispatch — do not derive or compute the filename yourself, even if it looks like it
+should be `<output>/.p2c/modules/<nn>-<slug>.md` for a simple, Latin-script title.
+Non-Latin-script titles (Hebrew, Arabic, ...) don't have an ASCII slug, so the
+orchestrator always computes the real path itself and hands it to you directly — trust
+that path, not any rule you might infer about how it was built.
 
 Structure, exactly:
 
@@ -78,7 +81,11 @@ Working set: The pages a process is actively using in a given window of time.
   themselves stay in their original form inline, exactly as they appear in the
   `jargon` list — only the surrounding prose and the glossary's *definitions*
   translate. The glossary block's `term:` side is the original-form term; only the
-  text after the colon is written in the target language.
+  text after the colon is written in the target language. Mermaid diagrams translate
+  too: write each node's label in the target language, the same as prose — the
+  diagram's container is always pinned left-to-right regardless of course language, but
+  that is a rendering detail the build handles; it has no bearing on what language you
+  write the labels in.
 - Use an `unverified` block wherever the research says `unverified: true`, naming the
   specific claim to distrust.
 - Mermaid blocks must start with a diagram keyword and have balanced brackets and quotes.

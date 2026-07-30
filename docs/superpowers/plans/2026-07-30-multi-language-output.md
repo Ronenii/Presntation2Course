@@ -12,7 +12,7 @@
 
 - The target language is **required on every invocation** — there is no default, and the run must never silently fall back to English.
 - An unresolvable stated language is a **hard stop**, in the same style as Phase 0's existing bad-deck exit codes — never a clarifying question. The skill's "ask no questions" rule stays absolute.
-- Every student-facing artifact — prose, analogies, quizzes, glossary, `KNOWN-ISSUES.md`, the final report — is written in the target language.
+- Every piece of student-*authored* content — prose, analogies, quizzes, glossary definitions — is written in the target language. UI chrome (sidebar labels, button text, callout labels, quiz UI labels), `KNOWN-ISSUES.md`'s scaffolding, and the final report are build/reviewer bookkeeping, not authored content, and stay in English regardless of course language (amended after the final whole-branch review — see the design spec's Amendments section).
 - Jargon terms themselves stay in their original form inline (e.g. `TLB`); only their *definitions* translate.
 - Internal ids, filenames, and anchors (topic ids, module filenames, heading anchors) always stay Latin/kebab-case, regardless of course language. They are never shown to the student.
 - Reviewer findings (`pass-<n>.json`, `pass-<n>-auditor.json` — the `message`/`evidence` fields specifically) are always in English, regardless of course language, since findings are pipeline bookkeeping for the orchestrator, not student-facing.

@@ -130,6 +130,26 @@ grep -l "^unverified: true" "<output>"/.p2c/research/*.md || echo "none"
 
 ## Phase 3 — course-writer (one agent per module, in parallel)
 
+Before dispatching, compute every module's exact output filename yourself — never ask a
+writer to derive its own. `p2c.assemble.module_filename` (what `scripts/build` actually
+uses to find each file) slugifies the module title, and `p2c.text.slugify` ASCII-folds its
+input; a non-Latin-script title (Hebrew, Arabic, ...) folds to nothing and falls back to
+the literal string `"section"`. A writer following a "lowercase and hyphenate the title"
+rule would produce something else entirely, and the build would then raise
+`AssembleError: module file not written` because it looked for the real, computed name and
+found none. Compute the real names up front instead:
+
+```bash
+PYTHONPATH="<SKILL>/scripts" python3 -c "
+from pathlib import Path
+from p2c.outline import load_outline
+from p2c.assemble import module_filename
+o = load_outline(Path('<output>/.p2c/outline.json'))
+for i, m in enumerate(o['modules'], 1):
+    print(f\"{m['id']}: {module_filename(i, m)}\")
+"
+```
+
 For every module, dispatch one subagent with
 `<SKILL>/references/agents/course-writer.md`, giving it:
 
@@ -138,7 +158,8 @@ For every module, dispatch one subagent with
   (jargon terms stay in their original form — see `course-writer.md`),
 - the contents of `<output>/.p2c/research/<topic-id>.md` for each of its topics,
 - the paths `<SKILL>/references/style-guide.md` and `<SKILL>/references/quiz-format.md`,
-- its output path `<output>/.p2c/modules/<nn>-<slug>.md`.
+- its literal, exact output path — `<output>/.p2c/modules/<the-computed-filename>` from
+  the command above, handed to it directly, not a description of how to derive one.
 
 One agent per module, all in parallel. The writer writes each topic's quizzes while that
 topic is in its hands, which is why questions do not drift from the prose that taught them.
@@ -173,7 +194,10 @@ topic is in its hands, which is why questions do not drift from the prose that t
   its writer; after that the writer must replace it with a prose description, because a
   broken diagram never ships.
 - **exit 1** — a missing module file or invalid outline. Read stderr; if a writer never
-  wrote its file, re-dispatch that one writer.
+  wrote its file — including if it wrote to a filename it derived itself instead of the
+  literal path it was given, which is the same failure mode Phase 3's up-front filename
+  computation exists to prevent — re-dispatch that one writer with its exact output path
+  restated.
 
 Cap build-repair at **two** rounds — mirroring Phase 5's pass cap, but shorter, because
 re-rendering is cheap and this phase exists to catch narrow mechanical issues, not
@@ -285,4 +309,5 @@ Agents run: <n>
 | Research unsubstantiated | Mark the topic `unverified`, the writer hedges, never invents |
 | Mermaid unparseable | One repair attempt from its writer, then a prose description |
 | Blocking findings after pass 3 | Ship with `KNOWN-ISSUES.md` |
+| A course-writer's file isn't where the build expects it (exit 1) | Re-dispatch that one writer with its exact path restated |
 | A subagent produces no file | Re-dispatch that one agent once, then stop and report it |

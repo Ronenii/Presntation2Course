@@ -74,6 +74,19 @@ def test_course_writer_prompt_states_the_language_and_jargon_rule():
     assert "original form" in lowered or "original-form" in lowered
 
 
+def test_course_writer_prompt_states_the_mermaid_label_language_rule():
+    text = (REFS / "agents" / "course-writer.md").read_text().lower()
+    assert "mermaid" in text
+    assert "label" in text or "node" in text
+
+
+def test_course_writer_prompt_tells_writers_not_to_derive_their_own_filename():
+    text = (REFS / "agents" / "course-writer.md").read_text().lower()
+    assert "modules/" in text
+    assert "do not derive" in text or "not derive" in text
+    assert "orchestrator" in text
+
+
 def test_reviewer_prompts_keep_their_own_findings_in_english():
     for name in ("novice-simulator.md", "rubric-auditor.md"):
         text = (REFS / "agents" / name).read_text().lower()

@@ -154,6 +154,18 @@ def test_rejects_an_empty_language_code():
     assert any("outline.language.code" in p for p in problems)
 
 
+def test_rejects_a_bcp47_region_subtag_code():
+    # Plausible-looking but not the bare ISO 639-1 shape RTL_LANGUAGES matches against --
+    # would silently render ltr if it slipped through.
+    problems = validate_outline(outline(language={"name": "Hebrew", "code": "he-IL"}))
+    assert any("outline.language.code" in p for p in problems)
+
+
+def test_rejects_an_iso_639_2_three_letter_code():
+    problems = validate_outline(outline(language={"name": "Hebrew", "code": "heb"}))
+    assert any("outline.language.code" in p for p in problems)
+
+
 def test_helpers_walk_the_structure():
     o = outline()
     assert topic_ids(o) == ["tlb", "thrashing"]

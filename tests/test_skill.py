@@ -82,7 +82,35 @@ def test_language_is_required_and_unresolvable_is_a_hard_stop_not_a_question():
     assert "never a question" in window or "not a question" in window
 
 
+def _phase_heading_start(n):
+    # Anchored on the markdown heading itself ("## Phase N — ..."), not a bare substring
+    # search, so an incidental inline mention of "Phase N" elsewhere in the prose (there is
+    # at least one, added for Item 1's filename fix) can never be mistaken for the section
+    # boundary.
+    match = re.search(rf"^## Phase {n}\b", SKILL, re.MULTILINE)
+    assert match, f"no '## Phase {n}' heading found"
+    return match.start()
+
+
 def test_course_writer_dispatch_receives_the_resolved_language():
-    phase3 = SKILL.index("Phase 3")
-    phase4 = SKILL.index("Phase 4")
+    phase3 = _phase_heading_start(3)
+    phase4 = _phase_heading_start(4)
     assert "<language>" in SKILL[phase3:phase4]
+
+
+def test_the_orchestrator_computes_module_filenames_before_dispatching_writers():
+    """A writer must never derive its own output filename: p2c.text.slugify ASCII-folds
+    non-Latin titles to nothing, so a writer's own 'lowercase and hyphenate' guess would
+    disagree with what scripts/build actually looks for. The orchestrator must compute the
+    real path with module_filename and hand it over literally."""
+    phase3 = _phase_heading_start(3)
+    phase4 = _phase_heading_start(4)
+    section = SKILL[phase3:phase4]
+    assert "module_filename" in section
+    assert "literal" in section.lower()
+    assert "AssembleError" in section
+
+
+def test_a_course_writer_file_in_the_wrong_place_has_a_documented_recovery():
+    lowered = SKILL.lower()
+    assert "restate" in lowered or "restated" in lowered

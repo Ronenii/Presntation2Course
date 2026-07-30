@@ -145,6 +145,17 @@ def test_print_css_reveals_quiz_answers_and_hides_chrome():
     assert ".sidebar" in css
 
 
+def test_print_css_isolates_printed_urls_from_bidi_reordering():
+    """The injected '(' url ')' after a printed link is itself always LTR content;
+    without an explicit isolate the bidi algorithm would reorder the parentheses
+    around it on an RTL-printed page."""
+    css = (ASSETS / "print.css").read_text()
+    rule_start = css.index('a[href^="http"]')
+    rule = css[rule_start : css.index("}", rule_start)]
+    assert "unicode-bidi: isolate" in rule
+    assert "direction: ltr" in rule
+
+
 def test_layout_css_uses_logical_directional_properties_not_physical_ones():
     """Physical left/right properties don't mirror under dir="rtl"; logical
     inline-start/end properties do, so one layout.css serves both directions."""
@@ -169,6 +180,25 @@ def test_layout_css_uses_logical_directional_properties_not_physical_ones():
         "inset-inline-start: var(--space-4)",
     ):
         assert required in css, required
+
+
+def test_layout_css_has_no_four_value_margin_or_padding_shorthand():
+    """A 4-value margin/padding shorthand (top right bottom left) is inherently
+    asymmetric and physical -- its last value is always a physical left/right
+    margin/padding that never mirrors under dir="rtl". The substring-based logical-
+    properties test above only catches longhand physical property names
+    (border-left, text-align: left, ...), so it never noticed .toc__topics's
+    `margin: var(--space-1) 0 var(--space-4) var(--space-3)` -- a shorthand whose
+    fourth value is a bare margin-left with no logical equivalent in shorthand form.
+    This test catches that class of miss directly, by parsing the actual values."""
+    css = (ASSETS / "base" / "layout.css").read_text()
+    for match in re.finditer(r"(?<![-\w])(margin|padding):\s*([^;]+);", css):
+        prop, value = match.group(1), match.group(2)
+        tokens = value.split()
+        assert len(tokens) != 4, (
+            f"{prop}: {value} is a 4-value shorthand -- inherently physical, "
+            "convert to margin-block/margin-inline (or padding-block/padding-inline)"
+        )
 
 
 def test_print_css_has_no_physical_directional_properties():

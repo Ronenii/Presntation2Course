@@ -21,7 +21,11 @@ RTL_LANGUAGES = frozenset({"ar", "dv", "fa", "he", "ps", "sd", "ur", "yi"})
 
 
 def is_rtl(code: str) -> bool:
-    return code.lower() in RTL_LANGUAGES
+    # Belt and suspenders: outline.py's validator should already reject anything but a
+    # bare two-letter code, but normalize any region subtag (e.g. "he-IL") away here too,
+    # so this function degrades gracefully rather than silently returning False for a
+    # code that should plainly be recognized as RTL.
+    return code.split("-")[0].lower() in RTL_LANGUAGES
 
 REQUIRED_TOKENS = (
     "--font-body",

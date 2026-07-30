@@ -16,6 +16,7 @@ REQUIRED_MODULE = ("id", "title", "prerequisites", "topics")
 REQUIRED_TOPIC = ("id", "title", "slide_refs", "jargon", "diagrams", "gaps")
 REQUIRED_LANGUAGE = ("name", "code")
 _SLIDE_REF = re.compile(r"^.+#\d+$")
+_ISO_639_1 = re.compile(r"[a-z]{2}")
 
 
 class OutlineError(ValueError):
@@ -43,6 +44,15 @@ def _check_language(obj: dict, where: str, problems: list[str]) -> None:
             problems.append(f"{where}.language is missing required key '{key}'")
         elif not isinstance(value[key], str) or not value[key].strip():
             problems.append(f"{where}.language.{key} must be a non-empty string")
+    code = value.get("code")
+    if (
+        isinstance(code, str)
+        and code.strip()
+        and not _ISO_639_1.fullmatch(code.lower())
+    ):
+        problems.append(
+            f"{where}.language.code must be a two-letter ISO 639-1 code, got {code!r}"
+        )
 
 
 def validate_outline(obj: object) -> list[str]:
