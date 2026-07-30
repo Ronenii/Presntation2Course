@@ -25,6 +25,15 @@
           "jargon": ["קבוצת עבודה"],
           "diagrams": [],
           "gaps": ["מה מייחד תרשיש מהחלפת עמודים רגילה"]
+        },
+        {
+          "id": "course-goals",
+          "title": "מטרות הקורס",
+          "slide_refs": ["week1.pdf#1"],
+          "jargon": [],
+          "diagrams": [],
+          "gaps": [],
+          "depth": "brief"
         }
       ]
     }
