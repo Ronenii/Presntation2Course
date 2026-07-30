@@ -271,8 +271,11 @@ git commit -m "feat: add p2c.imagery for whole-page PDF-to-PNG extraction"
 - Modify: `scripts/p2c/mdrender.py`
 - Modify: `scripts/p2c/build.py`
 - Modify: `scripts/build` (CLI wrapper)
+- Modify: `references/agents/course-writer.md`
+- Modify: `references/quiz-format.md`
 - Test: `tests/test_mdrender.py`
 - Test: `tests/test_build.py`
+- Test: `tests/test_references.py` (an existing test there breaks otherwise — see Step 10)
 
 **Interfaces:**
 - Consumes: `p2c.imagery.extract_page_png(pdf_path, page_number) -> bytes`, `p2c.imagery.ImageryError` (Task 2).
@@ -603,10 +606,63 @@ Expected: PASS, both new tests.
 Run the full existing build suite too, since this touches a function every other `test_build.py` test depends on: `PYTHONPATH=scripts pytest tests/test_build.py -v`
 Expected: PASS, no regressions (no other existing fixture uses a `figure` block, so `_resolve_figures` is a no-op on their HTML).
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 10: Document `figure` minimally now — required, not optional, for this task**
+
+`tests/test_references.py` already has `test_course_writer_prompt_states_every_mechanical_requirement`, which loops over every entry in `mdrender.HANDLED_KINDS` (excluding `"prereq"`) and asserts it appears as a substring in `references/agents/course-writer.md`. Since this task adds `"figure"` to `HANDLED_KINDS`, that existing test now fails unless `course-writer.md` mentions `figure` too — run `PYTHONPATH=scripts pytest tests/test_references.py -v` right now to see it fail before making this fix.
+
+Add this section to `references/agents/course-writer.md`, right after the existing "Mechanical requirements" list:
+
+```markdown
+## Visual per topic
+
+Every topic needs one of: a `mermaid` diagram, an inline `<svg>`, or a
+`figure` block. If your dispatch tells you a topic already has a
+`reusable_image` (a real slide image the summarizer flagged as worth
+reusing), do not author your own visual for that topic — write a `figure`
+block instead, restating the exact value you were given:
+
+```figure
+source: week1.pdf#12
+caption: The lookup path, as drawn in the lecture.
+```
+
+Write only the caption yourself; the `source:` value must be copied exactly
+from your dispatch, never invented or re-derived. See
+`references/quiz-format.md` for the full grammar.
+```
+
+(Task 4 extends this same section with `animate` and the `no-visual` escape
+hatch — do not duplicate that content now, just get `figure` documented so
+the existing test passes again.)
+
+Add a `## \`figure\`` section to `references/quiz-format.md`, right after the
+existing `## \`mermaid\` — a diagram` section:
+
+````markdown
+## `figure` — a reused slide image
+
+````
+```figure
+source: week1.pdf#12
+caption: The lookup path, as drawn in the lecture.
+```
+````
+
+Exactly one `source:` (a `deck.pdf#page` ref, copied verbatim from the value
+the orchestrator gave you when a topic has a `reusable_image`) and one
+`caption:`, which may wrap onto indented continuation lines. The build
+resolves `source:` to the real slide image at the referenced page — the
+writer never supplies image bytes, only these two lines. An unresolvable
+source (missing deck, out-of-range page) is a hard build failure naming the
+topic and the source.
+````
+
+Run `PYTHONPATH=scripts pytest tests/test_references.py -v` again to confirm it passes now.
+
+- [ ] **Step 11: Commit**
 
 ```bash
-git add scripts/p2c/mdrender.py scripts/p2c/build.py scripts/build tests/test_mdrender.py tests/test_build.py
+git add scripts/p2c/mdrender.py scripts/p2c/build.py scripts/build tests/test_mdrender.py tests/test_build.py references/agents/course-writer.md references/quiz-format.md
 git commit -m "feat: add figure block, resolved to an embedded slide image at build time"
 ```
 
@@ -618,8 +674,11 @@ git commit -m "feat: add figure block, resolved to an embedded slide image at bu
 - Modify: `scripts/p2c/mdrender.py`
 - Modify: `assets/base/layout.css`
 - Modify: `assets/print.css`
+- Modify: `references/agents/course-writer.md`
+- Modify: `references/quiz-format.md`
 - Test: `tests/test_mdrender.py`
 - Test: `tests/test_build.py`
+- Test: `tests/test_references.py` (an existing test there breaks otherwise — see Step 9)
 
 **Interfaces:**
 - Produces: `mdrender.HANDLED_KINDS` gains `"animate"`; `mdrender.AnimateError(ValueError)`; `mdrender.parse_animate(body: str) -> Animate` where `Animate` is a new dataclass with fields `pattern: str`, `steps: list[str]`, `before: str`, `after: str`. An `animate` fence renders fully inline (no build-time resolution, unlike `figure`).
@@ -913,10 +972,104 @@ def test_animate_blocks_render_inside_a_built_course(tmp_path):
 Run: `PYTHONPATH=scripts pytest tests/test_build.py tests/test_assets.py -v`
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 9: Document `animate` minimally now, and the `no-visual` escape hatch — same reason as Task 3's `figure` documentation step**
+
+This task adds `"animate"` to `HANDLED_KINDS`, so `test_course_writer_prompt_states_every_mechanical_requirement` (in `tests/test_references.py`) now also requires `animate` to appear in `course-writer.md`. Run `PYTHONPATH=scripts pytest tests/test_references.py -v` first to see it fail.
+
+Task 5 (next) introduces the `<!-- no-visual: ... -->` comment as the enforcement mechanism's escape hatch — document it here too, since it belongs in the same "Visual per topic" section this task is extending, and Task 5 has no reason to touch `course-writer.md` on its own otherwise.
+
+Replace the "Visual per topic" section Task 3 added in `course-writer.md` with this expanded version (same heading, more content — do not create a second "Visual per topic" heading):
+
+```markdown
+## Visual per topic
+
+Every topic needs one of: a `mermaid` diagram, an inline `<svg>`, a `figure`
+block, or an `animate` block. The build fails otherwise, unless you also
+write an explicit `<!-- no-visual: <reason> -->` HTML comment for a topic
+that is genuinely non-spatial — use that sparingly; it is an escape hatch,
+not a way to skip the visual step because a diagram is inconvenient to write.
+
+Pick the diagram type that matches the idea: `flowchart` for a process,
+`sequenceDiagram` for an interaction between parties, `stateDiagram-v2` for a
+lifecycle, `erDiagram`/`architecture-beta` for structure. Inline `<svg>` is
+for a static structure a flow/sequence/state diagram cannot express (a memory
+layout, a data structure). A second visual in one topic is rarely warranted —
+only add one if the topic genuinely covers two separate spatial ideas.
+
+If your dispatch tells you a topic already has a `reusable_image` (a real
+slide image the summarizer flagged as worth reusing), do not author your own
+visual for that topic at all — write a `figure` block instead, restating the
+exact value you were given:
+
+```figure
+source: week1.pdf#12
+caption: The lookup path, as drawn in the lecture.
+```
+
+Write only the caption yourself; the source value must be copied exactly
+from your dispatch, never invented or re-derived.
+
+When a topic is genuinely about a sequence or a before/after comparison, an
+`animate` block is worth using instead of (or alongside) a mermaid diagram:
+
+```animate
+pattern: step-reveal
+steps:
+  - Request arrives at the TLB
+  - TLB miss triggers a page-table walk
+  - Page table entry is cached back into the TLB
+```
+
+```animate
+pattern: state-toggle
+before: Cache line marked Shared
+after: Cache line marked Modified after a local write
+```
+
+`step-reveal` needs at least 2 steps; `state-toggle` needs both `before:` and
+`after:`. See `references/quiz-format.md` for the full grammar.
+```
+
+Add a `## \`animate\`` section to `references/quiz-format.md`, right after the `## \`figure\`` section Task 3 added, and update the file's opening line from "Six fenced block kinds are meaningful to the build." to "Eight fenced block kinds are meaningful to the build.":
+
+````markdown
+## `animate` — a bounded animation pattern
+
+````
+```animate
+pattern: step-reveal
+steps:
+  - Request arrives at the TLB
+  - TLB miss triggers a page-table walk
+  - Page table entry is cached back into the TLB
+```
+````
+
+````
+```animate
+pattern: state-toggle
+before: Cache line marked Shared
+after: Cache line marked Modified after a local write
+```
+````
+
+Exactly two patterns exist:
+
+- `step-reveal` — `steps:` followed by 2 or more `- ` lines, highlighted in
+  turn via a looping CSS animation. Use for an ordered sequence.
+- `state-toggle` — `before:` and `after:`, both required, cross-fading via a
+  looping CSS animation. Use for a two-state comparison.
+
+Both respect `prefers-reduced-motion` and render fully static (every
+step/state shown at once, not a single frozen frame) in print.
+````
+
+Run `PYTHONPATH=scripts pytest tests/test_references.py -v` again to confirm it passes.
+
+- [ ] **Step 10: Commit**
 
 ```bash
-git add scripts/p2c/mdrender.py assets/base/layout.css assets/print.css tests/test_mdrender.py tests/test_build.py
+git add scripts/p2c/mdrender.py assets/base/layout.css assets/print.css tests/test_mdrender.py tests/test_build.py references/agents/course-writer.md references/quiz-format.md
 git commit -m "feat: add animate block (step-reveal, state-toggle), print- and reduced-motion-safe"
 ```
 
@@ -1240,55 +1393,34 @@ git commit -m "feat: enforce visual-per-topic coverage as a blocking build findi
 
 ---
 
-### Task 6: Agent prompts, reference docs, and README
+### Task 6: Summarizer, rubric, SKILL.md, and README docs
 
 **Files:**
 - Modify: `references/agents/summarizer.md`
-- Modify: `references/agents/course-writer.md`
-- Modify: `references/quiz-format.md`
 - Modify: `references/rubric.md`
 - Modify: `SKILL.md`
 - Modify: `README.md`
-- Test: `tests/test_references.py` (this repo already has substring-assertion tests over these prompt files per the multi-language plan's precedent — add to it rather than skip testing prose changes)
+- Test: `tests/test_references.py`
+
+**Note:** `course-writer.md` and `quiz-format.md` are **not** in this task's
+scope — Tasks 3 and 4 already documented `figure` and `animate` there (each
+in the same task that introduced the corresponding `HANDLED_KINDS` entry, so
+the existing `test_course_writer_prompt_states_every_mechanical_requirement`
+test in `tests/test_references.py` never goes stale mid-plan). This task
+covers only the files that don't interact with that test.
 
 **Interfaces:**
-- Consumes: the exact field/block names locked in Tasks 1-5 (`reusable_image`, `figure`'s `source:`/`caption:`, `animate`'s `pattern:`/`steps:`/`before:`/`after:`, the `<!-- no-visual: ... -->` comment, the `topic_without_visual` finding code).
+- Consumes: `reusable_image` (Task 1), the `topic_without_visual` finding code (Task 5).
 - Produces: nothing new for later tasks to consume — this is documentation of what already works.
 
 - [ ] **Step 1: Write the failing reference tests**
 
-`tests/test_references.py` already defines `REFS = Path(__file__).resolve().parents[1] / "references"` and a parametrized `test_every_reference_file_exists_and_is_substantial` covering (among others) `"agents/summarizer.md"`, `"agents/course-writer.md"`, `"quiz-format.md"`, `"rubric.md"` — join paths through `REFS` exactly the way that test already does (e.g. `REFS / "agents/course-writer.md"`, `REFS / "quiz-format.md"`), not through separate `AGENTS`/`REFERENCES` constants (they don't exist in this file).
-
-Add:
+`tests/test_references.py` already defines `REFS = Path(__file__).resolve().parents[1] / "references"`. Add:
 
 ```python
 def test_summarizer_documents_reusable_image():
     text = (REFS / "agents/summarizer.md").read_text()
     assert "reusable_image" in text
-
-
-def test_course_writer_documents_the_figure_block():
-    text = (REFS / "agents/course-writer.md").read_text()
-    assert "```figure" in text
-    assert "reusable_image" in text
-
-
-def test_course_writer_documents_the_animate_block():
-    text = (REFS / "agents/course-writer.md").read_text()
-    assert "```animate" in text
-    assert "step-reveal" in text
-    assert "state-toggle" in text
-
-
-def test_course_writer_documents_the_no_visual_escape_hatch():
-    text = (REFS / "agents/course-writer.md").read_text()
-    assert "no-visual" in text
-
-
-def test_quiz_format_documents_figure_and_animate_grammars():
-    text = (REFS / "quiz-format.md").read_text()
-    assert "## `figure`" in text
-    assert "## `animate`" in text
 
 
 def test_rubric_notes_figure_and_animate_are_covered_by_existing_codes():
@@ -1300,7 +1432,7 @@ def test_rubric_notes_figure_and_animate_are_covered_by_existing_codes():
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `PYTHONPATH=scripts pytest tests/test_references.py -v`
-Expected: FAIL on the new assertions.
+Expected: FAIL on the two new assertions; every pre-existing test in the file (including the ones Tasks 3-4 already satisfied) still passes.
 
 - [ ] **Step 3: Update summarizer.md**
 
@@ -1316,118 +1448,7 @@ In `references/agents/summarizer.md`, in the `## Rules` section, right after the
   picture of the original slide.
 ```
 
-Also update the JSON example's topic object to show it as an optional field (add a comment-adjacent line right after the existing `diagrams` example key, e.g. change nothing structurally, just note in the surrounding prose — the "Required keys per topic" sentence already correctly excludes it since it's optional, so no change needed there beyond the bullet above).
-
-- [ ] **Step 4: Update course-writer.md**
-
-In `references/agents/course-writer.md`, add a new subsection after the existing "Mechanical requirements" list, before the file ends:
-
-```markdown
-## Visual per topic
-
-Every topic needs one of: a `mermaid` diagram, an inline `<svg>`, a `figure`
-block, or an `animate` block. The build fails otherwise, unless you also
-write an explicit `<!-- no-visual: <reason> -->` HTML comment for a topic
-that is genuinely non-spatial — use that sparingly; it is an escape hatch,
-not a way to skip the visual step because a diagram is inconvenient to write.
-
-Pick the diagram type that matches the idea: `flowchart` for a process,
-`sequenceDiagram` for an interaction between parties, `stateDiagram-v2` for a
-lifecycle, `erDiagram`/`architecture-beta` for structure. Inline `<svg>` is
-for a static structure a flow/sequence/state diagram cannot express (a memory
-layout, a data structure). A second visual in one topic is rarely warranted —
-only add one if the topic genuinely covers two separate spatial ideas.
-
-If your dispatch tells you a topic already has a `reusable_image` (a real
-slide image the summarizer flagged as worth reusing), do not author your own
-visual for that topic at all — write a `figure` block instead, restating the
-exact value you were given:
-
-```figure
-source: week1.pdf#12
-caption: The lookup path, as drawn in the lecture.
-```
-
-Write only the caption yourself; the source value must be copied exactly
-from your dispatch, never invented or re-derived.
-
-When a topic is genuinely about a sequence or a before/after comparison, an
-`animate` block is worth using instead of (or alongside) a mermaid diagram:
-
-```animate
-pattern: step-reveal
-steps:
-  - Request arrives at the TLB
-  - TLB miss triggers a page-table walk
-  - Page table entry is cached back into the TLB
-```
-
-```animate
-pattern: state-toggle
-before: Cache line marked Shared
-after: Cache line marked Modified after a local write
-```
-
-`step-reveal` needs at least 2 steps; `state-toggle` needs both `before:` and
-`after:`. See `references/quiz-format.md` for the full grammar.
-```
-
-- [ ] **Step 5: Update quiz-format.md**
-
-Change the opening line from "Six fenced block kinds are meaningful to the build." to "Eight fenced block kinds are meaningful to the build."
-
-Add two new sections, after the existing `## \`mermaid\` — a diagram` section and before `## \`glossary\``:
-
-```markdown
-## `figure` — a reused slide image
-
-````
-```figure
-source: week1.pdf#12
-caption: The lookup path, as drawn in the lecture.
-```
-````
-
-Exactly one `source:` (a `deck.pdf#page` ref, copied verbatim from the value
-the orchestrator gave you when a topic has a `reusable_image`) and one
-`caption:`, which may wrap onto indented continuation lines. The build
-resolves `source:` to the real slide image at the referenced page — the
-writer never supplies image bytes, only these two lines. An unresolvable
-source (missing deck, out-of-range page) is a hard build failure naming the
-topic and the source.
-
-## `animate` — a bounded animation pattern
-
-````
-```animate
-pattern: step-reveal
-steps:
-  - Request arrives at the TLB
-  - TLB miss triggers a page-table walk
-  - Page table entry is cached back into the TLB
-```
-````
-
-````
-```animate
-pattern: state-toggle
-before: Cache line marked Shared
-after: Cache line marked Modified after a local write
-```
-````
-
-Exactly two patterns exist:
-
-- `step-reveal` — `steps:` followed by 2 or more `- ` lines, highlighted in
-  turn via a looping CSS animation. Use for an ordered sequence.
-- `state-toggle` — `before:` and `after:`, both required, cross-fading via a
-  looping CSS animation. Use for a two-state comparison.
-
-Both respect `prefers-reduced-motion` and render fully static (every
-step/state shown at once, not a single frozen frame) in print.
-```
-
-- [ ] **Step 6: Update rubric.md**
+- [ ] **Step 4: Update rubric.md**
 
 In `references/rubric.md`, in the `## Noted findings` table, update the `missing_visual` row's description to note the new block types count too:
 
@@ -1441,7 +1462,7 @@ Also update the `## Blocking findings` table's `render_failure` row description 
 | `render_failure` | The page is structurally broken: a diagram, figure, or animate block did not render, or a quiz has no options. |
 ```
 
-- [ ] **Step 7: Update SKILL.md**
+- [ ] **Step 5: Update SKILL.md**
 
 In the Phase 3 section, right after the existing bullet "the resolved `<language>`, so its prose, analogies, and quizzes are written in it (jargon terms stay in their original form — see `course-writer.md`)," add:
 
@@ -1452,7 +1473,7 @@ In the Phase 3 section, right after the existing bullet "the resolved `<language
   notice it buried in the JSON.
 ```
 
-- [ ] **Step 8: Update README.md**
+- [ ] **Step 6: Update README.md**
 
 In the Requirements table, replace the first row:
 
@@ -1466,7 +1487,7 @@ with:
 | Python 3.12+ with the packages in `requirements.txt` (`markdown`, `pypdfium2`, `Pillow`) | Required. `python3 -m pip install --user -r requirements.txt`. |
 ```
 
-In the "What you get" section, add a line after the existing `course.html` bullet's description noting visual variety, and in "Design choices worth knowing" add a short paragraph:
+In "Design choices worth knowing", add a new paragraph:
 
 ```markdown
 **Every topic gets a visual, enforced.** A `mermaid` diagram, an inline
@@ -1477,16 +1498,16 @@ itself only: no web search, no generation, so there is never a licensing
 question to answer.
 ```
 
-- [ ] **Step 9: Run tests to verify they pass**
+- [ ] **Step 7: Run tests to verify they pass**
 
 Run: `PYTHONPATH=scripts pytest tests/test_references.py -v`
 Expected: PASS.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add references/agents/summarizer.md references/agents/course-writer.md references/quiz-format.md references/rubric.md SKILL.md README.md tests/test_references.py
-git commit -m "docs: document reusable_image, figure, and animate for agents and users"
+git add references/agents/summarizer.md references/rubric.md SKILL.md README.md tests/test_references.py
+git commit -m "docs: document reusable_image, and note figure/animate in rubric, SKILL.md, README"
 ```
 
 ---
