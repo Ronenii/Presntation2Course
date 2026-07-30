@@ -155,6 +155,30 @@ def render_known_issues(findings: list[Finding], *, course_title: str) -> str:
     return "\n".join(lines)
 
 
+def missed_expected(review_obj: dict, expected: dict) -> list[str]:
+    """Grade a reviewer against a known-defect fixture.
+
+    Each must_catch entry needs one finding with the right code whose message or evidence
+    mentions every required word. Anything else counts as missed.
+    """
+    missed: list[str] = []
+    for entry in expected["must_catch"]:
+        words = [w.lower() for w in entry.get("must_mention", [])]
+        hit = False
+        for raw in review_obj.get("findings", []):
+            if raw.get("code") != entry["code"]:
+                continue
+            haystack = f"{raw.get('message', '')} {raw.get('evidence', '')}".lower()
+            if all(word in haystack for word in words):
+                hit = True
+                break
+        if not hit:
+            missed.append(
+                f"{entry['code']}: no finding mentioning {entry.get('must_mention', [])}"
+            )
+    return missed
+
+
 def main(argv: list[str]) -> int:
     import argparse
 

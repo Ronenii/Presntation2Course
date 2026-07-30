@@ -8,11 +8,11 @@ from p2c.outline import REQUIRED_TOPIC, SUBJECT_DOMAINS
 REFS = Path(__file__).resolve().parents[1] / "references"
 
 
-# Task 17 adds rubric.md and the two reviewer prompts to this list when it writes them.
 @pytest.mark.parametrize(
     "name",
-    ["style-guide.md", "quiz-format.md", "outline-schema.json",
-     "agents/summarizer.md", "agents/researcher.md", "agents/course-writer.md"],
+    ["rubric.md", "style-guide.md", "quiz-format.md", "outline-schema.json",
+     "agents/summarizer.md", "agents/researcher.md", "agents/course-writer.md",
+     "agents/novice-simulator.md", "agents/rubric-auditor.md"],
 )
 def test_every_reference_file_exists_and_is_substantial(name):
     text = (REFS / name).read_text()

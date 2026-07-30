@@ -1,0 +1,16 @@
+{
+  "course": "tests/broken-course",
+  "note": "Both defects pass every mechanical validation. Only a reviewer can catch them.",
+  "must_catch": [
+    {
+      "code": "jargon_undefined",
+      "must_mention": ["mesi"],
+      "defect": "MESI and write-invalidate are used in prose, never defined, and absent from the glossary."
+    },
+    {
+      "code": "quiz_needs_outside_knowledge",
+      "must_mention": ["four"],
+      "defect": "The quiz asks for the number of MESI states; the course never states it."
+    }
+  ]
+}
