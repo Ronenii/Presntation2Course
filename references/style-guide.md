@@ -20,6 +20,19 @@ page. They are intelligent and have no shame about not knowing your vocabulary.
 5. **Worked example.** Concrete numbers, a concrete trace, or a concrete scenario.
 6. **Quiz.** One or more `quiz` blocks. Every topic ends with at least one.
 
+## Brief topics — the exception to the rhythm
+
+A topic marked `"depth": "brief"` in the outline skips the rhythm above entirely. Write
+1–2 short plain-language paragraphs and stop: no `analogy` block, no visual, no worked
+example, no `quiz`. Close the topic with `<!-- no-quiz: brief administrative topic -->`
+(or a more specific reason) instead of a quiz block — that comment is what tells the
+build this topic was deliberately left unchecked, not that a quiz was forgotten.
+
+This is not a shortcut for content that is merely short — a two-sentence topic with a
+real mechanism to check still gets the full rhythm, just briefly. `brief` is only for
+topics the outline flagged as having nothing to teach or check in the first place (course
+goals, an agenda, a roadmap slide).
+
 ## Tone
 
 - Second person. "You" the student, not "the reader" and not "we".
