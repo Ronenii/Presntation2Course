@@ -15,12 +15,13 @@ works from. You are the only agent that sees the slides.
 Exactly one file: `<output>/.p2c/outline.json`, satisfying
 `references/outline-schema.json`. Write nothing else.
 
-Required keys per topic: `id`, `title`, `slide_refs`, `jargon`, `diagrams`, `gaps`.
+Required keys per topic: `id`, `title`, `slide_refs`, `jargon`, `diagrams`, `gaps`. Top-level required: `title`, `subject_domain`, `language`, `source_decks`, `modules`.
 
 ```json
 {
-  "title": "course title, from the deck or its filename",
+  "title": "course title, from the deck or its filename, written in the target language",
   "subject_domain": "systems | theory | life-sciences | other",
+  "language": {"name": "Hebrew", "code": "he"},
   "source_decks": ["week1.pdf"],
   "modules": [{
     "id": "m-memory",
@@ -57,6 +58,10 @@ Required keys per topic: `id`, `title`, `slide_refs`, `jargon`, `diagrams`, `gap
 - **`subject_domain`** selects the shipped theme and nothing else. `systems` for
   computing and engineering, `theory` for mathematics, logic, and formal subjects,
   `life-sciences` for biology, medicine, and chemistry, `other` when unsure.
+- **`language`**: given to you by the orchestrator, exactly as `{"name": ..., "code": ...}`
+  — copy it into the outline unchanged. Every title (`title`, module `title`, topic
+  `title`) is written in that language. `id`s are always lowercase kebab-case ASCII,
+  regardless of language — never transliterate or translate them.
 - If a page is **blank or unreadable**, do not guess at it. Stop and report the offending
   `deck.pdf#page` refs — the run hard-fails rather than summarizing a deck you cannot see.
 - Ask no questions. There is nobody to answer them.

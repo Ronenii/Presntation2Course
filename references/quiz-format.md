@@ -66,7 +66,9 @@ Page table: The full in-memory map from virtual pages to physical frames.
 One block per module file, at the end. One `term: definition` per line; a definition may
 wrap onto indented continuation lines. Every jargon term the outline recorded for this
 module's topics **must** appear here, or the build fails. Definitions are one or two
-sentences, plain language, no jargon of their own.
+sentences, plain language, no jargon of their own. When the course is not in English, the term before the colon stays in its original
+form (e.g. `TLB: ...`); only the definition after the colon is written in the
+course's language.
 
 ## Topic markers
 

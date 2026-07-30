@@ -38,6 +38,8 @@ def test_summarizer_prompt_states_the_outline_contract():
     for domain in SUBJECT_DOMAINS:
         assert domain in text, domain
     assert "blank" in text.lower()
+    assert "language" in text.lower()
+    assert "kebab-case" in text.lower()
 
 
 def test_researcher_prompt_states_the_unverified_rule():
@@ -63,3 +65,16 @@ def test_course_writer_prompt_states_every_mechanical_requirement():
         if kind != "prereq":
             assert kind in text, kind
     assert "prereq" in text  # documented as build-owned, not writer-owned
+
+
+def test_course_writer_prompt_states_the_language_and_jargon_rule():
+    text = (REFS / "agents" / "course-writer.md").read_text()
+    lowered = text.lower()
+    assert "language" in lowered
+    assert "original form" in lowered or "original-form" in lowered
+
+
+def test_reviewer_prompts_keep_their_own_findings_in_english():
+    for name in ("novice-simulator.md", "rubric-auditor.md"):
+        text = (REFS / "agents" / name).read_text().lower()
+        assert "english" in text, name

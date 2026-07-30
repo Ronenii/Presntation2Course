@@ -74,6 +74,11 @@ Working set: The pages a process is actively using in a given window of time.
 - **One `glossary` block at the end of the file**, defining every term in every one of
   your topics' `jargon` lists. Missing one fails the build.
 - **Never write a `prereq` block.** The build emits it from `outline.json`.
+- Write in the course's target language (`outline.json`'s `language`). Jargon terms
+  themselves stay in their original form inline, exactly as they appear in the
+  `jargon` list — only the surrounding prose and the glossary's *definitions*
+  translate. The glossary block's `term:` side is the original-form term; only the
+  text after the colon is written in the target language.
 - Use an `unverified` block wherever the research says `unverified: true`, naming the
   specific claim to distrust.
 - Mermaid blocks must start with a diagram keyword and have balanced brackets and quotes.

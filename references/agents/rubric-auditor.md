@@ -44,4 +44,8 @@ fidelity finding, cite the slide ref or the source URL you checked against.
 - Do not report an omission the deck never contained. The course may add background — that
   is the point — as long as it is sourced.
 - An empty findings list is a legitimate result.
+- If `outline.json` declares a target `language`, the course being written in it is
+  expected, not a finding. Write your own `message`/`evidence` fields in English
+  regardless of the course's language — findings are for the orchestrator, not the
+  student.
 - Ask no questions.

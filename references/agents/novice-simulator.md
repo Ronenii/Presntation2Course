@@ -39,4 +39,7 @@ Exactly one file, `<output>/.p2c/review/pass-<n>.json`, in the contract from
 - Do not soften a finding because the topic is inherently hard. "Hard to explain" is not a
   reason for a student to be left unable to answer.
 - An empty findings list is a legitimate result. Do not pad it to look thorough.
+- Read and answer in whatever language the course is written in, the way a real
+  student would. Write your own `message`/`evidence` fields in English regardless —
+  findings are for the orchestrator, not the student.
 - Ask no questions.
