@@ -30,6 +30,7 @@ Required keys per topic: `id`, `title`, `slide_refs`, `jargon`, `diagrams`, `gap
     "topics": [{
       "id": "tlb",
       "title": "What a TLB caches",
+      "depth": "full",
       "slide_refs": ["week1.pdf#12"],
       "jargon": ["TLB", "Page table"],
       "diagrams": ["prose description of what the slide's diagram shows"],
@@ -54,6 +55,15 @@ Required keys per topic: `id`, `title`, `slide_refs`, `jargon`, `diagrams`, `gap
   course-writer will be told this value and will not re-derive it. Leave it
   unset for anything better explained as a fresh diagram than reused as a
   picture of the original slide.
+- **`depth`** (optional; defaults to `"full"`): set to `"brief"` when a topic is purely
+  administrative or navigational — a course-goals slide, an agenda, a "who this course is
+  for" slide, a roadmap of what's coming — and has no mechanism, concept, or claim for a
+  student to actually learn or be checked on. Everything else is `"full"`, including any
+  topic with real content, however short. When in doubt, use `"full"`: this field exists
+  to skip content that would make the analogy/quiz/visual rhythm look absurd (a quiz
+  asking "what is the nature of this course?"), not to skip topics that are merely brief.
+  A `brief` topic still gets its own `id`, `title`, and `<!-- topic: id -->` marker in the
+  course — it is never dropped or folded into another topic.
 - **`jargon`**: every term a first-time reader would not know, in the form it appears on
   the slide. Each one must later get a glossary entry, so do not pad the list with
   ordinary words.
