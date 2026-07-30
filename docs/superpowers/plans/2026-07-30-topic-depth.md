@@ -441,16 +441,16 @@ git commit -m "docs: exempt brief topics from analogy/quiz/visual findings in re
 
 ---
 
-### Task 6: README token-cost disclaimer
+### Task 6: README token-cost disclaimer and a Quick Start section
 
 **Files:**
 - Modify: `README.md`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: a visible warning in the README about token cost and a recommendation to use an auto-accept mode.
+- Produces: a visible warning in the README about token cost and a recommendation to use an auto-accept mode, plus a new "Quick Start" section for someone installing from a downloaded release tarball rather than a git checkout.
 
-- [ ] **Step 1: Edit `README.md`**
+- [ ] **Step 1: Edit `README.md`— token-cost callout**
 
 Add a new callout right after the "## Usage" section's code block (after line 39, before the "**The target language is required...**" paragraph):
 
@@ -463,13 +463,32 @@ Add a new callout right after the "## Usage" section's code block (after line 39
 > generation.
 ```
 
-- [ ] **Step 2: No automated test — README prose.** Verify by reading the rendered section back and confirming it sits before the requirements table and reads clearly on its own.
+- [ ] **Step 2: Add a new "## Quick Start" section**
 
-- [ ] **Step 3: Commit**
+This is for someone who downloaded a release archive (e.g. from GitHub Releases — see Task 8) rather than cloning the repo, and just wants to run the skill without reading the rest of the README. Add it right after "## Requirements" (i.e. after the requirements table, before "## How it works"), so a reader hits the requirements immediately before the steps that depend on them:
+
+```markdown
+## Quick Start
+
+For running this from a downloaded release rather than a git checkout:
+
+1. **Install Claude Code** (see [claude.com/claude-code](https://claude.com/claude-code)) and confirm the requirements above (`python3` with the packages in `requirements.txt`; `soffice` only if you have PPTX input) are installed.
+2. Create a project directory, then inside it create `.claude/skills/presentation2course/` and extract the release archive's contents into that folder.
+3. Copy your lecture deck (PDF or PPTX) into the project directory alongside `.claude/`.
+4. Start Claude Code in that project directory and ask it to turn your deck into a course, stating the target language, e.g.:
+   ```
+   Turn ./week3.pdf into a course, language: English
+   ```
+5. When the run finishes, open the generated `<stem>-course/course.html` — double-click it, or drag it into a browser tab. It is fully self-contained; no server or network access is needed to view it.
+```
+
+- [ ] **Step 3: No automated test — README prose.** Verify by reading both new sections back in place: the token-cost callout sits before the requirements table and reads clearly on its own; the Quick Start section sits after Requirements and before How It Works, and its step numbering and code fences render correctly as markdown (check the nested code fence inside step 4 uses a different fence length or is otherwise unambiguous — since the outer step list is not itself inside a code fence this is fine, but double check the rendered structure).
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add README.md
-git commit -m "docs: warn about token cost and recommend auto mode in the README"
+git commit -m "docs: add token-cost warning and a release-based Quick Start to the README"
 ```
 
 ---
@@ -513,8 +532,88 @@ git commit -m "test: add a brief topic to the golden course fixtures"
 
 ---
 
+### Task 8: GitHub Actions release workflow
+
+**Files:**
+- Create: `.github/workflows/release.yml`
+
+**Interfaces:**
+- Consumes: nothing from earlier tasks — this is an independent addition (CI/release automation), unrelated to the `depth`/brief-topic feature in Tasks 1-7. It can run before, after, or interleaved with those tasks with no ordering dependency.
+- Produces: a manually-triggered GitHub Actions workflow that creates a git tag, builds a release archive containing everything needed to run the skill, and publishes a GitHub Release with that archive attached — the artifact the README's new Quick Start section (Task 6) tells users to download and extract into `.claude/skills/presentation2course/`.
+
+This project has no existing `.github/workflows/` directory. The archive must contain exactly what a from-scratch install needs to run the skill standalone: `SKILL.md`, `references/`, `assets/`, `scripts/`, `requirements.txt` — excluding `tests/`, `docs/`, `requirements-dev.txt`, `pyproject.toml`, and any VCS metadata. Checking out a tagged commit already excludes gitignored files (`__pycache__/`, `.venv/`, `.pytest_cache/`, `.superpowers/`), so no separate cleanup step is needed for those.
+
+- [ ] **Step 1: Write `.github/workflows/release.yml`**
+
+```yaml
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version, e.g. v1.2.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate version format
+        run: |
+          if [[ ! "${{ inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must look like vX.Y.Z, got '${{ inputs.version }}'"
+            exit 1
+          fi
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ inputs.version }}" -m "Release ${{ inputs.version }}"
+          git push origin "${{ inputs.version }}"
+
+      - name: Build release archive
+        run: |
+          staging="presentation2course-${{ inputs.version }}"
+          mkdir "$staging"
+          cp -r SKILL.md references assets scripts requirements.txt "$staging/"
+          tar -czf "${staging}.tar.gz" "$staging"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: ${{ inputs.version }}
+          files: presentation2course-${{ inputs.version }}.tar.gz
+          generate_release_notes: true
+```
+
+- [ ] **Step 2: No automated test — CI workflow file.** This cannot be exercised by pytest. Verify by reading the YAML back for syntax sanity (correct indentation, `${{ }}` expressions balanced) and, if you have `actionlint` available, run it:
+
+Run: `actionlint .github/workflows/release.yml 2>/dev/null || echo "actionlint not installed, skipping lint"`
+Expected: no errors reported, or the tool is simply unavailable (not a failure — do not install new tooling for this).
+
+Confirm the version regex `^v[0-9]+\.[0-9]+\.[0-9]+$` matches the existing repository tag style by checking `git tag -l` — the repo already has a `v1.0.0` tag, which matches this pattern.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add .github/workflows/release.yml
+git commit -m "ci: add manual-dispatch GitHub Actions release workflow"
+```
+
+---
+
 ## Self-review notes
 
-- **Spec coverage:** Issue 1 (no forced analogy/quiz on shallow topics) → Tasks 1, 2, 3, 4. Issue 2 (no full chapter for admin content) → resolved by the "brief" rendering itself per the brainstorming decision (no separate module-folding task was requested). Issue 3 (README token disclaimer) → Task 6. Rubric/reviewer alignment → Task 5, amended during execution to also fix a novice-simulator blind spot: it never sees `outline.json`/`depth` and `<!-- no-quiz/no-visual -->` comments are invisible in rendered HTML, so its unqualified "every topic ends with a check" instruction would have false-positived on every `brief` topic — closed with a judgment-based exception in `references/agents/novice-simulator.md` itself, found by Task 4's task-review. End-to-end proof → Task 7.
+- **Spec coverage:** Issue 1 (no forced analogy/quiz on shallow topics) → Tasks 1, 2, 3, 4. Issue 2 (no full chapter for admin content) → resolved by the "brief" rendering itself per the brainstorming decision (no separate module-folding task was requested). Issue 3 (README token disclaimer) → Task 6. Rubric/reviewer alignment → Task 5, amended during execution to also fix a novice-simulator blind spot: it never sees `outline.json`/`depth` and `<!-- no-quiz/no-visual -->` comments are invisible in rendered HTML, so its unqualified "every topic ends with a check" instruction would have false-positived on every `brief` topic — closed with a judgment-based exception in `references/agents/novice-simulator.md` itself, found by Task 4's task-review. End-to-end proof → Task 7. Mid-execution additions from the user, unrelated to the depth/brief-topic feature: a release-based Quick Start README section → folded into Task 6. A GitHub Actions release workflow (manual dispatch, user-supplied version, tag + archive + GitHub Release) → Task 8, independent of Tasks 1-7.
 - **Backward compatibility:** every existing outline (no `depth` field) validates and builds identically, since `depth` is optional and defaults to `"full"` everywhere it's read; `topics_missing_quiz` reproduces the old zero-count check exactly for any topic with no `no-quiz` comment.
 - **Type/name consistency checked:** `topics_missing_quiz` (mdrender) is the name used consistently in Task 2's test additions and Task 2's `validate.py` change; `TOPIC_DEPTHS` (outline.py) matches `depth`'s two allowed values `"full"`/`"brief"` used identically in Tasks 3 and 4's doc text and Task 7's fixture.
