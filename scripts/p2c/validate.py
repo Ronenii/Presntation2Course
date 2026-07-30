@@ -164,18 +164,18 @@ def validate_course(rendered: Rendered, outline: dict, html_text: str) -> list[F
                 )
             )
 
-    # 5: every present topic has at least one quiz.
+    # 5: every present topic has a quiz, or an explicit non-quizzable justification.
     anchor_of_topic = {v: k for k, v in topics.items()}
-    for topic_id, count in sorted(rendered.quizzes_per_topic.items()):
-        if count == 0:
-            findings.append(
-                _finding(
-                    "topic_without_quiz",
-                    f"topic {topic_id!r} has no valid quiz",
-                    topic=topic_id,
-                    module=modules.get(anchor_of_topic.get(topic_id, "")),
-                )
+    for topic_id in rendered.topics_missing_quiz:
+        findings.append(
+            _finding(
+                "topic_without_quiz",
+                f"topic {topic_id!r} has no valid quiz and no "
+                "<!-- no-quiz: ... --> justification",
+                topic=topic_id,
+                module=modules.get(anchor_of_topic.get(topic_id, "")),
             )
+        )
 
     # 5b: every present topic has a visual, or an explicit non-spatial justification.
     for topic_id in rendered.topics_missing_visual:

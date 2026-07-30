@@ -509,6 +509,36 @@ def test_a_no_visual_comment_justifies_skipping_the_visual():
     assert rendered.topics_missing_visual == []
 
 
+def test_a_no_quiz_comment_justifies_a_topic_with_zero_quizzes():
+    md = course(
+        '<!-- topic: goals -->\n### Course Goals\n\n'
+        'This course covers the TLB and thrashing.\n\n'
+        '<!-- no-quiz: brief administrative topic, nothing to check -->\n'
+    )
+    rendered = render_course(md)
+    assert rendered.quizzes_per_topic["goals"] == 0
+    assert "goals" not in rendered.topics_missing_quiz
+
+
+def test_a_topic_with_zero_quizzes_and_no_justification_is_still_missing():
+    md = course(
+        '<!-- topic: goals -->\n### Course Goals\n\nJust prose, no quiz, no comment.\n'
+    )
+    rendered = render_course(md)
+    assert "goals" in rendered.topics_missing_quiz
+
+
+def test_a_real_quiz_is_never_downgraded_by_a_stray_no_quiz_comment():
+    md = course(
+        '<!-- topic: goals -->\n### Course Goals\n\n'
+        '<!-- no-quiz: irrelevant leftover comment -->\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.quizzes_per_topic["goals"] == 1
+    assert "goals" not in rendered.topics_missing_quiz
+
+
 def test_a_figure_or_animate_block_also_counts_as_a_visual():
     md = course(
         '<!-- topic: bare -->\n### Bare topic\n\n'
