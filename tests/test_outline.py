@@ -219,6 +219,26 @@ def test_load_outline_accepts_the_good_case(tmp_path):
     assert load_outline(path)["title"] == "Operating Systems"
 
 
+def test_depth_is_optional():
+    obj = outline()
+    assert "depth" not in obj["modules"][0]["topics"][0]
+    assert validate_outline(obj) == []
+
+
+def test_depth_accepts_full_and_brief():
+    for value in ("full", "brief"):
+        obj = outline()
+        obj["modules"][0]["topics"][0]["depth"] = value
+        assert validate_outline(obj) == []
+
+
+def test_depth_rejects_an_unknown_value():
+    obj = outline()
+    obj["modules"][0]["topics"][0]["depth"] = "medium"
+    problems = validate_outline(obj)
+    assert any("depth" in p for p in problems)
+
+
 def test_published_schema_matches_the_validator():
     schema = json.loads((REPO / "references" / "outline-schema.json").read_text())
     topic = schema["$defs"]["topic"]

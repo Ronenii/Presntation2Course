@@ -84,6 +84,11 @@
           "type": "string",
           "pattern": "^.+#[0-9]+$",
           "description": "Optional. Set only when a slide's own diagram or photo is worth reusing verbatim instead of being redrawn. At most one per topic."
+        },
+        "depth": {
+          "enum": ["full", "brief"],
+          "default": "full",
+          "description": "Optional. 'brief' marks a topic as purely administrative/navigational (course goals, agenda, roadmap) with no mechanism or claim to teach or check -- the writer renders plain prose only, with no analogy, visual, or quiz. Defaults to 'full' when absent."
         }
       }
     }
