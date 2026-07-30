@@ -35,8 +35,22 @@ def check_course(out_dir: Path, *, require_pdf: bool = False) -> list[str]:
     rendered = render_course(course_md.read_text(encoding="utf-8"))
     html_text = course_html.read_text(encoding="utf-8")
 
+    # validate_course's network-request scan is unconditional text matching. When a
+    # course has a diagram, the shipped HTML inlines the vendored mermaid bundle (always
+    # the first of exactly two <script> tags right before </body>), which legitimately
+    # contains ~28 inert `fetch(` calls as ordinary bundled-library code -- already
+    # vetted once, at the asset level, by its own sha256 pin (see
+    # test_assets.py::test_vendored_mermaid_matches_the_pin). Strip that one script
+    # block before this specific call only, so course-authored content is still fully
+    # checked but the vendor bundle isn't re-scanned. Mirrors build.py's approach of
+    # validating a copy rendered with inline_mermaid=False, adapted for the fact that
+    # check_course only has the already-shipped html_text to work with.
+    validation_html = html_text
+    if rendered.uses_mermaid:
+        validation_html = re.sub(r"<script>.*?</script>", "", html_text, count=1, flags=re.DOTALL)
+
     # Everything the build already knows how to check, re-checked against what shipped.
-    for finding in blocking(validate_course(rendered, outline, html_text)):
+    for finding in blocking(validate_course(rendered, outline, validation_html)):
         problems.append(f"{finding.code}: {finding.message}")
 
     # HTML-level integrity the markdown layer cannot see.

@@ -110,6 +110,19 @@ def test_a_real_pdf_satisfies_the_page_count_invariant(course_dir):
     assert check_course(course_dir, require_pdf=True) == []
 
 
+def test_a_course_with_a_diagram_is_not_falsely_flagged_as_reaching_the_network(tmp_path):
+    modules = tmp_path / "modules"
+    modules.mkdir()
+    for name in ("01-virtual-memory.md", "02-scheduling.md"):
+        modules.joinpath(name).write_text((MINI / "modules" / name).read_text())
+    with modules.joinpath("02-scheduling.md").open("a") as handle:
+        handle.write("\n```mermaid\nflowchart LR\n  A[Run] --> B[Queue]\n```\n")
+    build(MINI / "outline.json", modules, tmp_path / "out", ASSETS)
+    (tmp_path / "out" / ".p2c").mkdir(exist_ok=True)
+    (tmp_path / "out" / ".p2c" / "outline.json").write_text((MINI / "outline.json").read_text())
+    assert check_course(tmp_path / "out") == []
+
+
 @pytest.mark.skipif(
     not os.environ.get("P2C_COURSE_DIR"), reason="set P2C_COURSE_DIR to grade a real run"
 )
