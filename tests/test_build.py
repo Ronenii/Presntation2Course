@@ -76,7 +76,7 @@ def test_mermaid_is_inlined_once_when_a_diagram_is_present(tmp_path):
     result = build(MINI / "outline.json", modules, tmp_path / "out", ASSETS)
     html = result.course_html.read_text()
     assert html.count("__esbuild_esm_mermaid_nm") >= 1
-    assert html.count('<div class="mermaid">') == 1
+    assert html.count('<div class="mermaid" dir="ltr">') == 1
     assert [f.code for f in result.findings] == []
 
 

@@ -269,7 +269,7 @@ def render_course(course_md: str) -> Rendered:
             else:
                 uses_mermaid = True
                 replacements[fence.token] = (
-                    f'<div class="mermaid">{html.escape(fence.body)}</div>'
+                    f'<div class="mermaid" dir="ltr">{html.escape(fence.body)}</div>'
                 )
         elif fence.kind == "glossary":
             replacements[fence.token] = ""

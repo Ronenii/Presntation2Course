@@ -137,7 +137,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 }
 .quiz__answer[hidden], .quiz__why[hidden] { display: none; }
 
-.mermaid { margin: var(--space-6) 0; text-align: center; overflow-x: auto; }
+.mermaid { margin: var(--space-6) 0; text-align: center; overflow-x: auto; direction: ltr; }
 .mermaid svg { max-width: 100%; height: auto; }
 .diagram-fallback {
   margin: var(--space-6) 0; padding: var(--space-4);

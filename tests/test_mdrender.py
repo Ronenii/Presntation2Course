@@ -154,7 +154,7 @@ def test_unverified_callout_is_supported():
 
 def test_mermaid_blocks_become_divs_and_set_the_flag():
     r = render_course(course(MODULE))
-    assert '<div class="mermaid">flowchart LR' in r.html_body
+    assert '<div class="mermaid" dir="ltr">flowchart LR' in r.html_body
     assert r.uses_mermaid is True
     # Escaped in the source, decoded back to "-->" by textContent when Mermaid reads it.
     assert "--&gt; TLB" in r.html_body
