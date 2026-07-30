@@ -13,7 +13,7 @@ from pathlib import Path
 from p2c.assemble import assemble
 from p2c.mdrender import Rendered, render_course
 from p2c.outline import load_outline
-from p2c.theme import Theme, load_theme, theme_for
+from p2c.theme import Theme, is_rtl, load_theme, theme_for
 from p2c.validate import Finding, blocking, findings_to_json, validate_course
 
 _PLACEHOLDER_RE = re.compile(r"\{\{[A-Z_]+\}\}")
@@ -36,6 +36,7 @@ def fill_template(
     title: str,
     source_decks: list[str],
     inline_mermaid: bool,
+    language: dict,
 ) -> str:
     decks = ", ".join(source_decks) if source_decks else "the source deck"
     substitutions = {
@@ -50,6 +51,8 @@ def fill_template(
         "{{SOURCE_DECKS}}": html.escape(decks),
         "{{MERMAID_JS}}": theme.mermaid_js if (inline_mermaid and theme.mermaid_js) else "",
         "{{COURSE_JS}}": theme.course_js,
+        "{{LANG}}": html.escape(language["code"]),
+        "{{DIR}}": "rtl" if is_rtl(language["code"]) else "ltr",
     }
     # One pass, so substituted CSS/JS/prose can never itself be treated as a placeholder.
     return _PLACEHOLDER_RE.sub(
@@ -82,6 +85,7 @@ def build(
         title=outline["title"],
         source_decks=rendered.front_matter.source_decks,
         inline_mermaid=rendered.uses_mermaid,
+        language=outline["language"],
     )
     course_html = out_dir / "course.html"
     course_html.write_text(html_text, encoding="utf-8")
@@ -102,6 +106,7 @@ def build(
         title=outline["title"],
         source_decks=rendered.front_matter.source_decks,
         inline_mermaid=False,
+        language=outline["language"],
     )
     findings = validate_course(rendered, outline, validation_html)
     findings_path = out_dir / ".p2c" / "review" / "build-findings.json"

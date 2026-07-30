@@ -3,10 +3,12 @@ import pytest
 from p2c.theme import (
     DEFAULT_THEME,
     REQUIRED_TOKENS,
+    RTL_LANGUAGES,
     THEME_FOR_DOMAIN,
     Theme,
     ThemeError,
     available_themes,
+    is_rtl,
     load_theme,
     missing_tokens,
     theme_for,
@@ -36,6 +38,29 @@ def test_domain_mapping_matches_the_design():
 )
 def test_theme_for_never_fails(domain, expected):
     assert theme_for(domain) == expected
+
+
+def test_is_rtl_recognizes_hebrew_and_arabic():
+    assert is_rtl("he") is True
+    assert is_rtl("ar") is True
+
+
+def test_is_rtl_is_false_for_ltr_languages():
+    assert is_rtl("en") is False
+    assert is_rtl("es") is False
+
+
+def test_is_rtl_is_false_for_an_unrecognized_code():
+    assert is_rtl("xx") is False
+
+
+def test_is_rtl_is_case_insensitive():
+    assert is_rtl("HE") is True
+
+
+def test_rtl_languages_are_lowercase_iso_codes():
+    assert all(code == code.lower() for code in RTL_LANGUAGES)
+    assert {"he", "ar", "fa", "ur"} <= RTL_LANGUAGES
 
 
 def _complete_css():

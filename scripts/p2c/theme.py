@@ -17,6 +17,12 @@ THEME_FOR_DOMAIN = {
     "other": "slate",
 }
 
+RTL_LANGUAGES = frozenset({"ar", "dv", "fa", "he", "ps", "sd", "ur", "yi"})
+
+
+def is_rtl(code: str) -> bool:
+    return code.lower() in RTL_LANGUAGES
+
 REQUIRED_TOKENS = (
     "--font-body",
     "--font-heading",
@@ -51,6 +57,8 @@ TEMPLATE_PLACEHOLDERS = (
     "{{SOURCE_DECKS}}",
     "{{MERMAID_JS}}",
     "{{COURSE_JS}}",
+    "{{LANG}}",
+    "{{DIR}}",
 )
 
 

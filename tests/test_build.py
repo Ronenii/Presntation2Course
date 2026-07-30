@@ -87,6 +87,23 @@ def test_course_md_is_the_source_of_truth_and_reproducible(built, tmp_path):
     assert again.course_html.read_text() == built.course_html.read_text()
 
 
+def test_the_shipped_html_declares_language_and_direction(built):
+    html = built.course_html.read_text()
+    assert 'lang="en"' in html
+    assert 'dir="ltr"' in html
+
+
+def test_an_rtl_language_gets_dir_rtl_and_its_own_lang(tmp_path):
+    outline = json.loads((MINI / "outline.json").read_text())
+    outline["language"] = {"name": "Hebrew", "code": "he"}
+    outline_path = tmp_path / "outline.json"
+    outline_path.write_text(json.dumps(outline))
+    result = build(outline_path, MINI / "modules", tmp_path / "out", ASSETS)
+    html = result.course_html.read_text()
+    assert 'lang="he"' in html
+    assert 'dir="rtl"' in html
+
+
 def test_content_reaches_the_html_with_structure(built):
     html = built.course_html.read_text()
     assert "<h1 id=\"operating-systems-foundations\">" in html
