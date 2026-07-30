@@ -1,0 +1,118 @@
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+from fixtures.make_fixtures import make_pdf
+from p2c.build import build
+from p2c.invariants import check_course
+
+REPO = Path(__file__).resolve().parents[1]
+MINI = REPO / "tests" / "fixtures" / "mini-course"
+ASSETS = REPO / "assets"
+
+
+@pytest.fixture
+def course_dir(tmp_path):
+    build(MINI / "outline.json", MINI / "modules", tmp_path, ASSETS)
+    (tmp_path / ".p2c").mkdir(exist_ok=True)
+    (tmp_path / ".p2c" / "outline.json").write_text((MINI / "outline.json").read_text())
+    return tmp_path
+
+
+def test_a_sound_course_violates_nothing(course_dir):
+    assert check_course(course_dir) == []
+
+
+def test_a_missing_artifact_is_reported(course_dir):
+    (course_dir / "course.html").unlink()
+    assert any("course.html" in p for p in check_course(course_dir))
+
+
+def test_a_dropped_topic_is_caught(course_dir):
+    md = course_dir / "course.md"
+    text = md.read_text()
+    start = text.index("<!-- topic: thrashing -->")
+    end = text.index("## Scheduling")
+    md.write_text(text[:start] + text[end:])
+    problems = check_course(course_dir)
+    assert any("thrashing" in p for p in problems)
+
+
+def test_a_topic_without_a_quiz_is_caught(course_dir):
+    md = course_dir / "course.md"
+    text = md.read_text()
+    head, _, tail = text.partition("```quiz")
+    md.write_text(head + tail.partition("```")[2])
+    assert any("quiz" in p for p in check_course(course_dir))
+
+
+def test_a_jargon_term_with_no_glossary_entry_is_caught(course_dir):
+    md = course_dir / "course.md"
+    md.write_text(md.read_text().replace("Working set: The pages", "Workingset: The pages"))
+    assert any("Working set" in p for p in check_course(course_dir))
+
+
+def test_a_placeholder_is_caught(course_dir):
+    md = course_dir / "course.md"
+    md.write_text(md.read_text().replace("The TLB is that sticky note.", "TODO write this"))
+    assert any("placeholder" in p.lower() for p in check_course(course_dir))
+
+
+def test_an_external_request_in_the_html_is_caught(course_dir):
+    html = course_dir / "course.html"
+    html.write_text(
+        html.read_text().replace("</head>", '<script src="https://cdn.example.com/x.js"></script></head>')
+    )
+    assert any("network" in p.lower() or "external" in p.lower() for p in check_course(course_dir))
+
+
+def test_a_leftover_template_placeholder_is_caught(course_dir):
+    html = course_dir / "course.html"
+    html.write_text(html.read_text().replace("<h1", "{{CONTENT}}<h1", 1))
+    assert any("{{CONTENT}}" in p for p in check_course(course_dir))
+
+
+def test_a_toc_link_with_no_target_is_caught(course_dir):
+    html = course_dir / "course.html"
+    html.write_text(html.read_text().replace('href="#thrashing"', 'href="#nowhere"'))
+    assert any("nowhere" in p for p in check_course(course_dir))
+
+
+def test_a_term_control_with_no_glossary_target_is_caught(course_dir):
+    html = course_dir / "course.html"
+    html.write_text(html.read_text().replace('id="def-tlb"', 'id="def-tee-el-bee"'))
+    assert any("def-tlb" in p for p in check_course(course_dir))
+
+
+def test_the_quiz_count_must_survive_rendering(course_dir):
+    html = course_dir / "course.html"
+    text = html.read_text()
+    start = text.index('<div class="quiz"')
+    end = text.index("</div>", start) + len("</div>")
+    html.write_text(text[:start] + text[end:])
+    assert any("quiz" in p for p in check_course(course_dir))
+
+
+def test_the_pdf_is_only_required_when_asked(course_dir):
+    assert check_course(course_dir, require_pdf=False) == []
+    assert any("course.pdf" in p for p in check_course(course_dir, require_pdf=True))
+
+
+def test_a_zero_page_pdf_is_caught(course_dir):
+    (course_dir / "course.pdf").write_bytes(make_pdf([]))
+    assert any("course.pdf" in p for p in check_course(course_dir, require_pdf=True))
+
+
+def test_a_real_pdf_satisfies_the_page_count_invariant(course_dir):
+    (course_dir / "course.pdf").write_bytes(make_pdf([["a"], ["b"]]))
+    assert check_course(course_dir, require_pdf=True) == []
+
+
+@pytest.mark.skipif(
+    not os.environ.get("P2C_COURSE_DIR"), reason="set P2C_COURSE_DIR to grade a real run"
+)
+def test_a_real_run_is_sound():
+    problems = check_course(Path(os.environ["P2C_COURSE_DIR"]), require_pdf=False)
+    assert problems == [], "\n".join(problems)

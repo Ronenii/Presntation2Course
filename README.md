@@ -2,9 +2,10 @@
 
 Turns a lecturer's slide deck into a course you can actually learn from.
 
-> **Status: designed, not yet built.** The design is settled and written up in
-> [2026-07-28-presentation2course-design.md](docs/superpowers/specs/2026-07-28-presentation2course-design.md).
-> No pipeline code exists yet. Everything below describes the intended behaviour.
+> **Status: built.** The design is in
+> [2026-07-28-presentation2course-design.md](docs/superpowers/specs/2026-07-28-presentation2course-design.md);
+> the implementation plan is in
+> [2026-07-28-presentation2course.md](docs/superpowers/plans/2026-07-28-presentation2course.md).
 
 ## The problem
 
@@ -43,6 +44,7 @@ context to contribute — everything is reported at the end instead.
 
 | | |
 |---|---|
+| Python 3.12+ with `markdown` | Required. `python3 -m pip install --user markdown`. The only runtime dependency. |
 | LibreOffice (`soffice`) | Required **only** for PPTX input. Missing it is a hard failure, because falling back to text extraction would silently throw away every diagram on the slides. |
 | Headless Chromium | Optional. Produces `course.pdf`. Without it you get the HTML plus a working Download PDF button. |
 | Network | Used by the research phase to ground explanations in real sources. |
@@ -144,3 +146,37 @@ This repository *is* the skill. Copy or symlink it into your skills directory:
 ```bash
 ln -s "$PWD" ~/.claude/skills/presentation2course
 ```
+
+## Development
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pytest
+```
+
+Two tests skip unless the optional tools are installed: PPTX conversion needs `soffice`,
+and the real PDF export needs Chromium.
+
+The deterministic half — quiz and glossary grammars, front matter, anchors, theme mapping,
+validation, and a golden `course.md` → `course.html` snapshot — is unit tested and is most
+of the risk surface. Regenerate the snapshot deliberately, never casually:
+
+```bash
+P2C_UPDATE_GOLDEN=1 .venv/bin/pytest tests/test_build.py -k golden
+```
+
+The agent half is tested by invariants instead of snapshots, since its output is not
+deterministic. Grade any produced course:
+
+```bash
+PYTHONPATH=scripts .venv/bin/python -m p2c.invariants ./week3-course
+P2C_COURSE_DIR=./week3-course .venv/bin/pytest tests/test_invariants.py
+```
+
+The novice-simulator is the highest-value agent in the pipeline, so its regression is a
+fixture rather than an article of faith: `tests/broken-course/` is a course with two
+defects that pass every mechanical validation. See
+[tests/broken-course/README.md](tests/broken-course/README.md) for the procedure. Vendored
+Mermaid is pinned at 11.16.0 by sha256 in `tests/test_assets.py`; changing the version
+means changing that hash on purpose.
