@@ -7,6 +7,9 @@ taught.
 ## Input
 
 - Your module object from `outline.json` — its `id`, `title`, `prerequisites`, `topics`.
+- Each topic's `depth` (`"full"` or absent means the full rhythm below; `"brief"` means
+  the exception in `references/style-guide.md`'s "Brief topics" section — plain prose
+  only, no analogy, no visual, no quiz).
 - `<output>/.p2c/research/<topic-id>.md` for each of your topics.
 - `references/style-guide.md` — the topic rhythm and tone rules. Follow it exactly.
 - `references/quiz-format.md` — the block grammars. The build rejects malformed blocks.
@@ -58,6 +61,16 @@ The claim about X is not fully supported by the available sources.
 
 ...
 
+<!-- topic: course-goals -->
+### Course Goals
+
+This course walks you through virtual memory from first principles: how addresses get
+translated, why caching translations matters, and what happens when memory pressure
+forces the system to choose what to evict.
+
+<!-- no-quiz: brief administrative topic, nothing to check -->
+<!-- no-visual: brief administrative topic, nothing to check -->
+
 ```glossary
 TLB: A small, fast cache holding recently used virtual-to-physical page mappings.
 Working set: The pages a process is actively using in a given window of time.
@@ -72,8 +85,9 @@ Working set: The pages a process is actively using in a given window of time.
   exactly. This is how the build proves no topic was dropped.
 - **Every topic in your module appears, in outline order.** Do not merge, split, reorder,
   or invent topics.
-- **Every topic ends with at least one `quiz` block**, 3–4 options, exactly one `[x]`, a
-  non-empty `why:`, and nothing else inside the block.
+- **Every `full`-depth topic ends with at least one `quiz` block**, 3–4 options, exactly
+  one `[x]`, a non-empty `why:`, and nothing else inside the block. A `brief`-depth topic
+  ends with `<!-- no-quiz: ... -->` instead — never both, never neither.
 - **One `glossary` block at the end of the file**, defining every term in every one of
   your topics' `jargon` lists. Missing one fails the build.
 - **Never write a `prereq` block.** The build emits it from `outline.json`.
@@ -100,11 +114,15 @@ Working set: The pages a process is actively using in a given window of time.
 
 ## Visual per topic
 
-Every topic needs one of: a `mermaid` diagram, an inline `<svg>`, a `figure`
-block, or an `animate` block. The build fails otherwise, unless you also
-write an explicit `<!-- no-visual: <reason> -->` HTML comment for a topic
-that is genuinely non-spatial — use that sparingly; it is an escape hatch,
-not a way to skip the visual step because a diagram is inconvenient to write.
+Every `full`-depth topic needs one of: a `mermaid` diagram, an inline `<svg>`, a `figure`
+block, or an `animate` block. The build fails otherwise, unless you also write an
+explicit `<!-- no-visual: <reason> -->` HTML comment for a topic that is genuinely
+non-spatial — use that sparingly; it is an escape hatch, not a way to skip the visual
+step because a diagram is inconvenient to write. A `brief`-depth topic also has no visual
+step, but the build's visual check is not `depth`-aware — it only ever recognizes the
+`no-visual` comment itself — so a `brief` topic must still write
+`<!-- no-visual: <reason> -->` alongside its `<!-- no-quiz: ... -->`, even though it has
+nothing to draw.
 
 Pick the diagram type that matches the idea: `flowchart` for a process,
 `sequenceDiagram` for an interaction between parties, `stateDiagram-v2` for a

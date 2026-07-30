@@ -34,3 +34,15 @@ why: The tempting answer is that responsiveness is free. It is not — the switc
 ```glossary
 Quantum: The fixed slice of CPU time one process is allowed before the scheduler moves on.
 ```
+
+<!-- topic: course-goals -->
+### Course Goals
+
+This course walks you through virtual memory from first principles: how addresses get
+translated, why caching translations matters, and what happens when memory pressure
+forces the system to choose what to evict. From there it moves to scheduling, where you
+will see how the system decides who runs next once several programs are ready at once.
+
+<!-- no-quiz: brief administrative topic, nothing to check -->
+
+<!-- no-visual: an agenda summary has no mechanism to diagram; the two topics it previews already carry their own visuals. -->

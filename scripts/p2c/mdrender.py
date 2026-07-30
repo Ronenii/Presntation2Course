@@ -184,6 +184,7 @@ def _animate_html(anim: Animate) -> str:
 _TOPIC_MARKER = re.compile(r"^\s*<!--\s*topic:\s*(?P<id>[^\s>]+)\s*-->\s*$")
 _HEADING = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<text>.+?)\s*$")
 _NO_VISUAL = re.compile(r"^\s*<!--\s*no-visual:\s*.+-->\s*$")
+_NO_QUIZ = re.compile(r"^\s*<!--\s*no-quiz:\s*.+-->\s*$")
 _VISUAL_FENCE_KINDS = {"mermaid", "figure", "animate"}
 
 
@@ -286,6 +287,7 @@ class Rendered:
     quiz_count: int = 0
     uses_mermaid: bool = False
     topics_missing_visual: list[str] = field(default_factory=list)
+    topics_missing_quiz: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -349,6 +351,7 @@ def render_course(course_md: str) -> Rendered:
     anchors = AnchorAllocator()
     sections: list[Section] = []
     topic_visual_status: dict[str, str] = {}
+    topic_quiz_status: dict[str, str] = {}
     out: list[str] = []
     buffer: list[str] = []
     token_owner: dict[str, tuple[str, str | None]] = {}
@@ -398,6 +401,8 @@ def render_course(course_md: str) -> Rendered:
                 _note_visual(topic_visual_status, current[1], "visual")
             elif _NO_VISUAL.match(line):
                 _note_visual(topic_visual_status, current[1], "justified")
+            elif _NO_QUIZ.match(line):
+                topic_quiz_status[current[1]] = "justified"
         buffer.append(line)
     flush()
 
@@ -425,6 +430,7 @@ def render_course(course_md: str) -> Rendered:
             quiz_count += 1
             if topic_id:
                 quizzes_per_topic[topic_id] = quizzes_per_topic.get(topic_id, 0) + 1
+                topic_quiz_status[topic_id] = "has_quiz"
         elif fence.kind == "mermaid":
             problem = mermaid_problem(fence.body)
             if problem:
@@ -471,6 +477,11 @@ def render_course(course_md: str) -> Rendered:
         if topic_visual_status.get(tid) not in ("visual", "justified")
     ]
 
+    topics_missing_quiz = [
+        tid for tid in dict.fromkeys(s.topic_id for s in sections if s.topic_id)
+        if quizzes_per_topic.get(tid, 0) == 0 and topic_quiz_status.get(tid) != "justified"
+    ]
+
     return Rendered(
         front_matter=front_matter,
         html_body=html_body,
@@ -482,5 +493,6 @@ def render_course(course_md: str) -> Rendered:
         quiz_count=quiz_count,
         uses_mermaid=uses_mermaid,
         topics_missing_visual=topics_missing_visual,
+        topics_missing_quiz=topics_missing_quiz,
         errors=errors,
     )

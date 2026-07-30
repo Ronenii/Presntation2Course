@@ -40,6 +40,15 @@
           "jargon": ["Quantum"],
           "diagrams": [],
           "gaps": ["How quantum length trades latency against throughput"]
+        },
+        {
+          "id": "course-goals",
+          "title": "Course Goals",
+          "slide_refs": ["week1.pdf#1"],
+          "jargon": [],
+          "diagrams": [],
+          "gaps": [],
+          "depth": "brief"
         }
       ]
     }

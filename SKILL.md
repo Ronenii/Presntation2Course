@@ -160,6 +160,11 @@ For every module, dispatch one subagent with
   since topic objects are passed verbatim — no separate step needed here,
   but the writer must be told about it via the dispatch text, not left to
   notice it buried in the JSON.
+- each topic's `depth` also flows through automatically since topic objects are passed
+  verbatim, but — same as `reusable_image` — the writer must be told what it means via
+  the dispatch text (see `references/agents/course-writer.md` and
+  `references/style-guide.md`'s "Brief topics" section), not left to infer it from the
+  bare string.
 - the contents of `<output>/.p2c/research/<topic-id>.md` for each of its topics,
 - the paths `<SKILL>/references/style-guide.md` and `<SKILL>/references/quiz-format.md`,
 - its literal, exact output path — `<output>/.p2c/modules/<the-computed-filename>` from

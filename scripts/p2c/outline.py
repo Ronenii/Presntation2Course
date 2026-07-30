@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 SUBJECT_DOMAINS = ("systems", "theory", "life-sciences", "other")
+TOPIC_DEPTHS = ("full", "brief")
 REQUIRED_TOP = ("title", "subject_domain", "source_decks", "modules", "language")
 REQUIRED_MODULE = ("id", "title", "prerequisites", "topics")
 REQUIRED_TOPIC = ("id", "title", "slide_refs", "jargon", "diagrams", "gaps")
@@ -138,6 +139,11 @@ def validate_outline(obj: object) -> list[str]:
                         f"{twhere}.reusable_image must look like 'deck.pdf#12', "
                         f"got {image_ref!r}"
                     )
+            if "depth" in topic and topic["depth"] not in TOPIC_DEPTHS:
+                problems.append(
+                    f"{twhere}.depth must be one of {list(TOPIC_DEPTHS)}, "
+                    f"got {topic['depth']!r}"
+                )
             tid = topic.get("id")
             if isinstance(tid, str):
                 if tid in seen_topics:

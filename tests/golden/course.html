@@ -340,6 +340,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 <li class="toc__module"><a href="#scheduling">Scheduling</a>
 <ul class="toc__topics">
 <li class="toc__topic"><a href="#round-robin">Round robin</a></li>
+<li class="toc__topic"><a href="#course-goals">Course Goals</a></li>
 </ul></li>
 </ul>
     </nav>
@@ -414,6 +415,14 @@ programs feel sluggish.</p>
 <p class="quiz__why" id="round-robin-q1-why" hidden>The tempting answer is that responsiveness is free. It is not — the switching overhead is real work the CPU does instead of running your program.</p>
 </div>
 
+<h3 id="course-goals">Course Goals</h3>
+<p>This course walks you through virtual memory from first principles: how addresses get
+translated, why caching translations matters, and what happens when memory pressure
+forces the system to choose what to evict. From there it moves to scheduling, where you
+will see how the system decides who runs next once several programs are ready at once.</p>
+<!-- no-quiz: brief administrative topic, nothing to check -->
+
+<!-- no-visual: an agenda summary has no mechanism to diagram; the two topics it previews already carry their own visuals. -->
     <section class="appendix">
       <h2 id="glossary">Glossary</h2>
       <dl class="glossary">

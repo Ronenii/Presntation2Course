@@ -116,6 +116,12 @@ def test_a_topic_with_no_quiz_is_blocking_and_names_the_topic():
     assert missing[0].blocking is True
 
 
+def test_a_no_quiz_comment_suppresses_topic_without_quiz():
+    body = "Plain prose only.\n\n<!-- no-quiz: brief administrative topic, nothing to check -->"
+    findings = check(course(tlb_body=body))
+    assert "topic_without_quiz" not in codes(findings)
+
+
 def test_a_topic_with_no_visual_and_no_justification_is_blocking():
     findings = check(course(tlb_body="The TLB is fast, with nothing spatial about it drawn."))
     missing = [f for f in findings if f.code == "topic_without_visual"]

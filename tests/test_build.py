@@ -232,7 +232,7 @@ def test_cli_exit_0_and_json_summary(tmp_path):
     summary = json.loads(proc.stdout)
     assert summary["theme"] == "slate"
     assert summary["quiz_count"] == 3
-    assert summary["topics"] == 3
+    assert summary["topics"] == 4
     assert summary["blocking"] == []
     assert summary["uses_mermaid"] is False
     assert summary["course_html"].endswith("course.html")

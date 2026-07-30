@@ -2,11 +2,6 @@
 
 Turns a lecturer's slide deck into a course you can actually learn from.
 
-> **Status: built.** The design is in
-> [2026-07-28-presentation2course-design.md](docs/superpowers/specs/2026-07-28-presentation2course-design.md);
-> the implementation plan is in
-> [2026-07-28-presentation2course.md](docs/superpowers/plans/2026-07-28-presentation2course.md).
-
 ## The problem
 
 Lecturers build decks as prompts for themselves. Terse bullets, dense jargon, no
@@ -38,6 +33,13 @@ Turn ./lectures/ into a course, language: Spanish
 A single file becomes a single course. A directory becomes one multi-module course
 covering the whole set. Both PDF and PPTX work.
 
+> **Token cost.** A single run dispatches one agent per topic (research), one agent per
+> module (writing), plus two review agents for up to three passes — a modest deck can
+> mean dozens of agent calls. Running with an auto-accept/auto mode (so the run isn't
+> paused for approval at every one of those dispatches and every script step) is strongly
+> recommended; otherwise expect frequent permission prompts throughout a single course
+> generation.
+
 **The target language is required, every time** — there is no default. Every piece of
 student-authored content — prose, analogies, quizzes, and glossary definitions — is
 written in that language; jargon terms themselves stay in their original form inline,
@@ -59,6 +61,19 @@ you have no context to contribute — everything is reported at the end instead.
 | LibreOffice (`soffice`) | Required **only** for PPTX input. Missing it is a hard failure, because falling back to text extraction would silently throw away every diagram on the slides. |
 | Headless Chromium | Optional. Produces `course.pdf`. Without it you get the HTML plus a working Download PDF button. |
 | Network | Used by the research phase to ground explanations in real sources. |
+
+## Quick Start
+
+For running this from a downloaded release rather than a git checkout:
+
+1. **Install Claude Code** (see [claude.com/claude-code](https://claude.com/claude-code)) and confirm the requirements above (`python3` with the packages in `requirements.txt`; `soffice` only if you have PPTX input) are installed.
+2. Create a project directory, then inside it create `.claude/skills/presentation2course/` and extract the release archive's contents into that folder.
+3. Copy your lecture deck (PDF or PPTX) into the project directory alongside `.claude/`.
+4. Start Claude Code in that project directory and ask it to turn your deck into a course, stating the target language, e.g.:
+   ```
+   Turn ./week3.pdf into a course, language: English
+   ```
+5. When the run finishes, open the generated `<stem>-course/course.html` — double-click it, or drag it into a browser tab. It is fully self-contained; no server or network access is needed to view it.
 
 ## How it works
 
