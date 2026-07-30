@@ -305,15 +305,28 @@ Add a new section right after "## The topic rhythm — fixed, in this order" (be
 
 A topic marked `"depth": "brief"` in the outline skips the rhythm above entirely. Write
 1–2 short plain-language paragraphs and stop: no `analogy` block, no visual, no worked
-example, no `quiz`. Close the topic with `<!-- no-quiz: brief administrative topic -->`
-(or a more specific reason) instead of a quiz block — that comment is what tells the
-build this topic was deliberately left unchecked, not that a quiz was forgotten.
+example, no `quiz`. Close the topic with **both** `<!-- no-quiz: brief administrative
+topic -->` and `<!-- no-visual: brief administrative topic -->` (or a more specific
+reason) instead of a quiz block or a diagram — those comments are what tell the build
+this topic was deliberately left unchecked and undiagrammed, not that a quiz or a visual
+was forgotten. The build has no awareness of `depth` itself; it only ever recognizes
+these two justification comments, so both are required even though the topic is `brief`.
 
 This is not a shortcut for content that is merely short — a two-sentence topic with a
 real mechanism to check still gets the full rhythm, just briefly. `brief` is only for
 topics the outline flagged as having nothing to teach or check in the first place (course
 goals, an agenda, a roadmap slide).
 ```
+
+**Correction (found during Task 7's execution):** the text below originally claimed a
+`brief` topic needs *neither* a visual *nor* a `no-visual` comment. That was wrong — the
+build's visual-coverage check (`topic_without_visual` in `scripts/p2c/validate.py`,
+backed by `scripts/p2c/mdrender.py`) has no `depth`-awareness at all and is unconditional,
+exactly like the quiz check before Task 2 added `no-quiz`. A brief topic that omits
+`no-visual` fails the build. The corrected requirement — a `brief` topic needs **both**
+`no-quiz` and `no-visual` — is reflected in the corrected section above and in the Step 2
+edits below; if you are implementing this plan fresh (rather than fixing an
+already-applied Task 4), use the corrected wording only and disregard this note.
 
 - [ ] **Step 2: Edit `references/agents/course-writer.md`**
 
@@ -336,6 +349,7 @@ translated, why caching translations matters, and what happens when memory press
 forces the system to choose what to evict.
 
 <!-- no-quiz: brief administrative topic, nothing to check -->
+<!-- no-visual: brief administrative topic, nothing to check -->
 ````
 
 Update the "Mechanical requirements" bullet that currently reads "**Every topic ends with at least one `quiz` block**...":
@@ -353,8 +367,11 @@ Every `full`-depth topic needs one of: a `mermaid` diagram, an inline `<svg>`, a
 block, or an `animate` block. The build fails otherwise, unless you also write an
 explicit `<!-- no-visual: <reason> -->` HTML comment for a topic that is genuinely
 non-spatial — use that sparingly; it is an escape hatch, not a way to skip the visual
-step because a diagram is inconvenient to write. A `brief`-depth topic needs neither a
-visual nor a `no-visual` comment — it has no visual step at all.
+step because a diagram is inconvenient to write. A `brief`-depth topic also has no visual
+step, but the build's visual check is not `depth`-aware — it only ever recognizes the
+`no-visual` comment itself — so a `brief` topic must still write
+`<!-- no-visual: <reason> -->` alongside its `<!-- no-quiz: ... -->`, even though it has
+nothing to draw.
 ```
 
 - [ ] **Step 3: Edit `SKILL.md`**
