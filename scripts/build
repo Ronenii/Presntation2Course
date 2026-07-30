@@ -8,12 +8,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from p2c.assemble import AssembleError  # noqa: E402
 from p2c.build import main  # noqa: E402
+from p2c.imagery import ImageryError  # noqa: E402
 from p2c.outline import OutlineError  # noqa: E402
 from p2c.theme import ThemeError  # noqa: E402
 
 if __name__ == "__main__":
     try:
         sys.exit(main(sys.argv[1:]))
-    except (AssembleError, OutlineError, ThemeError) as exc:
+    except (AssembleError, OutlineError, ThemeError, ImageryError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

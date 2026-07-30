@@ -1,7 +1,7 @@
 `````markdown
 # Content block formats
 
-Six fenced block kinds are meaningful to the build. Anything else is rendered as an
+Seven fenced block kinds are meaningful to the build. Anything else is rendered as an
 ordinary code block.
 
 ## `quiz` — one comprehension check
@@ -53,6 +53,23 @@ expressible as flow, sequence, state, or architecture; inline `<svg>` otherwise.
 
 A block that fails validation gets **one** repair attempt, then must be replaced with a
 prose description. A broken diagram never ships.
+
+## `figure` — a reused slide image
+
+````
+```figure
+source: week1.pdf#12
+caption: The lookup path, as drawn in the lecture.
+```
+````
+
+Exactly one `source:` (a `deck.pdf#page` ref, copied verbatim from the value
+the orchestrator gave you when a topic has a `reusable_image`) and one
+`caption:`, which may wrap onto indented continuation lines. The build
+resolves `source:` to the real slide image at the referenced page — the
+writer never supplies image bytes, only these two lines. An unresolvable
+source (missing deck, out-of-range page) is a hard build failure naming the
+topic and the source.
 
 ## `glossary` — the module's jargon definitions
 

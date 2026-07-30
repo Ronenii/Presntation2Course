@@ -4,6 +4,7 @@ Deterministic and side-effect-free apart from the files it writes: same inputs, 
 output. No timestamps anywhere, so reruns diff cleanly and the golden test is meaningful.
 """
 
+import base64
 import html
 import json
 import re
@@ -11,12 +12,43 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from p2c.assemble import assemble
+from p2c.imagery import ImageryError, extract_page_png
 from p2c.mdrender import Rendered, render_course
 from p2c.outline import load_outline
 from p2c.theme import Theme, is_rtl, load_theme, theme_for
 from p2c.validate import Finding, blocking, findings_to_json, validate_course
 
 _PLACEHOLDER_RE = re.compile(r"\{\{[A-Z_]+\}\}")
+
+_FIGURE_PENDING = re.compile(
+    r'<figure class="figure" data-p2c-image-pending="(?P<source>[^"]*)" '
+    r'data-p2c-topic="(?P<topic>[^"]*)"><img alt="(?P<alt>[^"]*)">'
+)
+
+
+def _resolve_figures(html_text: str, out_dir: Path) -> str:
+    def replace(match: re.Match) -> str:
+        source = html.unescape(match.group("source"))
+        topic = html.unescape(match.group("topic")) or None
+        deck, _, page_str = source.rpartition("#")
+        pdf_path = out_dir / ".p2c" / "normalized" / deck
+        try:
+            png_bytes = extract_page_png(pdf_path, int(page_str))
+        except (ImageryError, ValueError) as exc:
+            where = f"topic {topic!r}: " if topic else ""
+            raise ImageryError(
+                f"{where}figure source {source!r} could not be resolved: {exc}"
+            ) from exc
+        b64 = base64.b64encode(png_bytes).decode("ascii")
+        # The "-pending" attribute is dropped here: its whole purpose was to mark this
+        # figure as unresolved, and it no longer is. data-p2c-topic is retained (harmless,
+        # potentially useful for styling/debugging) but nothing downstream reads it back.
+        return (
+            f'<figure class="figure" data-p2c-topic="{match.group("topic")}">'
+            f'<img alt="{match.group("alt")}" src="data:image/png;base64,{b64}">'
+        )
+
+    return _FIGURE_PENDING.sub(replace, html_text)
 
 
 @dataclass
@@ -79,13 +111,16 @@ def build(
     theme_name = theme or rendered.front_matter.theme or theme_for(outline["subject_domain"])
     loaded = load_theme(Path(assets_dir), theme_name)
 
-    html_text = fill_template(
-        loaded,
-        rendered,
-        title=outline["title"],
-        source_decks=rendered.front_matter.source_decks,
-        inline_mermaid=rendered.uses_mermaid,
-        language=outline["language"],
+    html_text = _resolve_figures(
+        fill_template(
+            loaded,
+            rendered,
+            title=outline["title"],
+            source_decks=rendered.front_matter.source_decks,
+            inline_mermaid=rendered.uses_mermaid,
+            language=outline["language"],
+        ),
+        out_dir,
     )
     course_html = out_dir / "course.html"
     course_html.write_text(html_text, encoding="utf-8")
@@ -100,13 +135,16 @@ def build(
     # The vendor file's own content is already vetted once, at the asset level, and
     # cannot vary per course, so re-scanning it on every build adds no value -- only
     # course-authored/theme-boilerplate content needs checking here.
-    validation_html = fill_template(
-        loaded,
-        rendered,
-        title=outline["title"],
-        source_decks=rendered.front_matter.source_decks,
-        inline_mermaid=False,
-        language=outline["language"],
+    validation_html = _resolve_figures(
+        fill_template(
+            loaded,
+            rendered,
+            title=outline["title"],
+            source_decks=rendered.front_matter.source_decks,
+            inline_mermaid=False,
+            language=outline["language"],
+        ),
+        out_dir,
     )
     findings = validate_course(rendered, outline, validation_html)
     findings_path = out_dir / ".p2c" / "review" / "build-findings.json"

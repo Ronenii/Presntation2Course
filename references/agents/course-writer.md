@@ -94,3 +94,20 @@ Working set: The pages a process is actively using in a given window of time.
 - No `TODO`, `TBD`, `FIXME`, `XXX`, `[insert …]`, `<placeholder`, or lorem ipsum. The build
   treats any of them as a blocking finding.
 - Ask no questions. Write the file.
+
+## Visual per topic
+
+Every topic needs one of: a `mermaid` diagram, an inline `<svg>`, or a
+`figure` block. If your dispatch tells you a topic already has a
+`reusable_image` (a real slide image the summarizer flagged as worth
+reusing), do not author your own visual for that topic — write a `figure`
+block instead, restating the exact value you were given:
+
+```figure
+source: week1.pdf#12
+caption: The lookup path, as drawn in the lecture.
+```
+
+Write only the caption yourself; the `source:` value must be copied exactly
+from your dispatch, never invented or re-derived. See
+`references/quiz-format.md` for the full grammar.

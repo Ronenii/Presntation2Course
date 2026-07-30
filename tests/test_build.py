@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from p2c.build import build, main
+from p2c.imagery import ImageryError
 from p2c.theme import TEMPLATE_PLACEHOLDERS
 
 REPO = Path(__file__).resolve().parents[1]
@@ -231,3 +232,52 @@ def test_cli_exit_1_on_a_missing_module_file(tmp_path):
 
 def test_cli_exit_2_without_arguments():
     assert _run_cli().returncode == 2
+
+
+def test_a_figure_block_resolves_to_an_embedded_base64_image(tmp_path):
+    modules = tmp_path / "modules"
+    modules.mkdir()
+    for name in ("01-virtual-memory.md", "02-scheduling.md"):
+        modules.joinpath(name).write_text((MINI / "modules" / name).read_text())
+    with modules.joinpath("01-virtual-memory.md").open("a") as handle:
+        handle.write(
+            "\n```figure\nsource: terse.pdf#1\ncaption: The original slide.\n```\n"
+        )
+    out = tmp_path / "out"
+    normalized = out / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
+    result = build(MINI / "outline.json", modules, out, ASSETS)
+    html = result.course_html.read_text()
+    assert "data-p2c-image-pending" not in html
+    assert 'src="data:image/png;base64,' in html
+    assert [f.code for f in result.findings] == []
+
+
+def test_an_unresolvable_figure_source_fails_the_build_naming_topic_and_source(tmp_path):
+    modules = tmp_path / "modules"
+    modules.mkdir()
+    for name in ("01-virtual-memory.md", "02-scheduling.md"):
+        modules.joinpath(name).write_text((MINI / "modules" / name).read_text())
+    # Inserted before the "thrashing" topic marker (rather than appended at EOF) so the
+    # figure block still falls under the "tlb" topic section -- the assertion below
+    # names that topic specifically.
+    virtual_memory = modules.joinpath("01-virtual-memory.md")
+    original = virtual_memory.read_text()
+    figure_block = (
+        "\n```figure\nsource: terse.pdf#99\ncaption: Out of range.\n```\n\n"
+    )
+    assert "<!-- topic: thrashing -->" in original
+    virtual_memory.write_text(
+        original.replace("<!-- topic: thrashing -->", figure_block + "<!-- topic: thrashing -->")
+    )
+    out = tmp_path / "out"
+    normalized = out / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
+    with pytest.raises(ImageryError, match=r"topic 'tlb'.*terse\.pdf#99"):
+        build(MINI / "outline.json", modules, out, ASSETS)

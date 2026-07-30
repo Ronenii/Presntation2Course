@@ -1,6 +1,6 @@
 import pytest
 
-from p2c.mdrender import mermaid_problem, render_course
+from p2c.mdrender import FigureError, mermaid_problem, parse_figure, render_course
 
 FM = """---
 title: Operating Systems
@@ -351,3 +351,50 @@ def test_multiple_quizzes_in_one_topic_get_distinct_scoped_ids_and_are_all_count
     assert 'data-quiz="the-tlb-q2"' in r.html_body
     assert 'data-quiz="thrashing-q1"' in r.html_body
     assert r.errors == []
+
+
+def test_parse_figure_extracts_source_and_caption():
+    source, caption = parse_figure("source: week1.pdf#12\ncaption: The TLB lookup path.")
+    assert source == "week1.pdf#12"
+    assert caption == "The TLB lookup path."
+
+
+def test_parse_figure_rejects_a_missing_source():
+    with pytest.raises(FigureError, match="missing a 'source:'"):
+        parse_figure("caption: Only a caption.")
+
+
+def test_parse_figure_rejects_a_missing_caption():
+    with pytest.raises(FigureError, match="missing a 'caption:'"):
+        parse_figure("source: week1.pdf#12")
+
+
+def test_parse_figure_rejects_a_malformed_source_ref():
+    with pytest.raises(FigureError, match="must look like 'deck.pdf#12'"):
+        parse_figure("source: week1.pdf\ncaption: Missing the page number.")
+
+
+def test_figure_block_renders_a_pending_placeholder():
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```figure\nsource: week1.pdf#12\ncaption: The lookup path.\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    assert 'data-p2c-image-pending="week1.pdf#12"' in rendered.html_body
+    assert 'data-p2c-topic="tlb"' in rendered.html_body
+    assert '<figcaption>The lookup path.</figcaption>' in rendered.html_body
+    assert '<img alt="The lookup path.">' in rendered.html_body
+
+
+def test_a_broken_figure_block_becomes_an_error_not_a_crash():
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```figure\ncaption: No source at all.\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert any("figure" in e for e in rendered.errors)

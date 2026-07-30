@@ -24,7 +24,7 @@ from p2c.glossary import (
 from p2c.quiz import QuizError, parse_quiz, quiz_to_html
 from p2c.text import AnchorAllocator
 
-HANDLED_KINDS = ("quiz", "mermaid", "glossary", "analogy", "prereq", "unverified")
+HANDLED_KINDS = ("quiz", "mermaid", "glossary", "analogy", "prereq", "unverified", "figure")
 MERMAID_KEYWORDS = (
     "flowchart", "graph", "sequenceDiagram", "stateDiagram", "stateDiagram-v2",
     "classDiagram", "erDiagram", "journey", "gantt", "pie", "mindmap", "timeline",
@@ -35,6 +35,59 @@ CALLOUT_LABELS = {
     "prereq": "Before this module",
     "unverified": "Not fully verified",
 }
+
+_FIGURE_KEY = re.compile(r"^(?P<key>source|caption):\s*(?P<value>.*)$")
+_FIGURE_SOURCE = re.compile(r"^.+#\d+$")
+
+
+class FigureError(ValueError):
+    """A figure block that does not satisfy the grammar."""
+
+
+def parse_figure(body: str) -> tuple[str, str]:
+    source: str | None = None
+    caption: str | None = None
+    current: str | None = None
+
+    for raw in body.split("\n"):
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+        key = _FIGURE_KEY.match(line)
+        if key:
+            name, value = key.group("key"), key.group("value").strip()
+            if name == "source":
+                if source is not None:
+                    raise FigureError("figure has more than one 'source:' line")
+                source, current = value, "source"
+            else:
+                if caption is not None:
+                    raise FigureError("figure has more than one 'caption:' line")
+                caption, current = value, "caption"
+            continue
+        if current == "caption" and raw and raw[0].isspace():
+            caption = f"{caption} {line.strip()}".strip()
+            continue
+        raise FigureError(f"unrecognised line in figure block: {line.strip()!r}")
+
+    if not source:
+        raise FigureError("figure is missing a 'source:' line")
+    if not caption:
+        raise FigureError("figure is missing a 'caption:' line")
+    if not _FIGURE_SOURCE.match(source):
+        raise FigureError(f"figure source {source!r} must look like 'deck.pdf#12'")
+    return source, caption
+
+
+def _figure_html(source: str, caption: str, topic_id: str | None) -> str:
+    return (
+        f'<figure class="figure" data-p2c-image-pending="{html.escape(source, quote=True)}" '
+        f'data-p2c-topic="{html.escape(topic_id or "", quote=True)}">'
+        f'<img alt="{html.escape(caption, quote=True)}">'
+        f'<figcaption>{html.escape(caption)}</figcaption>'
+        f'</figure>'
+    )
+
 
 _TOPIC_MARKER = re.compile(r"^\s*<!--\s*topic:\s*(?P<id>[^\s>]+)\s*-->\s*$")
 _HEADING = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<text>.+?)\s*$")
@@ -273,6 +326,14 @@ def render_course(course_md: str) -> Rendered:
                 )
         elif fence.kind == "glossary":
             replacements[fence.token] = ""
+        elif fence.kind == "figure":
+            try:
+                source, caption = parse_figure(fence.body)
+            except FigureError as exc:
+                errors.append(f"{anchor}: figure {exc}")
+                replacements[fence.token] = ""
+                continue
+            replacements[fence.token] = _figure_html(source, caption, topic_id)
         else:
             replacements[fence.token] = _callout_html(fence.kind, fence.body)
 
