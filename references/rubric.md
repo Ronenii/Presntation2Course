@@ -32,7 +32,11 @@ false model is `analogy_misleading` and blocks.
 
 ## Output contract
 
-Write exactly one file, `<output>/.p2c/review/pass-<n>.json`:
+Write exactly one file:
+- **novice-simulator** writes to `<output>/.p2c/review/pass-<n>.json`
+- **rubric-auditor** writes to `<output>/.p2c/review/pass-<n>-auditor.json`
+
+Both use this schema:
 
 ```json
 {

@@ -176,6 +176,7 @@ Validate each file before acting on it:
 
 ```bash
 PYTHONPATH="<SKILL>/scripts" python3 -m p2c.review check "<output>/.p2c/review/pass-<n>.json"
+PYTHONPATH="<SKILL>/scripts" python3 -m p2c.review check "<output>/.p2c/review/pass-<n>-auditor.json"
 ```
 
 Then apply the guards:

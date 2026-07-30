@@ -32,7 +32,7 @@ ask "is this what the deck and the sources actually say?"
 
 ## Output
 
-Exactly one file, `<output>/.p2c/review/pass-<n>.json`, in the contract from
+Exactly one file, `<output>/.p2c/review/pass-<n>-auditor.json`, in the contract from
 `references/rubric.md`. Use only the codes listed there, and quote your evidence: for a
 fidelity finding, cite the slide ref or the source URL you checked against.
 
