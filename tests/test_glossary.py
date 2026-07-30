@@ -51,6 +51,18 @@ def test_term_ids_are_slugged_and_keyed_lowercase():
     assert ids == {"page table": "def-page-table", "tlb": "def-tlb"}
 
 
+def test_term_ids_stay_distinct_when_slugs_collide():
+    # Non-Latin terms both ASCII-fold to "" and fall back to slugify's default
+    # ("section"); term_ids must still hand out unique ids, the same way
+    # AnchorAllocator already does for heading anchors.
+    ids = term_ids({"טבלת עמודים": "x", "קבוצת עבודה": "y"})
+    assert ids == {
+        "טבלת עמודים": "def-section",
+        "קבוצת עבודה": "def-section-2",
+    }
+    assert len(set(ids.values())) == len(ids)
+
+
 def test_glossary_html_is_a_sorted_escaped_definition_list():
     terms = {"TLB": "Caches <mappings>", "Page table": "The map & nothing else"}
     out = glossary_html(terms, term_ids(terms))

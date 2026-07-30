@@ -8,7 +8,7 @@ import html
 import re
 from dataclasses import dataclass, field
 
-from p2c.text import slugify
+from p2c.text import AnchorAllocator
 
 TERM_TOKEN = "P2CTERM{}ENDTERM"
 _ENTRY = re.compile(r"^(?P<term>[^:]*):\s*(?P<definition>.*)$")
@@ -64,7 +64,8 @@ def merge_glossaries(blocks: list[dict[str, str]]) -> dict[str, str]:
 
 
 def term_ids(terms: dict[str, str]) -> dict[str, str]:
-    return {term.lower(): f"def-{slugify(term)}" for term in terms}
+    allocator = AnchorAllocator()
+    return {term.lower(): f"def-{allocator.take(term)}" for term in terms}
 
 
 @dataclass
