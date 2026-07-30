@@ -101,21 +101,21 @@ pre {
   overflow-x: auto;
 }
 table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; }
-th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--space-3); text-align: left; }
+th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--space-3); text-align: start; }
 
 .skip-link {
-  position: absolute; left: -9999px;
+  position: absolute; inset-inline-start: -9999px;
   background: var(--color-accent); color: var(--color-accent-contrast);
   padding: var(--space-2) var(--space-4);
 }
-.skip-link:focus { left: var(--space-4); top: var(--space-4); z-index: 10; }
+.skip-link:focus { inset-inline-start: var(--space-4); top: var(--space-4); z-index: 10; }
 
 .shell { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: var(--space-8); }
 .sidebar {
   position: sticky; top: 0; align-self: start;
   height: 100vh; overflow-y: auto;
   padding: var(--space-6);
-  border-right: 1px solid var(--color-border);
+  border-inline-end: 1px solid var(--color-border);
   background: var(--color-surface);
 }
 .sidebar__eyebrow {
@@ -138,21 +138,24 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .toc a {
   display: block; padding: var(--space-1) var(--space-2);
   text-decoration: none; color: var(--color-muted);
-  border-left: 2px solid transparent; border-radius: 0 var(--radius) var(--radius) 0;
+  border-inline-start: 2px solid transparent;
+  border-start-start-radius: 0; border-end-start-radius: 0;
+  border-start-end-radius: var(--radius); border-end-end-radius: var(--radius);
   font-size: 0.9rem;
 }
 .toc__module > a { color: var(--color-fg); font-weight: 600; margin-top: var(--space-3); }
 .toc a:hover { color: var(--color-fg); background: var(--color-bg); }
 .toc a[aria-current="true"] {
-  color: var(--color-accent); border-left-color: var(--color-accent); background: var(--color-bg);
+  color: var(--color-accent); border-inline-start-color: var(--color-accent); background: var(--color-bg);
 }
 
 .content { max-width: var(--measure); padding: var(--space-8) var(--space-6) var(--space-12); }
 
 .callout {
   margin: var(--space-6) 0; padding: var(--space-4) var(--space-6);
-  border-left: 4px solid var(--color-border);
-  border-radius: 0 var(--radius) var(--radius) 0;
+  border-inline-start: 4px solid var(--color-border);
+  border-start-start-radius: 0; border-end-start-radius: 0;
+  border-start-end-radius: var(--radius); border-end-end-radius: var(--radius);
   background: var(--color-surface);
 }
 .callout__label {
@@ -161,9 +164,9 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   color: var(--color-muted);
 }
 .callout > :last-child { margin-bottom: 0; }
-.callout--analogy { border-left-color: var(--color-analogy); }
-.callout--prereq { border-left-color: var(--color-prereq); }
-.callout--unverified { border-left-color: var(--color-warn); }
+.callout--analogy { border-inline-start-color: var(--color-analogy); }
+.callout--prereq { border-inline-start-color: var(--color-prereq); }
+.callout--unverified { border-inline-start-color: var(--color-warn); }
 
 .term-wrap { position: relative; }
 .term {
@@ -173,7 +176,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .term:hover { border-bottom-style: solid; }
 .term__def {
   display: block; margin: var(--space-2) 0; padding: var(--space-3);
-  border: 1px solid var(--color-border); border-left: 3px solid var(--color-accent);
+  border: 1px solid var(--color-border); border-inline-start: 3px solid var(--color-accent);
   border-radius: var(--radius); background: var(--color-surface);
   font-size: 0.92rem; color: var(--color-fg);
 }
@@ -187,7 +190,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .quiz__q { font-weight: 600; margin: var(--space-2) 0 var(--space-4); }
 .quiz__options { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
 .quiz__option {
-  font: inherit; text-align: left; width: 100%; cursor: pointer;
+  font: inherit; text-align: start; width: 100%; cursor: pointer;
   padding: var(--space-3) var(--space-4);
   background: var(--color-bg); color: var(--color-fg);
   border: 1px solid var(--color-border); border-radius: var(--radius);
@@ -217,7 +220,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 
 @media (max-width: 860px) {
   .shell { grid-template-columns: 1fr; gap: 0; }
-  .sidebar { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--color-border); }
+  .sidebar { position: static; height: auto; border-inline-end: none; border-bottom: 1px solid var(--color-border); }
   .content { padding: var(--space-6) var(--space-4); }
   .glossary { grid-template-columns: 1fr; }
 }

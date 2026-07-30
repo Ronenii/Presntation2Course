@@ -143,3 +143,38 @@ def test_print_css_reveals_quiz_answers_and_hides_chrome():
     assert ".quiz__answer" in css and ".quiz__why" in css
     assert "display: block !important" in css
     assert ".sidebar" in css
+
+
+def test_layout_css_uses_logical_directional_properties_not_physical_ones():
+    """Physical left/right properties don't mirror under dir="rtl"; logical
+    inline-start/end properties do, so one layout.css serves both directions."""
+    css = (ASSETS / "base" / "layout.css").read_text()
+    for forbidden in (
+        "text-align: left",
+        "border-left:",
+        "border-right:",
+        "border-left-color:",
+        "border-right-color:",
+        "left: -9999px",
+        "left: var(--space-4)",
+    ):
+        assert forbidden not in css, forbidden
+    for required in (
+        "text-align: start",
+        "border-inline-start:",
+        "border-inline-end:",
+        "border-inline-start-color:",
+        "inset-inline-start: -9999px",
+        "inset-inline-start: var(--space-4)",
+    ):
+        assert required in css, required
+
+
+def test_print_css_has_no_physical_directional_properties():
+    """Locks in the current state: print.css has nothing to mirror. If a future
+    edit adds a left/right property here, this test should force a decision
+    about whether it needs to become logical too."""
+    css = (ASSETS / "print.css").read_text()
+    for forbidden in ("text-align: left", "text-align: right", "border-left:",
+                       "border-right:", "left:", "right:"):
+        assert forbidden not in css, forbidden
