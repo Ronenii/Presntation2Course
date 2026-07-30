@@ -37,7 +37,10 @@ jobs:
           staging="presentation2course-${{ inputs.version }}"
           mkdir "$staging"
           cp -r SKILL.md references assets scripts requirements.txt "$staging/"
-          tar -czf "${staging}.tar.gz" "$staging"
+          # Tar the staging dir's *contents*, not the dir itself: the README's Quick
+          # Start says to extract straight into .claude/skills/presentation2course/,
+          # so the archive must not add its own wrapper directory on top of that.
+          tar -czf "${staging}.tar.gz" -C "$staging" .
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
