@@ -1,6 +1,6 @@
 import pytest
 
-from p2c.mdrender import FigureError, mermaid_problem, parse_figure, render_course
+from p2c.mdrender import Animate, AnimateError, FigureError, mermaid_problem, parse_animate, parse_figure, render_course
 
 FM = """---
 title: Operating Systems
@@ -398,3 +398,73 @@ def test_a_broken_figure_block_becomes_an_error_not_a_crash():
     )
     rendered = render_course(md)
     assert any("figure" in e for e in rendered.errors)
+
+
+def test_parse_animate_step_reveal():
+    anim = parse_animate(
+        "pattern: step-reveal\nsteps:\n  - Request arrives\n  - TLB miss\n  - Entry cached"
+    )
+    assert anim == Animate(
+        pattern="step-reveal",
+        steps=["Request arrives", "TLB miss", "Entry cached"],
+    )
+
+
+def test_parse_animate_state_toggle():
+    anim = parse_animate(
+        "pattern: state-toggle\nbefore: Marked Shared\nafter: Marked Modified"
+    )
+    assert anim == Animate(pattern="state-toggle", before="Marked Shared", after="Marked Modified")
+
+
+def test_parse_animate_rejects_an_unknown_pattern():
+    with pytest.raises(AnimateError, match="must be 'step-reveal' or 'state-toggle'"):
+        parse_animate("pattern: spin\nsteps:\n  - a\n  - b")
+
+
+def test_parse_animate_rejects_a_step_reveal_with_one_step():
+    with pytest.raises(AnimateError, match="at least 2 steps"):
+        parse_animate("pattern: step-reveal\nsteps:\n  - only one")
+
+
+def test_parse_animate_rejects_a_state_toggle_missing_after():
+    with pytest.raises(AnimateError, match="needs both 'before:' and 'after:'"):
+        parse_animate("pattern: state-toggle\nbefore: only before")
+
+
+def test_step_reveal_renders_with_staggered_negative_delays():
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: step-reveal\nsteps:\n  - First\n  - Second\n  - Third\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    assert 'animation-duration: 6s; animation-delay: 0s">First</li>' in rendered.html_body
+    assert 'animation-duration: 6s; animation-delay: -2s">Second</li>' in rendered.html_body
+    assert 'animation-duration: 6s; animation-delay: -4s">Third</li>' in rendered.html_body
+
+
+def test_state_toggle_renders_before_and_after():
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-toggle\nbefore: Shared\nafter: Modified\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    assert '<div class="anim__state anim__state--before">Shared</div>' in rendered.html_body
+    assert '<div class="anim__state anim__state--after">Modified</div>' in rendered.html_body
+
+
+def test_a_broken_animate_block_becomes_an_error_not_a_crash():
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: nonsense\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert any("animate" in e for e in rendered.errors)

@@ -281,3 +281,18 @@ def test_an_unresolvable_figure_source_fails_the_build_naming_topic_and_source(t
     )
     with pytest.raises(ImageryError, match=r"topic 'tlb'.*terse\.pdf#99"):
         build(MINI / "outline.json", modules, out, ASSETS)
+
+
+def test_animate_blocks_render_inside_a_built_course(tmp_path):
+    modules = tmp_path / "modules"
+    modules.mkdir()
+    for name in ("01-virtual-memory.md", "02-scheduling.md"):
+        modules.joinpath(name).write_text((MINI / "modules" / name).read_text())
+    with modules.joinpath("02-scheduling.md").open("a") as handle:
+        handle.write(
+            "\n```animate\npattern: state-toggle\nbefore: Ready\nafter: Running\n```\n"
+        )
+    result = build(MINI / "outline.json", modules, tmp_path / "out", ASSETS)
+    html = result.course_html.read_text()
+    assert '<div class="anim__state anim__state--before">Ready</div>' in html
+    assert [f.code for f in result.findings] == []

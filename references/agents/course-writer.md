@@ -97,17 +97,48 @@ Working set: The pages a process is actively using in a given window of time.
 
 ## Visual per topic
 
-Every topic needs one of: a `mermaid` diagram, an inline `<svg>`, or a
-`figure` block. If your dispatch tells you a topic already has a
-`reusable_image` (a real slide image the summarizer flagged as worth
-reusing), do not author your own visual for that topic — write a `figure`
-block instead, restating the exact value you were given:
+Every topic needs one of: a `mermaid` diagram, an inline `<svg>`, a `figure`
+block, or an `animate` block. The build fails otherwise, unless you also
+write an explicit `<!-- no-visual: <reason> -->` HTML comment for a topic
+that is genuinely non-spatial — use that sparingly; it is an escape hatch,
+not a way to skip the visual step because a diagram is inconvenient to write.
+
+Pick the diagram type that matches the idea: `flowchart` for a process,
+`sequenceDiagram` for an interaction between parties, `stateDiagram-v2` for a
+lifecycle, `erDiagram`/`architecture-beta` for structure. Inline `<svg>` is
+for a static structure a flow/sequence/state diagram cannot express (a memory
+layout, a data structure). A second visual in one topic is rarely warranted —
+only add one if the topic genuinely covers two separate spatial ideas.
+
+If your dispatch tells you a topic already has a `reusable_image` (a real
+slide image the summarizer flagged as worth reusing), do not author your own
+visual for that topic at all — write a `figure` block instead, restating the
+exact value you were given:
 
 ```figure
 source: week1.pdf#12
 caption: The lookup path, as drawn in the lecture.
 ```
 
-Write only the caption yourself; the `source:` value must be copied exactly
-from your dispatch, never invented or re-derived. See
-`references/quiz-format.md` for the full grammar.
+Write only the caption yourself; the source value must be copied exactly
+from your dispatch, never invented or re-derived.
+
+When a topic is genuinely about a sequence or a before/after comparison, an
+`animate` block is worth using instead of (or alongside) a mermaid diagram:
+
+```animate
+pattern: step-reveal
+steps:
+  - Request arrives at the TLB
+  - TLB miss triggers a page-table walk
+  - Page table entry is cached back into the TLB
+```
+
+```animate
+pattern: state-toggle
+before: Cache line marked Shared
+after: Cache line marked Modified after a local write
+```
+
+`step-reveal` needs at least 2 steps; `state-toggle` needs both `before:` and
+`after:`. See `references/quiz-format.md` for the full grammar.

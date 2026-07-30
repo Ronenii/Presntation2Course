@@ -11,6 +11,11 @@
   h2 { break-before: page; page-break-before: always; }
   h2:first-of-type { break-before: auto; page-break-before: auto; }
   .quiz, .callout, .mermaid, table, pre { break-inside: avoid; page-break-inside: avoid; }
+  .figure, .anim { break-inside: avoid; page-break-inside: avoid; }
+  .anim__step, .anim__state { animation: none !important; opacity: 1 !important; }
+  .anim__step { font-weight: 400 !important; }
+  .anim--state-toggle { display: grid !important; gap: 0.5em; }
+  .anim__state { position: static !important; }
 
   /* In print every question is immediately followed by its answer and explanation. */
   .quiz__answer, .quiz__why { display: block !important; }

@@ -1,7 +1,7 @@
 `````markdown
 # Content block formats
 
-Seven fenced block kinds are meaningful to the build. Anything else is rendered as an
+Eight fenced block kinds are meaningful to the build. Anything else is rendered as an
 ordinary code block.
 
 ## `quiz` — one comprehension check
@@ -70,6 +70,36 @@ resolves `source:` to the real slide image at the referenced page — the
 writer never supplies image bytes, only these two lines. An unresolvable
 source (missing deck, out-of-range page) is a hard build failure naming the
 topic and the source.
+
+## `animate` — a bounded animation pattern
+
+````
+```animate
+pattern: step-reveal
+steps:
+  - Request arrives at the TLB
+  - TLB miss triggers a page-table walk
+  - Page table entry is cached back into the TLB
+```
+````
+
+````
+```animate
+pattern: state-toggle
+before: Cache line marked Shared
+after: Cache line marked Modified after a local write
+```
+````
+
+Exactly two patterns exist:
+
+- `step-reveal` — `steps:` followed by 2 or more `- ` lines, highlighted in
+  turn via a looping CSS animation. Use for an ordered sequence.
+- `state-toggle` — `before:` and `after:`, both required, cross-fading via a
+  looping CSS animation. Use for a two-state comparison.
+
+Both respect `prefers-reduced-motion` and render fully static (every
+step/state shown at once, not a single frozen frame) in print.
 
 ## `glossary` — the module's jargon definitions
 

@@ -224,7 +224,47 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .content { padding: var(--space-6) var(--space-4); }
   .glossary { grid-template-columns: 1fr; }
 }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+.figure { margin: var(--space-6) 0; text-align: center; }
+.figure img { max-width: 100%; height: auto; border-radius: var(--radius); }
+.figure figcaption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
+
+.anim { margin: var(--space-6) 0; }
+.anim__steps {
+  list-style: decimal; padding-inline-start: var(--space-6); margin: 0;
+  display: grid; gap: var(--space-2);
+}
+.anim__step {
+  opacity: 0.35; font-weight: 400;
+  animation-name: anim-step-pulse; animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+@keyframes anim-step-pulse {
+  0%   { opacity: 1;    font-weight: 600; }
+  15%  { opacity: 1;    font-weight: 600; }
+  25%  { opacity: 0.35; font-weight: 400; }
+  100% { opacity: 0.35; font-weight: 400; }
+}
+.anim--state-toggle { position: relative; min-block-size: 3em; }
+.anim__state {
+  position: absolute; inset-block-start: 0; inset-inline-start: 0;
+  animation-name: anim-state-crossfade; animation-duration: 4s;
+  animation-timing-function: ease-in-out; animation-iteration-count: infinite;
+}
+.anim__state--before { animation-delay: 0s; }
+.anim__state--after { animation-delay: -2s; }
+@keyframes anim-state-crossfade {
+  0%   { opacity: 1; }
+  45%  { opacity: 1; }
+  55%  { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .anim__step, .anim__state {
+    animation: none; opacity: 1; font-weight: 400; position: static;
+  }
+}
 </style>
 <style>/* Shared print layout. Used by the in-page Download PDF button and export-pdf. */
 @page { size: A4; margin: 18mm 16mm; }
@@ -239,6 +279,11 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   h2 { break-before: page; page-break-before: always; }
   h2:first-of-type { break-before: auto; page-break-before: auto; }
   .quiz, .callout, .mermaid, table, pre { break-inside: avoid; page-break-inside: avoid; }
+  .figure, .anim { break-inside: avoid; page-break-inside: avoid; }
+  .anim__step, .anim__state { animation: none !important; opacity: 1 !important; }
+  .anim__step { font-weight: 400 !important; }
+  .anim--state-toggle { display: grid !important; gap: 0.5em; }
+  .anim__state { position: static !important; }
 
   /* In print every question is immediately followed by its answer and explanation. */
   .quiz__answer, .quiz__why { display: block !important; }

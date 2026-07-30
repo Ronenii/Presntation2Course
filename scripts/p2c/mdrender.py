@@ -24,7 +24,7 @@ from p2c.glossary import (
 from p2c.quiz import QuizError, parse_quiz, quiz_to_html
 from p2c.text import AnchorAllocator
 
-HANDLED_KINDS = ("quiz", "mermaid", "glossary", "analogy", "prereq", "unverified", "figure")
+HANDLED_KINDS = ("quiz", "mermaid", "glossary", "analogy", "prereq", "unverified", "figure", "animate")
 MERMAID_KEYWORDS = (
     "flowchart", "graph", "sequenceDiagram", "stateDiagram", "stateDiagram-v2",
     "classDiagram", "erDiagram", "journey", "gantt", "pie", "mindmap", "timeline",
@@ -86,6 +86,91 @@ def _figure_html(source: str, caption: str, topic_id: str | None) -> str:
         f'<img alt="{html.escape(caption, quote=True)}">'
         f'<figcaption>{html.escape(caption)}</figcaption>'
         f'</figure>'
+    )
+
+
+STEP_SECONDS = 2
+
+_ANIMATE_KEY = re.compile(r"^(?P<key>pattern|before|after):\s*(?P<value>.*)$")
+_ANIMATE_STEP = re.compile(r"^\s*-\s*(?P<text>.+)$")
+
+
+class AnimateError(ValueError):
+    """An animate block that does not satisfy the grammar."""
+
+
+@dataclass
+class Animate:
+    pattern: str
+    steps: list[str] = field(default_factory=list)
+    before: str = ""
+    after: str = ""
+
+
+def parse_animate(body: str) -> Animate:
+    pattern: str | None = None
+    steps: list[str] = []
+    before: str | None = None
+    after: str | None = None
+    in_steps = False
+
+    for raw in body.split("\n"):
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+        step = _ANIMATE_STEP.match(line) if in_steps else None
+        if step:
+            steps.append(step.group("text").strip())
+            continue
+        key = _ANIMATE_KEY.match(line)
+        if key:
+            name, value = key.group("key"), key.group("value").strip()
+            in_steps = False
+            if name == "pattern":
+                if pattern is not None:
+                    raise AnimateError("animate has more than one 'pattern:' line")
+                pattern = value
+            elif name == "before":
+                before = value
+            else:
+                after = value
+            continue
+        if line.strip() == "steps:":
+            in_steps = True
+            continue
+        raise AnimateError(f"unrecognised line in animate block: {line.strip()!r}")
+
+    if pattern not in ("step-reveal", "state-toggle"):
+        raise AnimateError(
+            f"animate pattern must be 'step-reveal' or 'state-toggle', got {pattern!r}"
+        )
+    if pattern == "step-reveal":
+        if len(steps) < 2:
+            raise AnimateError("step-reveal needs at least 2 steps")
+        if before or after:
+            raise AnimateError("step-reveal does not use 'before:'/'after:'")
+    else:
+        if not before or not after:
+            raise AnimateError("state-toggle needs both 'before:' and 'after:'")
+        if steps:
+            raise AnimateError("state-toggle does not use 'steps:'")
+    return Animate(pattern=pattern, steps=steps, before=before or "", after=after or "")
+
+
+def _animate_html(anim: Animate) -> str:
+    if anim.pattern == "step-reveal":
+        cycle = len(anim.steps) * STEP_SECONDS
+        items = "".join(
+            f'<li class="anim__step" style="animation-duration: {cycle}s; '
+            f'animation-delay: {-(i * STEP_SECONDS)}s">{html.escape(step)}</li>'
+            for i, step in enumerate(anim.steps)
+        )
+        return f'<div class="anim anim--step-reveal"><ol class="anim__steps">{items}</ol></div>'
+    return (
+        '<div class="anim anim--state-toggle">'
+        f'<div class="anim__state anim__state--before">{html.escape(anim.before)}</div>'
+        f'<div class="anim__state anim__state--after">{html.escape(anim.after)}</div>'
+        '</div>'
     )
 
 
@@ -334,6 +419,14 @@ def render_course(course_md: str) -> Rendered:
                 replacements[fence.token] = ""
                 continue
             replacements[fence.token] = _figure_html(source, caption, topic_id)
+        elif fence.kind == "animate":
+            try:
+                anim = parse_animate(fence.body)
+            except AnimateError as exc:
+                errors.append(f"{anchor}: animate {exc}")
+                replacements[fence.token] = ""
+                continue
+            replacements[fence.token] = _animate_html(anim)
         else:
             replacements[fence.token] = _callout_html(fence.kind, fence.body)
 
