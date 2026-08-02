@@ -181,7 +181,7 @@ def test_layout_css_only_uses_tokens_the_themes_define():
         for t in used
         if t.startswith((
             "--space", "--radius", "--measure", "--z-", "--drawer-closed-x",
-            "--anim-array-", "--bar-fill",
+            "--anim-array-",
         ))
     }
     assert used - layout_owned <= set(REQUIRED_TOKENS)
