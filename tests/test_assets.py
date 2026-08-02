@@ -110,6 +110,8 @@ def test_course_js_drives_the_dom_contract_the_renderers_emit():
         "wireAnimations",
         "prefers-reduced-motion",
         "createTimeline",
+        "step.duration",
+        "step.ease",
     ):
         assert hook in js, hook
     assert "localStorage" not in js  # stateless by design

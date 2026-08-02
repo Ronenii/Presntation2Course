@@ -207,6 +207,8 @@
       (data.steps || []).forEach(function (step) {
         var props = {};
         Object.keys(step.props || {}).forEach(function (key) { props[key] = step.props[key]; });
+        if (step.duration != null) { props.duration = step.duration; }
+        if (step.ease) { props.ease = step.ease; }
         if (step.caption && caption) {
           props.onBegin = function () { caption.textContent = step.caption; };
         }
