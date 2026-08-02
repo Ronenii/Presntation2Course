@@ -14,11 +14,14 @@ a comprehension check after every single topic.
 
 ## What you get
 
-- **`course.html`** — self-contained, offline, zero external requests. Sidebar
+Every deliverable is named after the course's own title, e.g. a course titled
+"Operating Systems Foundations" writes `operating-systems-foundations.html`.
+
+- **`<course-title>.html`** — self-contained, offline, zero external requests. Sidebar
   navigation, click-to-reveal glossary on every jargon term, inline quizzes with
   instant feedback, light/dark.
-- **`course.pdf`** — same content, print layout, quiz answers and explanations inline.
-- **`course.md`** — the source of truth, so reruns diff cleanly.
+- **`<course-title>.pdf`** — same content, print layout, quiz answers and explanations inline.
+- **`<course-title>.md`** — the source of truth, so reruns diff cleanly.
 - **`KNOWN-ISSUES.md`** — only when something couldn't be resolved. You always find out
   which sections to distrust; weak material never ships silently.
 
@@ -59,7 +62,7 @@ you have no context to contribute — everything is reported at the end instead.
 |---|---|
 | Python 3.12+ with the packages in `requirements.txt` (`markdown`, `pypdfium2`, `Pillow`) | Required. `python3 -m pip install --user -r requirements.txt`. |
 | LibreOffice (`soffice`) | Required **only** for PPTX input. Missing it is a hard failure, because falling back to text extraction would silently throw away every diagram on the slides. |
-| Headless Chromium | Optional. Produces `course.pdf`. Without it you get the HTML plus a working Download PDF button. |
+| Headless Chromium | Optional. Produces the `.pdf`. Without it you get the HTML plus a working Download PDF button. |
 | Network | Used by the research phase to ground explanations in real sources. |
 
 ## Quick Start
@@ -73,7 +76,7 @@ For running this from a downloaded release rather than a git checkout:
    ```
    Turn ./week3.pdf into a course, language: English
    ```
-5. When the run finishes, open the generated `<stem>-course/course.html` — double-click it, or drag it into a browser tab. It is fully self-contained; no server or network access is needed to view it.
+5. When the run finishes, open the generated `<stem>-course/<course-title>.html` — double-click it, or drag it into a browser tab. It is fully self-contained; no server or network access is needed to view it.
 
 ## How it works
 
@@ -226,8 +229,8 @@ Two tests skip unless the optional tools are installed: PPTX conversion needs `s
 and the real PDF export needs Chromium.
 
 The deterministic half — quiz and glossary grammars, front matter, anchors, theme mapping,
-validation, and a golden `course.md` → `course.html` snapshot — is unit tested and is most
-of the risk surface. Regenerate the snapshot deliberately, never casually:
+validation, and a golden assembled-markdown → rendered-HTML snapshot — is unit tested and
+is most of the risk surface. Regenerate the snapshot deliberately, never casually:
 
 ```bash
 P2C_UPDATE_GOLDEN=1 .venv/bin/pytest tests/test_build.py -k golden

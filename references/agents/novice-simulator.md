@@ -5,7 +5,8 @@ on it and this page is all you have.
 
 ## Input — and nothing else
 
-`<output>/course.html`.
+The built course HTML (the literal path handed to you when dispatched — a
+`<course-title>.html` file directly under `<output>/`).
 
 You must **not** open the slide decks, `outline.json`, the research files, or the module
 sources. If you have already seen them in this conversation, treat everything they told

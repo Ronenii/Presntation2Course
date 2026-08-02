@@ -1,4 +1,4 @@
-"""Phase 4: course.md -> course.html, then validate.
+"""Phase 4: assembled markdown -> <course-title>.html, then validate.
 
 Deterministic and side-effect-free apart from the files it writes: same inputs, byte-identical
 output. No timestamps anywhere, so reruns diff cleanly and the golden test is meaningful.
@@ -16,6 +16,7 @@ from p2c.imagery import ImageryError, extract_page_png
 from p2c.mdrender import Rendered, render_course
 from p2c.outline import iter_topics, load_outline
 from p2c.sources import sources_html_by_topic
+from p2c.text import slugify
 from p2c.theme import Theme, is_rtl, load_theme, theme_for
 from p2c.validate import Finding, blocking, findings_to_json, validate_course
 
@@ -60,6 +61,16 @@ def _resolve_figures(html_text: str, out_dir: Path) -> str:
             "_FIGURE_PENDING no longer matches mdrender._figure_html's markup"
         )
     return resolved
+
+
+def course_basename(title: str) -> str:
+    """The shared stem for course.md/course.html/course.pdf: the course's own
+    title, slugified the same way module_filename() already handles module
+    titles -- so a non-Latin title (Hebrew, Arabic, ...) falls back to the same
+    literal "section" both mechanisms already agree on, rather than inventing a
+    second naming convention for the same edge case.
+    """
+    return slugify(title)
 
 
 @dataclass
@@ -114,10 +125,11 @@ def build(
 ) -> BuildResult:
     outline = load_outline(Path(outline_path))
     course_md_text = assemble(outline, Path(modules_dir))
+    basename = course_basename(outline["title"])
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    course_md = out_dir / "course.md"
+    course_md = out_dir / f"{basename}.md"
     course_md.write_text(course_md_text, encoding="utf-8")
 
     rendered = render_course(course_md_text)
@@ -140,7 +152,7 @@ def build(
         ),
         out_dir,
     )
-    course_html = out_dir / "course.html"
+    course_html = out_dir / f"{basename}.html"
     course_html.write_text(html_text, encoding="utf-8")
 
     # Validate against a copy that never inlines the vendored mermaid bundle. That
@@ -186,7 +198,9 @@ def main(argv: list[str]) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(
-        prog="build", description="Render course.md into a self-contained course.html."
+        prog="build",
+        description="Render the assembled markdown into a self-contained "
+        "<course-title>.html, named after the course's own title.",
     )
     parser.add_argument("--outline", required=True, type=Path)
     parser.add_argument("--modules", required=True, type=Path)

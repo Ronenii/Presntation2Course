@@ -1,6 +1,6 @@
 ---
 name: presentation2course
-description: Use when the user wants a lecture slide deck (PDF or PPTX), or a folder of decks, turned into a course they can actually study from — "turn this deck into a course", "make a course from these lectures", "I can't revise from these slides". Produces a self-contained course.html with analogies, diagrams, a glossary and per-topic quizzes, plus course.pdf.
+description: Use when the user wants a lecture slide deck (PDF or PPTX), or a folder of decks, turned into a course they can actually study from — "turn this deck into a course", "make a course from these lectures", "I can't revise from these slides". Produces a self-contained <course-title>.html with analogies, diagrams, a glossary and per-topic quizzes, plus a matching <course-title>.pdf.
 ---
 
 # Presentation2Course
@@ -25,6 +25,12 @@ than with an admitted gap.
 - `<output>`: `./<stem>-course/` in the current working directory, where `<stem>` is the
   input's filename without extension (single file) or its directory name (folder). If the
   user named an output directory, use theirs.
+- `<basename>`: the deliverables' shared stem — the course's own title, slugified the
+  same way `p2c.assemble.module_filename` already slugifies module titles (so a
+  non-Latin title falls back to the literal `section`, same as a module would). The
+  build script (below) computes and reports this; do not derive it yourself — its JSON
+  summary's `course_html`/`course_md` fields are the literal paths to use for every
+  later phase.
 - `<language>`: the target language for this course. **Required — the user must
   state it explicitly every time; there is no default.** Resolve whatever they said
   (a name, a demonym, an ISO code, "in Hebrew") to its English name and ISO 639-1
@@ -56,9 +62,9 @@ independently testable:
 
 ```
 <output>/
-  course.html                   deliverable
-  course.pdf                    deliverable (skipped if Chromium absent)
-  course.md                     source of truth
+  <basename>.html                deliverable
+  <basename>.pdf                 deliverable (skipped if Chromium absent)
+  <basename>.md                  source of truth
   KNOWN-ISSUES.md               only if blocking findings survive pass 3
   .p2c/
     normalized/*.pdf
@@ -183,8 +189,12 @@ topic is in its hands, which is why questions do not drift from the prose that t
   --assets "<SKILL>/assets"
 ```
 
+Read `course_html`/`course_md` from its JSON stdout — these are the literal
+`<output>/<basename>.html`/`.md` paths every later phase must use; never re-derive
+`<basename>` yourself.
+
 - **exit 0** — clean. Continue to Phase 5.
-- **exit 3** — blocking validation findings. `course.html` still exists. Read the
+- **exit 3** — blocking validation findings. `<basename>.html` still exists. Read the
   `blocking` array from stdout (also written to `<output>/.p2c/review/build-findings.json`)
   and re-dispatch **only** the responsible units, using each finding's `route`, `module`
   and `topic`:
@@ -229,14 +239,14 @@ affordable.
 For pass `n` (starting at 1), dispatch both reviewers in parallel:
 
 - **novice-simulator** — `<SKILL>/references/agents/novice-simulator.md`. Give it
-  **only** `<output>/course.html` and its output path
+  **only** the built course HTML (Phase 4's reported `course_html` path) and its output path
   `<output>/.p2c/review/pass-<n>.json`. Never the decks, never the research, never the
   outline. A reviewer that has seen the upstream context cannot un-see it and will read a
   confusing sentence as clear because it knows what was meant. Its decisive instruction is
   *attempt every quiz using only what the course itself taught you*.
 - **rubric-auditor** — `<SKILL>/references/agents/rubric-auditor.md`. Give it
-  `course.html`, `outline.json`, the normalized decks, and the research files. Its output
-  path is `<output>/.p2c/review/pass-<n>-auditor.json`.
+  the built course HTML, `outline.json`, the normalized decks, and the research files. Its
+  output path is `<output>/.p2c/review/pass-<n>-auditor.json`.
 
 Validate each file before acting on it:
 
@@ -289,8 +299,10 @@ Run this **once**, only after the loop has converged — never inside it. Each C
 is expensive and produces nothing of value while the content is still in flux.
 
 ```bash
-"<SKILL>/scripts/export-pdf" --html "<output>/course.html" --out "<output>/course.pdf"
+"<SKILL>/scripts/export-pdf" --html "<output>/<basename>.html" --out "<output>/<basename>.pdf"
 ```
+
+(`<basename>` here is the literal value Phase 4 reported — never re-derived.)
 
 - **exit 0** — done; the JSON reports the page count.
 - **exit 6** — no Chromium. Skip it and say so, pointing the user at the in-page Download
@@ -302,9 +314,9 @@ Report all of it at once, at the end:
 
 ```
 Course: <title>  (<n> modules, <n> topics, <n> quizzes, theme <name>)
-Written:  <output>/course.html
-          <output>/course.pdf        (or: skipped — no Chromium; use the Download PDF button)
-          <output>/course.md
+Written:  <output>/<basename>.html
+          <output>/<basename>.pdf     (or: skipped — no Chromium; use the Download PDF button)
+          <output>/<basename>.md
 Review:   <n> passes, <n> blocking findings resolved, <n> noted findings recorded
 Unverified topics: <ids, or none>
 Known issues: <output>/KNOWN-ISSUES.md  (only if it was written)
@@ -316,7 +328,7 @@ Agents run: <n>
 | Condition | Behaviour |
 |---|---|
 | `soffice` missing, PPTX input | Hard fail (`normalize` exit 4), print the install command |
-| Chromium missing | Skip `course.pdf` (`export-pdf` exit 6), note it, HTML print button still works |
+| Chromium missing | Skip `<basename>.pdf` (`export-pdf` exit 6), note it, HTML print button still works |
 | No language stated, or unresolvable | Hard fail before Phase 0, print the offending wording |
 | Deck pages unreadable or blank | Hard fail (`normalize` exit 5, or the summarizer's report) with the page refs |
 | Research unsubstantiated | Mark the topic `unverified`, the writer hedges, never invents |

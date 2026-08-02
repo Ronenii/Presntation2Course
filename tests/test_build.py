@@ -53,8 +53,8 @@ def built_he(tmp_path):
 
 
 def test_build_writes_all_three_artifacts(built, tmp_path):
-    assert built.course_md == tmp_path / "course.md"
-    assert built.course_html == tmp_path / "course.html"
+    assert built.course_md == tmp_path / "operating-systems-foundations.md"
+    assert built.course_html == tmp_path / "operating-systems-foundations.html"
     assert built.findings_path == tmp_path / ".p2c" / "review" / "build-findings.json"
     for path in (built.course_md, built.course_html, built.findings_path):
         assert path.is_file()
@@ -289,7 +289,7 @@ def test_cli_exit_0_and_json_summary(tmp_path):
     assert summary["topics"] == 4
     assert summary["blocking"] == []
     assert summary["uses_mermaid"] is False
-    assert summary["course_html"].endswith("course.html")
+    assert summary["course_html"].endswith("operating-systems-foundations.html")
 
 
 def test_cli_exit_3_on_blocking_findings(tmp_path):
