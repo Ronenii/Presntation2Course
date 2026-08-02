@@ -226,6 +226,12 @@ def parse_animate(body: str) -> Animate:
     return Animate(pattern=pattern, steps=steps, before=before or "", after=after or "")
 
 
+_BAR_WIDTH = 32
+_BAR_GAP = 12
+_BAR_MAX_HEIGHT = 120
+_PATH_PADDING = 10
+
+
 def _animate_html(anim: Animate) -> str:
     if anim.pattern == "step-reveal":
         cycle = len(anim.steps) * STEP_SECONDS
@@ -235,18 +241,76 @@ def _animate_html(anim: Animate) -> str:
             for i, step in enumerate(anim.steps)
         )
         return f'<div class="anim anim--step-reveal"><ol class="anim__steps">{items}</ol></div>'
-    # "Before"/"After" are literal English UI chrome -- like the "Analogy" callout
-    # label, added by the render layer rather than the course-writer, so they stay
-    # legible regardless of course language (including RTL). They are hidden during
-    # normal animated playback and shown only in the print/reduced-motion static
-    # presentation; see .anim__state-label in layout.css/print.css.
+    if anim.pattern == "state-toggle":
+        # "Before"/"After" are literal English UI chrome -- like the "Analogy" callout
+        # label, added by the render layer rather than the course-writer, so they stay
+        # legible regardless of course language (including RTL). They are hidden during
+        # normal animated playback and shown only in the print/reduced-motion static
+        # presentation; see .anim__state-label in layout.css/print.css.
+        return (
+            '<div class="anim anim--state-toggle">'
+            '<div class="anim__state anim__state--before">'
+            f'<span class="anim__state-label">Before</span>{html.escape(anim.before)}</div>'
+            '<div class="anim__state anim__state--after">'
+            f'<span class="anim__state-label">After</span>{html.escape(anim.after)}</div>'
+            '</div>'
+        )
+    if anim.pattern == "array-ops":
+        max_value = max(anim.array) or 1
+        width = len(anim.array) * (_BAR_WIDTH + _BAR_GAP)
+        bars = []
+        for i, value in enumerate(anim.array):
+            x = i * (_BAR_WIDTH + _BAR_GAP)
+            h = round((value / max_value) * _BAR_MAX_HEIGHT, 1)
+            y = _BAR_MAX_HEIGHT - h
+            bars.append((x, y, h))
+        cycle = len(anim.ops) * STEP_SECONDS
+        # Exactly one <rect> per array element (not per op) -- a bar touched by
+        # one or more ops carries every touching op's custom properties, each as
+        # its own declaration block appended to the same style attribute, so a
+        # bar hit by two ops (e.g. "compare 0 1" then "swap 0 1") still shows
+        # both --op-kind values in the markup instead of the later op silently
+        # overwriting the earlier one.
+        op_styles_by_index: dict[int, list[str]] = {}
+        for i, (verb, a, b) in enumerate(anim.ops):
+            delay = -(i * STEP_SECONDS)
+            b_attr = b if b is not None else a
+            style = (
+                f'--op-a: {a}; --op-b: {b_attr}; --op-kind: {verb}; '
+                f'animation-duration: {cycle}s; animation-delay: {delay}s'
+            )
+            op_styles_by_index.setdefault(a, []).append(style)
+            if b is not None:
+                op_styles_by_index.setdefault(b, []).append(style)
+        rects = []
+        for i, (x, y, h) in enumerate(bars):
+            styles = op_styles_by_index.get(i)
+            style_attr = f' style="{"; ".join(styles)}"' if styles else ""
+            rects.append(
+                f'<rect class="anim__array-bar" x="{x}" y="{y}" '
+                f'width="{_BAR_WIDTH}" height="{h}"{style_attr}></rect>'
+            )
+        return (
+            f'<div class="anim anim--array-ops"><svg class="anim__array" '
+            f'viewBox="0 0 {width} {_BAR_MAX_HEIGHT}">{"".join(rects)}</svg></div>'
+        )
+    # path-trace
+    xs = [x for x, _ in anim.points]
+    ys = [y for _, y in anim.points]
+    min_x, max_x = min(xs) - _PATH_PADDING, max(xs) + _PATH_PADDING
+    min_y, max_y = min(ys) - _PATH_PADDING, max(ys) + _PATH_PADDING
+    points_attr = " ".join(f"{x:g},{y:g}" for x, y in anim.points)
+    path_d = "M " + " L ".join(f"{x:g},{y:g}" for x, y in anim.points)
     return (
-        '<div class="anim anim--state-toggle">'
-        '<div class="anim__state anim__state--before">'
-        f'<span class="anim__state-label">Before</span>{html.escape(anim.before)}</div>'
-        '<div class="anim__state anim__state--after">'
-        f'<span class="anim__state-label">After</span>{html.escape(anim.after)}</div>'
-        '</div>'
+        '<div class="anim anim--path-trace">'
+        f'<svg class="anim__path" dir="ltr" '
+        f'viewBox="{min_x:g} {min_y:g} {max_x - min_x:g} {max_y - min_y:g}">'
+        f'<polyline class="anim__path-line" points="{points_attr}"></polyline>'
+        f'<circle class="anim__path-marker" r="4" '
+        f"style=\"offset-path: path('{path_d}')\"></circle>"
+        "</svg>"
+        f'<p class="anim__path-caption">{html.escape(anim.caption)}</p>'
+        "</div>"
     )
 
 

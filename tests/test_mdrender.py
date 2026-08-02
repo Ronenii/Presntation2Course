@@ -647,3 +647,80 @@ def test_parse_animate_path_trace_rejects_steps():
         parse_animate(
             "pattern: path-trace\npoints:\n  - 0, 0\n  - 1, 1\ncaption: c\nbefore: x"
         )
+
+
+def test_array_ops_renders_bars_and_ops():
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\n'
+        'ops:\n  - compare 0 1\n  - swap 0 1\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    assert '<div class="anim anim--array-ops">' in rendered.html_body
+    assert 'class="anim__array"' in rendered.html_body
+    assert rendered.html_body.count('class="anim__array-bar"') == 3
+    assert "--op-kind: compare" in rendered.html_body
+    assert "--op-kind: swap" in rendered.html_body
+
+
+def test_path_trace_renders_polyline_and_marker():
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: path-trace\npoints:\n  - 0, 10\n  - 5, 2\n  - 10, 8\n'
+        'caption: Converging toward the minimum\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    assert '<div class="anim anim--path-trace">' in rendered.html_body
+    assert 'class="anim__path"' in rendered.html_body
+    assert 'dir="ltr"' in rendered.html_body
+    assert 'points="0,10 5,2 10,8"' in rendered.html_body
+    assert 'class="anim__path-marker"' in rendered.html_body
+    assert '<p class="anim__path-caption">Converging toward the minimum</p>' in rendered.html_body
+
+
+def test_a_broken_array_ops_block_becomes_an_error_not_a_crash():
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: array-ops\narray:\n  - 1\nops:\n  - highlight 0\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert any("array-ops" in e for e in rendered.errors)
+
+
+def test_a_broken_path_trace_block_becomes_an_error_not_a_crash():
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: path-trace\npoints:\n  - 0, 0\ncaption: c\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert any("path-trace" in e for e in rendered.errors)
+
+
+def test_an_array_ops_block_also_counts_as_a_visual():
+    md = course(
+        '<!-- topic: bare -->\n### Bare topic\n\n'
+        '```animate\npattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 0\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.topics_missing_visual == []
+
+
+def test_a_path_trace_block_also_counts_as_a_visual():
+    md = course(
+        '<!-- topic: bare -->\n### Bare topic\n\n'
+        '```animate\npattern: path-trace\npoints:\n  - 0, 0\n  - 1, 1\ncaption: c\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.topics_missing_visual == []
