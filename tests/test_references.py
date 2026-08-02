@@ -114,3 +114,9 @@ def test_quiz_format_documents_the_new_animate_patterns():
     prose = (REFS / "quiz-format.md").read_text()
     assert "array-ops" in prose
     assert "path-trace" in prose
+
+
+def test_researcher_prompt_uses_the_strict_sources_grammar():
+    prose = (REFS / "agents" / "researcher.md").read_text()
+    assert "- Title: url" in prose or "Title: url" in prose
+    assert "https://example.com/page" not in prose  # old em-dash example replaced

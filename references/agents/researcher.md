@@ -42,7 +42,7 @@ what it must show, which labels, which relationships. If a flow, sequence, state
 architecture diagram cannot express it, say `kind: svg` and describe the drawing.
 
 ## Sources
-- Title — https://example.com/page
+- Title: https://example.com
 ```
 
 ## Rules
@@ -51,6 +51,10 @@ architecture diagram cannot express it, say `kind: svg` and describe the drawing
   order.
 - Cite a URL for every non-obvious factual claim. Prefer primary sources, standards, and
   textbooks over blog posts and answer sites.
+- Each source line in the `## Sources` section must follow the strict grammar
+  `- Title: url`, one per line, with `url` starting with `http://` or `https://`.
+  No other punctuation in the separator — this file is parsed by a script, not just read
+  by other agents.
 - If you cannot substantiate the topic, set `unverified: true` in the front matter and say
   precisely which claims are unsupported. The writer is then required to hedge.
 - **Never invent a confident explanation.** Not for a definition, not for a number, not
