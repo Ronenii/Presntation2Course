@@ -186,6 +186,41 @@
       .catch(function () { markReady(); });
   }
 
+  /* --- animate blocks: JSON timeline data driven through anime.js -------- */
+  function wireAnimations() {
+    if (!window.anime) { return; }
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return; // static fallback markup (already in the page) stays as-is
+    }
+    document.querySelectorAll(".anim__timeline").forEach(function (island) {
+      var data;
+      try {
+        data = JSON.parse(island.textContent);
+      } catch (err) {
+        return; // malformed data island: leave the static fallback visible
+      }
+      var animId = island.getAttribute("data-anim-id");
+      var caption = animId
+        ? document.querySelector('.anim__caption[data-anim-id="' + animId + '"]')
+        : null;
+      var tl = anime.createTimeline({ loop: !!data.loop, loopDelay: data.loopDelay || 0 });
+      (data.steps || []).forEach(function (step) {
+        var props = {};
+        Object.keys(step.props || {}).forEach(function (key) { props[key] = step.props[key]; });
+        if (step.caption && caption) {
+          props.onBegin = function () { caption.textContent = step.caption; };
+        }
+        if (step.kind === "set") {
+          tl.set(step.targets, props);
+        } else if (step.position) {
+          tl.add(step.targets, props, step.position);
+        } else {
+          tl.add(step.targets, props);
+        }
+      });
+    });
+  }
+
   function start() {
     wireQuizzes();
     wireTerms();
@@ -193,6 +228,7 @@
     wireToc();
     wireChrome();
     renderDiagrams();
+    wireAnimations();
   }
 
   if (document.readyState === "loading") {
