@@ -58,6 +58,7 @@ TEMPLATE_PLACEHOLDERS = (
     "{{TOC}}",
     "{{CONTENT}}",
     "{{GLOSSARY}}",
+    "{{SOURCES}}",
     "{{SOURCE_DECKS}}",
     "{{MERMAID_JS}}",
     "{{COURSE_JS}}",

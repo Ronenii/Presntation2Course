@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -18,11 +19,25 @@ MINI_HE = REPO / "tests" / "fixtures" / "mini-course-he"
 GOLDEN_HE = REPO / "tests" / "golden" / "course-he.html"
 
 
+def _seed_research(out_dir, entries):
+    """Writes '## Sources' notes files under .p2c/research/ per Task 10's grammar
+    ('- Title: url'), so builds exercise a real, non-empty Sources appendix."""
+    research = out_dir / ".p2c" / "research"
+    research.mkdir(parents=True)
+    for topic_id, lines in entries.items():
+        body = "## Sources\n" + "".join(f"- {line}\n" for line in lines)
+        (research / f"{topic_id}.md").write_text(body)
+
+
 @pytest.fixture
 def built(tmp_path):
     normalized = tmp_path / ".p2c" / "normalized"
     normalized.mkdir(parents=True)
     (normalized / "terse.pdf").write_bytes((REPO / "tests" / "fixtures" / "terse.pdf").read_bytes())
+    _seed_research(tmp_path, {
+        "tlb": ["Intel 64 and IA-32 Architectures SDM: https://example.com/intel-sdm"],
+        "round-robin": ["Operating Systems: Three Easy Pieces: https://example.com/ostep"],
+    })
     return build(MINI / "outline.json", MINI / "modules", tmp_path, ASSETS)
 
 
@@ -31,6 +46,9 @@ def built_he(tmp_path):
     normalized = tmp_path / ".p2c" / "normalized"
     normalized.mkdir(parents=True)
     (normalized / "terse.pdf").write_bytes((REPO / "tests" / "fixtures" / "terse.pdf").read_bytes())
+    _seed_research(tmp_path, {
+        "tlb": ["Intel 64 and IA-32 Architectures SDM: https://example.com/intel-sdm"],
+    })
     return build(MINI_HE / "outline.json", MINI_HE / "modules", tmp_path, ASSETS)
 
 
@@ -72,11 +90,20 @@ def test_no_placeholder_survives_in_the_html(built):
 
 
 def test_the_html_is_self_contained(built):
+    """No script/style/image/etc. asset is fetched from the network. Citation
+    links in the Sources appendix are a sanctioned exception -- they are plain
+    <a href> anchors, never a resource-loading tag, and clicking one is the
+    reader's own choice rather than the page reaching out on load (this is also
+    exactly what validate.py's own _external_requests scan permits)."""
     html = built.course_html.read_text()
     assert "<style>" in html
-    assert "https://" not in html
-    assert "http://" not in html
     assert "@import" not in html
+    for tag in ("script", "img", "link", "iframe", "video", "audio", "source",
+                "embed", "object", "track"):
+        assert not re.search(
+            rf'<{tag}\b[^>]*\b(?:src|href|data)\s*=\s*["\']https?://', html, re.IGNORECASE
+        ), tag
+    assert 'href="https://example.com/intel-sdm"' in html  # the sanctioned exception itself
 
 
 def test_mermaid_is_not_inlined_when_the_course_has_no_diagrams(built):
@@ -113,6 +140,10 @@ def test_course_md_is_the_source_of_truth_and_reproducible(built, tmp_path):
     (normalized / "terse.pdf").write_bytes(
         (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
     )
+    _seed_research(second, {
+        "tlb": ["Intel 64 and IA-32 Architectures SDM: https://example.com/intel-sdm"],
+        "round-robin": ["Operating Systems: Three Easy Pieces: https://example.com/ostep"],
+    })
     again = build(MINI / "outline.json", MINI / "modules", second, ASSETS)
     assert again.course_md.read_text() == first
     assert again.course_html.read_text() == built.course_html.read_text()
@@ -175,6 +206,25 @@ def test_blocking_findings_are_reported_and_still_render(tmp_path):
     recorded = json.loads(result.findings_path.read_text())
     assert {f["code"] for f in recorded} == codes
     assert {f["route"] for f in recorded} <= {"writer", "researcher", "summarizer", "build"}
+
+
+def test_build_writes_a_sources_section(built):
+    course_html = built.course_html.read_text()
+    assert '<section class="appendix">' in course_html
+    assert '<h2 id="sources">Sources</h2>' in course_html
+    assert 'href="https://example.com/intel-sdm"' in course_html
+
+
+def test_build_falls_back_to_no_sources_message_when_none_are_seeded(tmp_path):
+    normalized = tmp_path / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
+    result = build(MINI / "outline.json", MINI / "modules", tmp_path, ASSETS)
+    course_html = result.course_html.read_text()
+    assert '<h2 id="sources">Sources</h2>' in course_html
+    assert "No external sources were cited." in course_html
 
 
 def test_matches_the_golden_snapshot(built):

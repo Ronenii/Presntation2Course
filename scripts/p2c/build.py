@@ -11,10 +11,11 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from p2c.assemble import assemble
+from p2c.assemble import assemble, collect_sources
 from p2c.imagery import ImageryError, extract_page_png
 from p2c.mdrender import Rendered, render_course
-from p2c.outline import load_outline
+from p2c.outline import iter_topics, load_outline
+from p2c.sources import sources_html_by_topic
 from p2c.theme import Theme, is_rtl, load_theme, theme_for
 from p2c.validate import Finding, blocking, findings_to_json, validate_course
 
@@ -79,6 +80,7 @@ def fill_template(
     source_decks: list[str],
     inline_mermaid: bool,
     language: dict,
+    sources_html: str = "",
 ) -> str:
     decks = ", ".join(source_decks) if source_decks else "the source deck"
     substitutions = {
@@ -90,6 +92,7 @@ def fill_template(
         "{{TOC}}": rendered.toc_html,
         "{{CONTENT}}": rendered.html_body,
         "{{GLOSSARY}}": rendered.glossary_html or "<p>No jargon was recorded.</p>",
+        "{{SOURCES}}": sources_html or "<p>No external sources were cited.</p>",
         "{{SOURCE_DECKS}}": html.escape(decks),
         "{{MERMAID_JS}}": theme.mermaid_js if (inline_mermaid and theme.mermaid_js) else "",
         "{{COURSE_JS}}": theme.course_js,
@@ -121,6 +124,10 @@ def build(
     theme_name = theme or rendered.front_matter.theme or theme_for(outline["subject_domain"])
     loaded = load_theme(Path(assets_dir), theme_name)
 
+    topic_titles = {topic["id"]: topic["title"] for _, topic in iter_topics(outline)}
+    topic_sources = collect_sources(out_dir / ".p2c" / "research", outline)
+    sources_html = sources_html_by_topic(topic_sources, topic_titles)
+
     html_text = _resolve_figures(
         fill_template(
             loaded,
@@ -129,6 +136,7 @@ def build(
             source_decks=rendered.front_matter.source_decks,
             inline_mermaid=rendered.uses_mermaid,
             language=outline["language"],
+            sources_html=sources_html,
         ),
         out_dir,
     )
@@ -153,6 +161,7 @@ def build(
             source_decks=rendered.front_matter.source_decks,
             inline_mermaid=False,
             language=outline["language"],
+            sources_html=sources_html,
         ),
         out_dir,
     )

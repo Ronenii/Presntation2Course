@@ -135,3 +135,40 @@ def test_assemble_reports_an_empty_module_file(tmp_path):
     (modules / "01-virtual-memory.md").write_text("   \n")
     with pytest.raises(AssembleError, match="01-virtual-memory.md is empty"):
         assemble(OUTLINE, modules)
+
+
+def test_collect_sources_reads_every_topic_research_file(tmp_path):
+    from p2c.assemble import collect_sources
+    from p2c.sources import Source
+
+    research_dir = tmp_path / "research"
+    research_dir.mkdir()
+    (research_dir / "tlb.md").write_text("## Sources\n- A: https://a.example\n")
+    (research_dir / "sched.md").write_text("## Sources\n- B: https://b.example\n")
+
+    outline = {
+        "modules": [
+            {"topics": [{"id": "tlb"}, {"id": "sched"}]},
+        ]
+    }
+    result = collect_sources(research_dir, outline)
+    assert result == {
+        "tlb": [Source("A", "https://a.example")],
+        "sched": [Source("B", "https://b.example")],
+    }
+
+
+def test_collect_sources_tolerates_a_missing_research_file(tmp_path):
+    from p2c.assemble import collect_sources
+
+    research_dir = tmp_path / "research"
+    research_dir.mkdir()
+    outline = {"modules": [{"topics": [{"id": "tlb"}]}]}
+    assert collect_sources(research_dir, outline) == {"tlb": []}
+
+
+def test_collect_sources_tolerates_a_missing_research_directory(tmp_path):
+    from p2c.assemble import collect_sources
+
+    outline = {"modules": [{"topics": [{"id": "tlb"}]}]}
+    assert collect_sources(tmp_path / "does-not-exist", outline) == {"tlb": []}
