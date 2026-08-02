@@ -217,3 +217,10 @@ def test_print_css_has_no_physical_directional_properties():
     for forbidden in ("text-align: left", "text-align: right", "border-left:",
                        "border-right:", "left:", "right:"):
         assert forbidden not in css, forbidden
+
+
+def test_content_column_is_centered_within_its_grid_track():
+    css = (ASSETS / "base" / "layout.css").read_text()
+    rule_start = css.index(".content {")
+    rule = css[rule_start : css.index("}", rule_start)]
+    assert "margin-inline: auto" in rule
