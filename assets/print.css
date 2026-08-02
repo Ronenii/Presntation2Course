@@ -12,8 +12,8 @@
   h2:first-of-type { break-before: auto; page-break-before: auto; }
   .quiz, .callout, .mermaid, table, pre { break-inside: avoid; page-break-inside: avoid; }
   .figure, .anim { break-inside: avoid; page-break-inside: avoid; }
-  .anim__step, .anim__state { animation: none !important; opacity: 1 !important; }
-  .anim__step { font-weight: 400 !important; }
+  .anim__step { opacity: 1 !important; font-weight: 400 !important; }
+  .anim__state { opacity: 1 !important; }
   /* Both states are shown at once in print (no animation on paper), labeled and
      side-by-side rather than sharing the animated view's stacked grid cell. */
   .anim--state-toggle { grid-template-columns: 1fr 1fr !important; gap: 0.5em; }

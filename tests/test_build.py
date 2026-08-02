@@ -452,8 +452,9 @@ def test_animate_blocks_render_inside_a_built_course(tmp_path):
     )
     result = build(MINI / "outline.json", modules, out, ASSETS)
     html = result.course_html.read_text()
-    assert (
-        '<div class="anim__state anim__state--before">'
-        '<span class="anim__state-label">Before</span>Ready</div>'
-    ) in html
+    assert re.search(
+        r'<div class="anim__state anim__state--before" id="[^"]+">'
+        r'<span class="anim__state-label">Before</span>Ready</div>',
+        html,
+    )
     assert [f.code for f in result.findings] == []

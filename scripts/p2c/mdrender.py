@@ -237,19 +237,7 @@ def _animate_html(anim: Animate, token: str) -> str:
     if anim.pattern == "step-reveal":
         return _step_reveal_html(anim, token)
     if anim.pattern == "state-toggle":
-        # "Before"/"After" are literal English UI chrome -- like the "Analogy" callout
-        # label, added by the render layer rather than the course-writer, so they stay
-        # legible regardless of course language (including RTL). They are hidden during
-        # normal animated playback and shown only in the print/reduced-motion static
-        # presentation; see .anim__state-label in layout.css/print.css.
-        return (
-            '<div class="anim anim--state-toggle">'
-            '<div class="anim__state anim__state--before">'
-            f'<span class="anim__state-label">Before</span>{html.escape(anim.before)}</div>'
-            '<div class="anim__state anim__state--after">'
-            f'<span class="anim__state-label">After</span>{html.escape(anim.after)}</div>'
-            '</div>'
-        )
+        return _state_toggle_html(anim, token)
     if anim.pattern == "array-ops":
         return _array_ops_html(anim, token)
     # path-trace
@@ -281,6 +269,46 @@ def _step_reveal_html(anim: Animate, token: str) -> str:
     timeline_json = html.escape(json.dumps(timeline), quote=False)
     return (
         f'<div class="anim anim--step-reveal"><ol class="anim__steps">{items}</ol>'
+        f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
+        "</div>"
+    )
+
+
+def _state_toggle_html(anim: Animate, token: str) -> str:
+    # See _step_reveal_html's token_seed comment: only the token's ordinal digits
+    # are used to build element ids, never the token's literal text.
+    token_seed = re.sub(r"\D", "", token) or "0"
+    before_id = f"anim-state-before-{token_seed}"
+    after_id = f"anim-state-after-{token_seed}"
+    # "Before"/"After" are literal English UI chrome -- like the "Analogy" callout
+    # label, added by the render layer rather than the course-writer, so they stay
+    # legible regardless of course language (including RTL). They are hidden during
+    # normal animated playback and shown only in the print/reduced-motion static
+    # presentation; see .anim__state-label in layout.css/print.css.
+    #
+    # The trailing pair of "kind": "set" steps resets both states back to their
+    # resting opacity once the crossfade completes, so the NEXT loop iteration
+    # starts from the same opacity as the first: "after" ends the visible
+    # crossfade at opacity 1 and must be snapped back to 0 before the loop
+    # restarts, and vice versa for "before" -- otherwise the second lap plays
+    # from the wrong starting point.
+    timeline = {
+        "loop": True,
+        "loopDelay": 0,
+        "steps": [
+            {"targets": [f"#{before_id}"], "props": {"opacity": [1, 0]}, "duration": 4000, "ease": "inOutQuad"},
+            {"targets": [f"#{after_id}"], "props": {"opacity": [0, 1]}, "duration": 4000, "ease": "inOutQuad", "position": "<"},
+            {"kind": "set", "targets": [f"#{before_id}"], "props": {"opacity": 1}},
+            {"kind": "set", "targets": [f"#{after_id}"], "props": {"opacity": 0}},
+        ],
+    }
+    timeline_json = html.escape(json.dumps(timeline), quote=False)
+    return (
+        '<div class="anim anim--state-toggle">'
+        f'<div class="anim__state anim__state--before" id="{before_id}">'
+        f'<span class="anim__state-label">Before</span>{html.escape(anim.before)}</div>'
+        f'<div class="anim__state anim__state--after" id="{after_id}">'
+        f'<span class="anim__state-label">After</span>{html.escape(anim.after)}</div>'
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
         "</div>"
     )

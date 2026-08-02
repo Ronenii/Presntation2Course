@@ -229,17 +229,11 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .anim--state-toggle { display: grid; min-block-size: 3em; }
 .anim__state {
   grid-area: 1 / 1;
-  animation-name: anim-state-crossfade; animation-duration: 4s;
-  animation-timing-function: ease-in-out; animation-iteration-count: infinite;
+  opacity: 0; /* wireAnimations() drives visibility once JS runs; the "before"
+                state is shown before JS via the reduced-motion/print override
+                below, so this 0 is only the JS-enabled resting default */
 }
-.anim__state--before { animation-delay: 0s; }
-.anim__state--after { animation-delay: -2s; }
-@keyframes anim-state-crossfade {
-  0%   { opacity: 1; }
-  45%  { opacity: 1; }
-  55%  { opacity: 0; }
-  100% { opacity: 0; }
-}
+.anim__state--before { opacity: 1; }
 /* Literal English UI chrome (see mdrender._animate_html), language-agnostic like the
    "Analogy" callout label. Hidden during normal animated playback; shown only under
    the static print/reduced-motion presentation below and in print.css. */
@@ -247,9 +241,8 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .anim__step, .anim__state {
-    animation: none; opacity: 1; font-weight: 400;
-  }
+  .anim__step { opacity: 1; font-weight: 400; }
+  .anim__state { opacity: 1; }
   /* Both states are shown at once (no animation to convey them over time), so lay
      them out labeled side-by-side instead of stacked on top of each other. */
   .anim--state-toggle { grid-template-columns: 1fr 1fr; gap: var(--space-4); }

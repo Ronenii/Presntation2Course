@@ -542,7 +542,7 @@ def test_step_reveal_renders_with_a_timeline_island():
     assert first_step["props"]["opacity"] == [0.65, 1, 0.65]
 
 
-def test_state_toggle_renders_before_and_after():
+def test_state_toggle_renders_before_and_after_with_a_timeline_island():
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
         '```animate\npattern: state-toggle\nbefore: Shared\nafter: Modified\n```\n\n'
@@ -551,14 +551,25 @@ def test_state_toggle_renders_before_and_after():
     )
     rendered = render_course(md)
     assert rendered.errors == []
-    assert (
-        '<div class="anim__state anim__state--before">'
-        '<span class="anim__state-label">Before</span>Shared</div>'
-    ) in rendered.html_body
-    assert (
-        '<div class="anim__state anim__state--after">'
-        '<span class="anim__state-label">After</span>Modified</div>'
-    ) in rendered.html_body
+    assert re.search(
+        r'<div class="anim__state anim__state--before" id="[^"]+">'
+        r'<span class="anim__state-label">Before</span>Shared</div>',
+        rendered.html_body,
+    )
+    assert re.search(
+        r'<div class="anim__state anim__state--after" id="[^"]+">'
+        r'<span class="anim__state-label">After</span>Modified</div>',
+        rendered.html_body,
+    )
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    assert match, "no anim__timeline data island found"
+    timeline = json.loads(match.group(1))
+    assert timeline["loop"] is True
+    assert len(timeline["steps"]) == 4
 
 
 def test_a_broken_animate_block_becomes_an_error_not_a_crash():
