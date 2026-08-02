@@ -66,7 +66,7 @@ def check_course(out_dir: Path, *, require_pdf: bool = False) -> list[str]:
         if target not in ids:
             problems.append(f"glossary term control points at missing {target}")
 
-    shipped_quizzes = html_text.count('<div class="quiz"')
+    shipped_quizzes = html_text.count('<details class="quiz"')
     if shipped_quizzes != rendered.quiz_count:
         problems.append(
             f"course.html has {shipped_quizzes} quiz blocks, course.md renders "

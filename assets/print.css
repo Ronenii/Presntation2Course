@@ -23,6 +23,7 @@
   /* In print every question is immediately followed by its answer and explanation. */
   .quiz__answer, .quiz__why { display: block !important; }
   .quiz__option { border: 1px solid #999 !important; }
+  .quiz > :not(summary) { display: block !important; }
 
   /* Definitions are useless behind a click on paper. */
   .term__def {

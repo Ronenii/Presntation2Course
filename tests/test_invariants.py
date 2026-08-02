@@ -108,8 +108,8 @@ def test_a_term_control_with_no_glossary_target_is_caught(course_dir):
 def test_the_quiz_count_must_survive_rendering(course_dir):
     html = course_dir / "course.html"
     text = html.read_text()
-    start = text.index('<div class="quiz"')
-    end = text.index("</div>", start) + len("</div>")
+    start = text.index('<details class="quiz"')
+    end = text.index("</details>", start) + len("</details>")
     html.write_text(text[:start] + text[end:])
     assert any("quiz" in p for p in check_course(course_dir))
 

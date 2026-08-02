@@ -144,7 +144,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   border: 1px solid var(--color-border); border-radius: var(--radius);
   background: var(--color-surface);
 }
-.quiz__q { font-weight: 600; margin: var(--space-2) 0 var(--space-4); }
+.quiz__q { font-weight: 600; margin: var(--space-2) 0 var(--space-4); cursor: pointer; }
 .quiz__options { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
 .quiz__option {
   font: inherit; text-align: start; width: 100%; cursor: pointer;
