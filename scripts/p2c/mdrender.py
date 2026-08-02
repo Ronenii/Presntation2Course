@@ -232,7 +232,7 @@ _BAR_MAX_HEIGHT = 120
 _PATH_PADDING = 10
 
 
-def _animate_html(anim: Animate) -> str:
+def _animate_html(anim: Animate, token: str) -> str:
     if anim.pattern == "step-reveal":
         cycle = len(anim.steps) * STEP_SECONDS
         items = "".join(
@@ -256,58 +256,149 @@ def _animate_html(anim: Animate) -> str:
             '</div>'
         )
     if anim.pattern == "array-ops":
-        max_value = max(anim.array) or 1
-        width = len(anim.array) * (_BAR_WIDTH + _BAR_GAP)
-        bars = []
-        for i, value in enumerate(anim.array):
-            x = i * (_BAR_WIDTH + _BAR_GAP)
-            h = round((value / max_value) * _BAR_MAX_HEIGHT, 1)
-            y = _BAR_MAX_HEIGHT - h
-            bars.append((x, y, h))
-        cycle = len(anim.ops) * STEP_SECONDS
-        # Exactly one <rect> per array element (not per op) -- a bar touched by
-        # one or more ops carries every touching op's custom properties, each as
-        # its own declaration block appended to the same style attribute. CSS
-        # custom-property redeclaration is last-wins, so when a bar is hit by more
-        # than one op (e.g. "compare 0 1" then "swap 0 1") only the LAST op's
-        # --op-kind/timing is what actually computes and animates -- the earlier
-        # op's step never visibly renders, even though its declaration text is
-        # still present in the markup. Known, scoped-out limitation; fixing it
-        # would mean emitting overlapping <rect>s per op-touch instead of one per
-        # index.
-        op_styles_by_index: dict[int, list[str]] = {}
-        for i, (verb, a, b) in enumerate(anim.ops):
-            delay = -(i * STEP_SECONDS)
-            style = (
-                f'--op-kind: {verb}; '
-                f'animation-duration: {cycle}s; animation-delay: {delay}s'
-            )
-            op_styles_by_index.setdefault(a, []).append(style)
-            if b is not None:
-                op_styles_by_index.setdefault(b, []).append(style)
-        rects = []
-        for i, (x, y, h) in enumerate(bars):
-            styles = op_styles_by_index.get(i)
-            style_attr = f' style="{"; ".join(styles)}"' if styles else ""
-            rects.append(
-                f'<rect class="anim__array-bar" x="{x}" y="{y}" '
-                f'width="{_BAR_WIDTH}" height="{h}"{style_attr}></rect>'
-            )
-        return (
-            f'<div class="anim anim--array-ops"><svg class="anim__array" '
-            f'viewBox="0 0 {width} {_BAR_MAX_HEIGHT}">{"".join(rects)}</svg></div>'
-        )
+        return _array_ops_html(anim, token)
     # path-trace
+    return _path_trace_html(anim)
+
+
+def _array_ops_html(anim: Animate, token: str) -> str:
+    """Bars occupy fixed slot positions; each bar is a <g> that TRANSLATES
+    between slots as ops replay, so a "swap" is a bar physically crossing the
+    others rather than two bars quietly changing opacity in place -- the
+    previous rects-in-place-with-stacked-style-declarations approach never
+    moved anything and silently dropped every op but the last one touching a
+    given index (CSS custom-property redeclaration is last-wins). Each op is
+    now its own timed step with its own keyframe percentage window, so
+    "compare 0 1" and "swap 0 1" both get their own visible moment even when
+    they touch the same indices.
+    """
+    max_value = max(anim.array) or 1
+    n = len(anim.array)
+    slot_width = _BAR_WIDTH + _BAR_GAP
+    width = n * slot_width
+    # slot_of_bar[original_index] = which slot that bar currently occupies, replayed
+    # step by step. Bars are tracked by their ORIGINAL index (not by slot), so each
+    # bar's <g> carries one translate keyframe across every step even as its slot
+    # changes when it's swapped -- the value shown on a bar never changes, only its
+    # x-position does.
+    slot_of_bar = list(range(n))
+    timeline: list[list[tuple[int, str]]] = [
+        [(slot_of_bar[i], "idle")] for i in range(n)
+    ]
+    for verb, a, b in anim.ops:
+        if verb == "swap":
+            slot_of_bar[a], slot_of_bar[b] = slot_of_bar[b], slot_of_bar[a]
+        for i in range(n):
+            if i == a or i == b:
+                timeline[i].append((slot_of_bar[i], verb))
+            else:
+                timeline[i].append((slot_of_bar[i], "idle"))
+    steps = len(anim.ops)
+    cycle = (steps + 1) * STEP_SECONDS
+    groups = []
+    keyframes = []
+    # Keyframe names must be unique per animate block on the page (they are NOT
+    # scoped by the surrounding <style> tag -- @keyframes names are document-global),
+    # and deterministic across identical reruns (this project's whole build is
+    # required to be byte-reproducible, so id()/random-based names are never an
+    # option here). fence.token ("P2CBLOCK{n}ENDBLOCK") is already a stable,
+    # unique-per-occurrence string, but the token's own literal text must NEVER
+    # appear inside this function's returned HTML: blocks.restore() does a second,
+    # unconditional text.replace(token, value) pass after substituting every
+    # token, and if `value` (this return value) itself contains the token
+    # substring, that second pass matches it too and splices the whole HTML block
+    # in a second time, nested inside its own keyframe name. Extracting just the
+    # digits (the token's ordinal, e.g. "0" from "P2CBLOCK0ENDBLOCK") keeps
+    # uniqueness/determinism without ever reproducing the marker text itself.
+    token_seed = re.sub(r"\D", "", token) or "0"
+    for bar_index in range(n):
+        value = anim.array[bar_index]
+        height = round((value / max_value) * _BAR_MAX_HEIGHT, 1)
+        y = _BAR_MAX_HEIGHT - height
+        frames = timeline[bar_index]
+        name = f"anim-array-bar-{token_seed}-{bar_index}"
+        # A CSS class can only apply one fixed look for the whole animation, but a
+        # bar's highlight needs to change PER STEP (idle most of the time, colored
+        # only during the step(s) that touch it) -- so color is driven by the same
+        # per-step keyframe as position, as a `fill` value alongside `transform`,
+        # rather than a static class. Each step gets a sharp on/off transition (two
+        # stops at the same percentage) so a highlight reads as a discrete step,
+        # not a fade.
+        pct_stops = []
+        for step_i, (slot, kind) in enumerate(frames):
+            start_pct = round(step_i / (steps + 1) * 100, 3)
+            end_pct = round((step_i + 1) / (steps + 1) * 100, 3)
+            x = slot * slot_width
+            fill = f"var(--anim-array-{kind})" if kind != "idle" else "var(--anim-array-idle)"
+            pct_stops.append(
+                f"{start_pct}% {{ transform: translateX({x}px); --bar-fill: {fill}; }}"
+            )
+            pct_stops.append(
+                f"{end_pct}% {{ transform: translateX({x}px); --bar-fill: {fill}; }}"
+            )
+        keyframes.append(f"@keyframes {name} {{ {' '.join(pct_stops)} }}")
+        groups.append(
+            f'<g class="anim__array-bar" '
+            f'style="animation-name: {name}; animation-duration: {cycle}s;">'
+            f'<rect x="0" y="{y}" width="{_BAR_WIDTH}" height="{height}"></rect>'
+            f'<text class="anim__array-label" x="{_BAR_WIDTH / 2:g}" '
+            f'y="{_BAR_MAX_HEIGHT + 16}">{html.escape(str(value))}</text>'
+            "</g>"
+        )
+    style_tag = f"<style>{' '.join(keyframes)}</style>" if keyframes else ""
+    # Reduced-motion/print static fallback (same dual-render precedent as
+    # state-toggle): the animated <svg> is hidden and this plain step list shown
+    # instead, rather than trying to freeze an infinitely-looping animation
+    # mid-cycle (animation-play-state: paused has no defined "which lap" to stop
+    # on for an `infinite` animation, so it can't reliably show the final result).
+    op_lines = "".join(
+        f"<li>{html.escape(verb)} index {a}"
+        + (f" and {b}" if b is not None else "")
+        + "</li>"
+        for verb, a, b in anim.ops
+    )
+    static_fallback = f'<ol class="anim__array-steps-static">{op_lines}</ol>'
+    return (
+        f'<div class="anim anim--array-ops"><svg class="anim__array" '
+        f'viewBox="0 0 {width} {_BAR_MAX_HEIGHT + 20}">{style_tag}{"".join(groups)}</svg>'
+        f"{static_fallback}</div>"
+    )
+
+
+def _path_trace_html(anim: Animate) -> str:
     xs = [x for x, _ in anim.points]
     ys = [y for _, y in anim.points]
-    min_x, max_x = min(xs) - _PATH_PADDING, max(xs) + _PATH_PADDING
-    min_y, max_y = min(ys) - _PATH_PADDING, max(ys) + _PATH_PADDING
+    data_min_x, data_max_x = min(xs), max(xs)
+    data_min_y, data_max_y = min(ys), max(ys)
+    min_x, max_x = data_min_x - _PATH_PADDING, data_max_x + _PATH_PADDING
+    min_y, max_y = data_min_y - _PATH_PADDING, data_max_y + _PATH_PADDING
     points_attr = " ".join(f"{x:g},{y:g}" for x, y in anim.points)
     path_d = "M " + " L ".join(f"{x:g},{y:g}" for x, y in anim.points)
+    # Axes drawn at the data's own min edges (not always literal 0), so a plot
+    # whose values never cross zero (e.g. all y > 0) still gets a frame of
+    # reference at its own floor/left-edge rather than an axis floating away
+    # from every data point.
+    axis = (
+        f'<line class="anim__path-axis" x1="{min_x:g}" y1="{data_max_y:g}" '
+        f'x2="{max_x:g}" y2="{data_max_y:g}"></line>'
+        f'<line class="anim__path-axis" x1="{data_min_x:g}" y1="{min_y:g}" '
+        f'x2="{data_min_x:g}" y2="{max_y:g}"></line>'
+    )
+    labels = (
+        f'<text class="anim__path-tick" x="{data_min_x:g}" y="{data_max_y + 9:g}">'
+        f"{data_min_x:g}</text>"
+        f'<text class="anim__path-tick" x="{data_max_x:g}" y="{data_max_y + 9:g}">'
+        f"{data_max_x:g}</text>"
+        f'<text class="anim__path-tick" x="{data_min_x - 2:g}" y="{data_min_y:g}">'
+        f"{data_min_y:g}</text>"
+        f'<text class="anim__path-tick" x="{data_min_x - 2:g}" y="{data_max_y:g}">'
+        f"{data_max_y:g}</text>"
+    )
     return (
         '<div class="anim anim--path-trace">'
         f'<svg class="anim__path" dir="ltr" '
         f'viewBox="{min_x:g} {min_y:g} {max_x - min_x:g} {max_y - min_y:g}">'
+        f"{axis}{labels}"
         f'<polyline class="anim__path-line" points="{points_attr}"></polyline>'
         f'<circle class="anim__path-marker" r="4" '
         f"style=\"offset-path: path('{path_d}')\"></circle>"
@@ -597,7 +688,7 @@ def render_course(course_md: str) -> Rendered:
                 errors.append(f"{anchor}: animate {exc}")
                 replacements[fence.token] = ""
                 continue
-            replacements[fence.token] = _animate_html(anim)
+            replacements[fence.token] = _animate_html(anim, fence.token)
         else:
             replacements[fence.token] = _callout_html(fence.kind, fence.body)
 

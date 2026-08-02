@@ -36,6 +36,13 @@
   a { color: #000; text-decoration: underline; }
   .content a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.8em; word-break: break-all; unicode-bidi: isolate; direction: ltr; }
   .mermaid svg { max-width: 100% !important; }
-  .anim__array-bar { animation: none !important; opacity: 1 !important; }
+  /* Same reasoning as the reduced-motion rule: an infinite animation has no
+     defined "final" frame to freeze on paper, so print shows the static step
+     list instead of the animated bars. */
+  .anim__array { display: none !important; }
+  .anim__array-steps-static {
+    display: block !important; list-style: decimal !important;
+    padding-inline-start: 1.5em !important; margin: 0 !important;
+  }
   .anim__path-marker { animation: none !important; offset-distance: 100% !important; }
 }

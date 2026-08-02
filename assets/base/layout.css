@@ -265,30 +265,48 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 }
 
 .anim--array-ops { text-align: center; }
-.anim__array { width: 100%; height: auto; }
-/* 0.55 keeps an untouched bar visible against the surface while still reading as
-   "not currently active", the same contrast-vs-recede tradeoff as .anim__step's
-   0.65 above; bars go fully opaque only while an op highlights them. */
-.anim__array-bar {
-  fill: var(--color-accent);
-  opacity: 0.55;
+.anim__array {
+  width: 100%; height: auto;
+  /* Bar fill for each of the three op verbs, plus the resting/idle color -- read
+     by every bar's per-step @keyframes (generated inline per block, since the
+     exact transform/fill values depend on that specific block's data) via the
+     shared --bar-fill custom property. compare/swap/highlight reuse the same
+     semantic colors quiz feedback already uses (warn/accent/correct), so a
+     reader doesn't have to learn a second color vocabulary for the same ideas
+     ("being inspected", "in motion", "settled/done"). */
+  --anim-array-idle: var(--color-border);
+  --anim-array-compare: var(--color-warn);
+  --anim-array-swap: var(--color-accent);
+  --anim-array-highlight: var(--color-correct);
 }
-.anim__array-bar[style*="--op-kind: compare"],
-.anim__array-bar[style*="--op-kind: swap"],
-.anim__array-bar[style*="--op-kind: highlight"] {
-  animation-name: anim-array-highlight;
-  animation-timing-function: ease-in-out;
+.anim__array-bar rect {
+  fill: var(--bar-fill, var(--anim-array-idle));
+  transition: fill 0.15s ease;
+}
+.anim__array-bar {
+  animation-timing-function: steps(1, end);
   animation-iteration-count: infinite;
 }
-@keyframes anim-array-highlight {
-  0%   { opacity: 1; }
-  15%  { opacity: 1; }
-  25%  { opacity: 0.55; }
-  100% { opacity: 0.55; }
+.anim__array-label {
+  font-size: 11px;
+  fill: var(--color-fg);
+  text-anchor: middle;
 }
+/* Hidden during normal animated playback; shown only under the static
+   print/reduced-motion presentation below, same toggle-pair pattern as
+   .anim__state-label. */
+.anim__array-steps-static { display: none; }
 
 .anim--path-trace { text-align: center; }
 .anim__path { width: 100%; height: auto; max-block-size: 16rem; }
+.anim__path-axis {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+.anim__path-tick {
+  font-size: 6px;
+  fill: var(--color-muted);
+}
 .anim__path-line {
   fill: none;
   stroke: var(--color-border);
@@ -311,6 +329,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .anim__path-caption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
 
 @media (prefers-reduced-motion: reduce) {
-  .anim__array-bar { animation: none; opacity: 1; }
+  .anim__array { display: none; }
+  .anim__array-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
   .anim__path-marker { animation: none; offset-distance: 100%; }
 }

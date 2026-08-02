@@ -661,9 +661,22 @@ def test_array_ops_renders_bars_and_ops():
     assert rendered.errors == []
     assert '<div class="anim anim--array-ops">' in rendered.html_body
     assert 'class="anim__array"' in rendered.html_body
-    assert rendered.html_body.count('class="anim__array-bar"') == 3
-    assert "--op-kind: compare" in rendered.html_body
-    assert "--op-kind: swap" in rendered.html_body
+    assert rendered.html_body.count('<g class="anim__array-bar"') == 3
+    # Each bar is a value label, so the reader sees the numbers, not just heights.
+    assert '<text class="anim__array-label" x="16" y="136">5</text>' in rendered.html_body
+    assert '<text class="anim__array-label" x="16" y="136">3</text>' in rendered.html_body
+    assert '<text class="anim__array-label" x="16" y="136">8</text>' in rendered.html_body
+    # A swap actually moves a bar's x-position via its own @keyframes rule --
+    # bars 0 and 1 (touched by "compare 0 1" then "swap 0 1") each get a keyframe
+    # naming them by index, and their translateX values genuinely differ between
+    # the two, proving position (not just color) changes across the sequence.
+    assert "@keyframes anim-array-bar-" in rendered.html_body
+    assert "--bar-fill: var(--anim-array-compare)" in rendered.html_body
+    assert "--bar-fill: var(--anim-array-swap)" in rendered.html_body
+    # Reduced-motion/print fallback: the ops replay as a plain step list.
+    assert '<ol class="anim__array-steps-static">' in rendered.html_body
+    assert "<li>compare index 0 and 1</li>" in rendered.html_body
+    assert "<li>swap index 0 and 1</li>" in rendered.html_body
 
 
 def test_path_trace_renders_polyline_and_marker():

@@ -138,8 +138,12 @@ def test_layout_css_styles_every_component_the_renderers_emit():
         ".anim--array-ops",
         ".anim__array",
         ".anim__array-bar",
+        ".anim__array-label",
+        ".anim__array-steps-static",
         ".anim--path-trace",
         ".anim__path",
+        ".anim__path-axis",
+        ".anim__path-tick",
         ".anim__path-line",
         ".anim__path-marker",
         ".anim__path-caption",
@@ -153,7 +157,10 @@ def test_layout_css_only_uses_tokens_the_themes_define():
     layout_owned = {
         t
         for t in used
-        if t.startswith(("--space", "--radius", "--measure", "--z-", "--drawer-closed-x"))
+        if t.startswith((
+            "--space", "--radius", "--measure", "--z-", "--drawer-closed-x",
+            "--anim-array-", "--bar-fill",
+        ))
     }
     assert used - layout_owned <= set(REQUIRED_TOKENS)
 
