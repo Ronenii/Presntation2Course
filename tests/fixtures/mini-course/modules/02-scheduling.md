@@ -22,6 +22,19 @@ steps:
   - It runs until it blocks, yields, or is preempted
 ```
 
+```animate
+pattern: array-ops
+array:
+  - 5
+  - 3
+  - 8
+  - 1
+ops:
+  - compare 0 1
+  - swap 0 1
+  - highlight 2
+```
+
 ```quiz
 q: Halving the quantum on an interactive system usually has which effect?
 - [x] Better response time, more time lost to context switching
