@@ -193,7 +193,13 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 }
 .term:hover { border-bottom-style: solid; }
 .term__def {
-  display: block; margin: var(--space-2) 0; padding: var(--space-3);
+  position: absolute;
+  top: 100%;
+  inset-inline-start: 0;
+  z-index: var(--z-popover);
+  margin-block-start: var(--space-2);
+  padding: var(--space-3);
+  max-inline-size: min(24rem, calc(100vw - 2 * var(--space-4)));
   border: 1px solid var(--color-border); border-inline-start: 3px solid var(--color-accent);
   border-radius: var(--radius); background: var(--color-surface);
   font-size: 0.92rem; color: var(--color-fg);
@@ -251,6 +257,11 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .sidebar-toggle { display: inline-flex; }
   .content { padding: var(--space-6) var(--space-4); }
   .glossary { grid-template-columns: 1fr; }
+  .term__def {
+    inset-inline-start: 50%;
+    transform: translateX(-50%);
+    max-inline-size: calc(100vw - 2 * var(--space-4));
+  }
 }
 
 @media (max-width: 860px) and (prefers-reduced-motion: reduce) {
@@ -387,7 +398,11 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .quiz__option { border: 1px solid #999 !important; }
 
   /* Definitions are useless behind a click on paper. */
-  .term__def { display: block !important; }
+  .term__def {
+    position: static !important; display: block !important;
+    inset-inline-start: auto !important; top: auto !important;
+    max-inline-size: none !important; transform: none !important;
+  }
   .term { border-bottom: 1px dotted #666; }
 
   a { color: #000; text-decoration: underline; }
@@ -552,17 +567,35 @@ will see how the system decides who runs next once several programs are ready at
     });
   }
 
-  /* --- glossary terms: click to reveal ------------------------------------ */
+  /* --- glossary terms: click to reveal, one at a time --------------------- */
   function wireTerms() {
-    document.querySelectorAll(".term").forEach(function (term) {
-      term.addEventListener("click", function () {
+    var terms = document.querySelectorAll(".term");
+    function closeAll(except) {
+      terms.forEach(function (term) {
+        if (term === except) { return; }
+        var id = term.getAttribute("aria-controls");
+        var def = id ? document.getElementById(id) : null;
+        if (def && !def.hidden) {
+          def.hidden = true;
+          term.setAttribute("aria-expanded", "false");
+        }
+      });
+    }
+    terms.forEach(function (term) {
+      term.addEventListener("click", function (event) {
+        event.stopPropagation();
         var id = term.getAttribute("aria-controls");
         var def = id ? document.getElementById(id) : term.parentNode.querySelector(".term__def");
         if (!def) { return; }
         var open = def.hidden;
+        closeAll(term);
         def.hidden = !open;
         term.setAttribute("aria-expanded", open ? "true" : "false");
       });
+    });
+    document.addEventListener("click", function () { closeAll(null); });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") { closeAll(null); }
     });
   }
 

@@ -25,7 +25,11 @@
   .quiz__option { border: 1px solid #999 !important; }
 
   /* Definitions are useless behind a click on paper. */
-  .term__def { display: block !important; }
+  .term__def {
+    position: static !important; display: block !important;
+    inset-inline-start: auto !important; top: auto !important;
+    max-inline-size: none !important; transform: none !important;
+  }
   .term { border-bottom: 1px dotted #666; }
 
   a { color: #000; text-decoration: underline; }

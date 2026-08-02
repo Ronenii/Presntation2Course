@@ -26,17 +26,35 @@
     });
   }
 
-  /* --- glossary terms: click to reveal ------------------------------------ */
+  /* --- glossary terms: click to reveal, one at a time --------------------- */
   function wireTerms() {
-    document.querySelectorAll(".term").forEach(function (term) {
-      term.addEventListener("click", function () {
+    var terms = document.querySelectorAll(".term");
+    function closeAll(except) {
+      terms.forEach(function (term) {
+        if (term === except) { return; }
+        var id = term.getAttribute("aria-controls");
+        var def = id ? document.getElementById(id) : null;
+        if (def && !def.hidden) {
+          def.hidden = true;
+          term.setAttribute("aria-expanded", "false");
+        }
+      });
+    }
+    terms.forEach(function (term) {
+      term.addEventListener("click", function (event) {
+        event.stopPropagation();
         var id = term.getAttribute("aria-controls");
         var def = id ? document.getElementById(id) : term.parentNode.querySelector(".term__def");
         if (!def) { return; }
         var open = def.hidden;
+        closeAll(term);
         def.hidden = !open;
         term.setAttribute("aria-expanded", open ? "true" : "false");
       });
+    });
+    document.addEventListener("click", function () { closeAll(null); });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") { closeAll(null); }
     });
   }
 

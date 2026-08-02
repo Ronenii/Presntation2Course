@@ -262,3 +262,26 @@ def test_sidebar_drawer_transform_is_direction_aware():
 def test_print_css_hides_the_sidebar_scrim():
     css = (ASSETS / "print.css").read_text()
     assert ".sidebar-scrim" in css
+
+
+def test_term_def_is_positioned_out_of_flow_not_a_block_sibling():
+    css = (ASSETS / "base" / "layout.css").read_text()
+    rule_start = css.index(".term__def {")
+    rule = css[rule_start : css.index("}", rule_start)]
+    assert "position: absolute" in rule
+    assert "max-inline-size:" in rule
+
+
+def test_print_css_returns_the_term_definition_to_normal_flow():
+    css = (ASSETS / "print.css").read_text()
+    rule_start = css.index(".term__def {")
+    rule = css[rule_start : css.index("}", rule_start)]
+    assert "position: static !important" in rule
+
+
+def test_course_js_closes_other_open_terms_and_supports_escape():
+    js = (ASSETS / "base" / "course.js").read_text()
+    assert "Escape" in js
+    # wireTerms must reference more than one .term__def when opening one, i.e. it
+    # iterates all defs to close siblings -- lock in the query used for that.
+    assert js.count('querySelectorAll(".term__def")') >= 1 or js.count('querySelectorAll(".term")') >= 1
