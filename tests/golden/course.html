@@ -76,7 +76,18 @@
   --space-12: 3rem;
   --radius: 6px;
   --measure: 70ch;
+  /* Stacking order for the project's first overlay UI (mobile drawer + glossary
+     popover): scrim sits under the drawer, the popover sits above both so it's
+     never hidden behind an open drawer if that ever becomes reachable. */
+  --z-scrim: 10;
+  --z-drawer: 20;
+  --z-popover: 30;
+  /* transform: translateX() has no logical-property equivalent (unlike every other
+     directional value in this file) -- flip the sign here instead, under [dir="rtl"]
+     below, so the drawer still closes toward its own start edge in both directions. */
+  --drawer-closed-x: -100%;
 }
+[dir="rtl"] { --drawer-closed-x: 100%; }
 *, *::before, *::after { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: var(--space-8); }
 body {
@@ -118,6 +129,13 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   border-inline-end: 1px solid var(--color-border);
   background: var(--color-surface);
 }
+.sidebar-toggle { display: none; }
+.sidebar-scrim {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: var(--z-scrim);
+}
+.sidebar-scrim[hidden] { display: none; }
 .sidebar__eyebrow {
   margin: 0; text-transform: uppercase; letter-spacing: 0.08em;
   font-size: 0.7rem; color: var(--color-muted);
@@ -149,7 +167,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   color: var(--color-accent); border-inline-start-color: var(--color-accent); background: var(--color-bg);
 }
 
-.content { max-width: var(--measure); padding: var(--space-8) var(--space-6) var(--space-12); }
+.content { max-width: var(--measure); margin-inline: auto; padding: var(--space-8) var(--space-6) var(--space-12); }
 
 .callout {
   margin: var(--space-6) 0; padding: var(--space-4) var(--space-6);
@@ -220,9 +238,23 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 
 @media (max-width: 860px) {
   .shell { grid-template-columns: 1fr; gap: 0; }
-  .sidebar { position: static; height: auto; border-inline-end: none; border-bottom: 1px solid var(--color-border); }
+  .sidebar {
+    position: fixed; inset-block: 0; inset-inline-start: 0;
+    inline-size: min(300px, 85vw); height: 100vh;
+    border-inline-end: 1px solid var(--color-border);
+    box-shadow: 0 0 12px rgba(0, 0, 0, 0.2);
+    z-index: var(--z-drawer);
+    transform: translateX(var(--drawer-closed-x));
+    transition: transform 0.25s ease;
+  }
+  .sidebar[data-open="true"] { transform: translateX(0); }
+  .sidebar-toggle { display: inline-flex; }
   .content { padding: var(--space-6) var(--space-4); }
   .glossary { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 860px) and (prefers-reduced-motion: reduce) {
+  .sidebar { transition: none; }
 }
 .figure { margin: var(--space-6) 0; text-align: center; }
 .figure img { max-width: 100%; height: auto; border-radius: var(--radius); }
@@ -281,6 +313,52 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .anim__state { grid-area: auto; }
   .anim__state-label { display: block; font-weight: 600; margin-block-end: var(--space-1); }
 }
+
+.anim--array-ops { text-align: center; }
+.anim__array { width: 100%; height: auto; }
+.anim__array-bar {
+  fill: var(--color-accent);
+  opacity: 0.55;
+}
+.anim__array-bar[style*="--op-kind: compare"],
+.anim__array-bar[style*="--op-kind: swap"],
+.anim__array-bar[style*="--op-kind: highlight"] {
+  animation-name: anim-array-highlight;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+@keyframes anim-array-highlight {
+  0%   { opacity: 1; }
+  15%  { opacity: 1; }
+  25%  { opacity: 0.55; }
+  100% { opacity: 0.55; }
+}
+
+.anim--path-trace { text-align: center; }
+.anim__path { width: 100%; height: auto; max-block-size: 16rem; }
+.anim__path-line {
+  fill: none;
+  stroke: var(--color-border);
+  stroke-width: 2;
+}
+.anim__path-marker {
+  fill: var(--color-accent);
+  offset-distance: 0%;
+  animation-name: anim-path-travel;
+  animation-duration: 4s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes anim-path-travel {
+  from { offset-distance: 0%; }
+  to   { offset-distance: 100%; }
+}
+.anim__path-caption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim__array-bar { animation: none; opacity: 1; }
+  .anim__path-marker { animation: none; offset-distance: 100%; }
+}
 </style>
 <style>/* Shared print layout. Used by the in-page Download PDF button and export-pdf. */
 @page { size: A4; margin: 18mm 16mm; }
@@ -288,7 +366,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 @media print {
   html, body { background: #fff !important; color: #000 !important; }
   .shell { display: block; }
-  .sidebar, .skip-link, .btn, .footer { display: none !important; }
+  .sidebar, .skip-link, .btn, .footer, .sidebar-scrim { display: none !important; }
   .content { max-width: none; padding: 0; }
 
   h1, h2, h3 { break-after: avoid-page; page-break-after: avoid; }
@@ -315,13 +393,16 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   a { color: #000; text-decoration: underline; }
   .content a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.8em; word-break: break-all; unicode-bidi: isolate; direction: ltr; }
   .mermaid svg { max-width: 100% !important; }
+  .anim__array-bar { animation: none !important; opacity: 1 !important; }
+  .anim__path-marker { animation: none !important; offset-distance: 100% !important; }
 }
 </style>
 </head>
 <body>
 <a class="skip-link" href="#content">Skip to course content</a>
 <div class="shell">
-  <aside class="sidebar">
+  <button type="button" class="btn sidebar-toggle" id="sidebar-toggle" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  <aside class="sidebar" id="sidebar" tabindex="-1">
     <div class="sidebar__head">
       <p class="sidebar__eyebrow">Course</p>
       <p class="sidebar__title">Operating Systems Foundations</p>
@@ -345,6 +426,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 </ul>
     </nav>
   </aside>
+  <div class="sidebar-scrim" id="sidebar-scrim" hidden></div>
   <main class="content" id="content" tabindex="-1">
     <h1 id="operating-systems-foundations">Operating Systems Foundations</h1>
 <h2 id="virtual-memory">Virtual Memory</h2>

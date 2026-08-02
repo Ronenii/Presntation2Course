@@ -141,7 +141,11 @@ def test_layout_css_styles_every_component_the_renderers_emit():
 def test_layout_css_only_uses_tokens_the_themes_define():
     css = (ASSETS / "base" / "layout.css").read_text()
     used = set(re.findall(r"var\((--[a-z0-9-]+)", css))
-    layout_owned = {t for t in used if t.startswith(("--space", "--radius", "--measure"))}
+    layout_owned = {
+        t
+        for t in used
+        if t.startswith(("--space", "--radius", "--measure", "--z-", "--drawer-closed-x"))
+    }
     assert used - layout_owned <= set(REQUIRED_TOKENS)
 
 
@@ -224,3 +228,30 @@ def test_content_column_is_centered_within_its_grid_track():
     rule_start = css.index(".content {")
     rule = css[rule_start : css.index("}", rule_start)]
     assert "margin-inline: auto" in rule
+
+
+def test_template_has_a_sidebar_toggle_and_scrim():
+    template = (ASSETS / "base" / "template.html").read_text()
+    assert 'id="sidebar-toggle"' in template
+    assert 'aria-controls="sidebar"' in template
+    assert 'id="sidebar"' in template
+    assert 'id="sidebar-scrim"' in template
+    assert 'class="sidebar-scrim"' in template
+
+
+def test_layout_css_styles_the_mobile_drawer():
+    css = (ASSETS / "base" / "layout.css").read_text()
+    for selector in (".sidebar-toggle", ".sidebar-scrim", "--z-scrim", "--z-drawer", "--z-popover"):
+        assert selector in css, selector
+
+
+def test_sidebar_drawer_transform_is_direction_aware():
+    css = (ASSETS / "base" / "layout.css").read_text()
+    assert "--drawer-closed-x: -100%" in css
+    assert '[dir="rtl"]' in css
+    assert "--drawer-closed-x: 100%" in css
+
+
+def test_print_css_hides_the_sidebar_scrim():
+    css = (ASSETS / "print.css").read_text()
+    assert ".sidebar-scrim" in css

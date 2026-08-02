@@ -12,7 +12,8 @@
 <body>
 <a class="skip-link" href="#content">Skip to course content</a>
 <div class="shell">
-  <aside class="sidebar">
+  <button type="button" class="btn sidebar-toggle" id="sidebar-toggle" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  <aside class="sidebar" id="sidebar" tabindex="-1">
     <div class="sidebar__head">
       <p class="sidebar__eyebrow">Course</p>
       <p class="sidebar__title">{{TITLE}}</p>
@@ -25,6 +26,7 @@
       {{TOC}}
     </nav>
   </aside>
+  <div class="sidebar-scrim" id="sidebar-scrim" hidden></div>
   <main class="content" id="content" tabindex="-1">
     {{CONTENT}}
     <section class="appendix">
