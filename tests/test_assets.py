@@ -126,6 +126,14 @@ def test_layout_css_styles_every_component_the_renderers_emit():
         ".mermaid",
         ".glossary",
         ".diagram-fallback",
+        ".anim--array-ops",
+        ".anim__array",
+        ".anim__array-bar",
+        ".anim--path-trace",
+        ".anim__path",
+        ".anim__path-line",
+        ".anim__path-marker",
+        ".anim__path-caption",
     ):
         assert selector in css, selector
 

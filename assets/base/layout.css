@@ -214,3 +214,49 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .anim__state { grid-area: auto; }
   .anim__state-label { display: block; font-weight: 600; margin-block-end: var(--space-1); }
 }
+
+.anim--array-ops { text-align: center; }
+.anim__array { width: 100%; height: auto; }
+.anim__array-bar {
+  fill: var(--color-accent);
+  opacity: 0.55;
+}
+.anim__array-bar[style*="--op-kind: compare"],
+.anim__array-bar[style*="--op-kind: swap"],
+.anim__array-bar[style*="--op-kind: highlight"] {
+  animation-name: anim-array-highlight;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+@keyframes anim-array-highlight {
+  0%   { opacity: 1; }
+  15%  { opacity: 1; }
+  25%  { opacity: 0.55; }
+  100% { opacity: 0.55; }
+}
+
+.anim--path-trace { text-align: center; }
+.anim__path { width: 100%; height: auto; max-block-size: 16rem; }
+.anim__path-line {
+  fill: none;
+  stroke: var(--color-border);
+  stroke-width: 2;
+}
+.anim__path-marker {
+  fill: var(--color-accent);
+  offset-distance: 0%;
+  animation-name: anim-path-travel;
+  animation-duration: 4s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes anim-path-travel {
+  from { offset-distance: 0%; }
+  to   { offset-distance: 100%; }
+}
+.anim__path-caption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim__array-bar { animation: none; opacity: 1; }
+  .anim__path-marker { animation: none; offset-distance: 100%; }
+}
