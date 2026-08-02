@@ -267,16 +267,19 @@ def _animate_html(anim: Animate) -> str:
         cycle = len(anim.ops) * STEP_SECONDS
         # Exactly one <rect> per array element (not per op) -- a bar touched by
         # one or more ops carries every touching op's custom properties, each as
-        # its own declaration block appended to the same style attribute, so a
-        # bar hit by two ops (e.g. "compare 0 1" then "swap 0 1") still shows
-        # both --op-kind values in the markup instead of the later op silently
-        # overwriting the earlier one.
+        # its own declaration block appended to the same style attribute. CSS
+        # custom-property redeclaration is last-wins, so when a bar is hit by more
+        # than one op (e.g. "compare 0 1" then "swap 0 1") only the LAST op's
+        # --op-kind/timing is what actually computes and animates -- the earlier
+        # op's step never visibly renders, even though its declaration text is
+        # still present in the markup. Known, scoped-out limitation; fixing it
+        # would mean emitting overlapping <rect>s per op-touch instead of one per
+        # index.
         op_styles_by_index: dict[int, list[str]] = {}
         for i, (verb, a, b) in enumerate(anim.ops):
             delay = -(i * STEP_SECONDS)
-            b_attr = b if b is not None else a
             style = (
-                f'--op-a: {a}; --op-b: {b_attr}; --op-kind: {verb}; '
+                f'--op-kind: {verb}; '
                 f'animation-duration: {cycle}s; animation-delay: {delay}s'
             )
             op_styles_by_index.setdefault(a, []).append(style)

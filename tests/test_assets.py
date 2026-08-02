@@ -132,6 +132,8 @@ def test_layout_css_styles_every_component_the_renderers_emit():
         ".callout--unverified",
         ".mermaid",
         ".glossary",
+        ".sources-group",
+        ".sources",
         ".diagram-fallback",
         ".anim--array-ops",
         ".anim__array",

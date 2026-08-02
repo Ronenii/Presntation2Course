@@ -94,7 +94,11 @@ def test_the_html_is_self_contained(built):
     links in the Sources appendix are a sanctioned exception -- they are plain
     <a href> anchors, never a resource-loading tag, and clicking one is the
     reader's own choice rather than the page reaching out on load (this is also
-    exactly what validate.py's own _external_requests scan permits)."""
+    exactly what validate.py's own _external_requests scan permits).
+
+    This only covers the resource-tag-substring case; the fuller external-request
+    vector coverage (CSS url(), fetch(), XMLHttpRequest, etc.) lives in
+    tests/test_validate.py."""
     html = built.course_html.read_text()
     assert "<style>" in html
     assert "@import" not in html

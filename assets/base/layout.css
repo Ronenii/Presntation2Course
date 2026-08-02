@@ -126,6 +126,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 }
 .term:hover { border-bottom-style: solid; }
 .term__def {
+  display: block;
   position: absolute;
   top: 100%;
   inset-inline-start: 0;
@@ -144,7 +145,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   border: 1px solid var(--color-border); border-radius: var(--radius);
   background: var(--color-surface);
 }
-.quiz__q { font-weight: 600; margin: var(--space-2) 0 var(--space-4); cursor: pointer; }
+.quiz__q { font-weight: 600; margin-block: var(--space-2) var(--space-4); cursor: pointer; }
 .quiz__options { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
 .quiz__option {
   font: inherit; text-align: start; width: 100%; cursor: pointer;
@@ -173,6 +174,11 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .glossary { display: grid; grid-template-columns: minmax(8rem, 14rem) 1fr; gap: var(--space-2) var(--space-6); }
 .glossary dt { font-weight: 600; font-family: var(--font-heading); }
 .glossary dd { margin: 0; color: var(--color-fg); }
+.sources-group { margin-block-end: var(--space-6); }
+.sources-group h3 { font: inherit; font-weight: 600; font-family: var(--font-heading); margin: 0 0 var(--space-2); }
+.sources-group:last-child { margin-block-end: 0; }
+.sources { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.sources li { font-size: 0.92rem; }
 .footer { margin-top: var(--space-12); color: var(--color-muted); font-size: 0.85rem; }
 
 @media (max-width: 860px) {
@@ -260,6 +266,9 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 
 .anim--array-ops { text-align: center; }
 .anim__array { width: 100%; height: auto; }
+/* 0.55 keeps an untouched bar visible against the surface while still reading as
+   "not currently active", the same contrast-vs-recede tradeoff as .anim__step's
+   0.65 above; bars go fully opaque only while an op highlights them. */
 .anim__array-bar {
   fill: var(--color-accent);
   opacity: 0.55;
@@ -285,6 +294,8 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   stroke: var(--color-border);
   stroke-width: 2;
 }
+/* 4s/linear mirrors the state-toggle crossfade's pacing above: slow enough to
+   follow the marker across the path, steady enough not to feel like it's racing. */
 .anim__path-marker {
   fill: var(--color-accent);
   offset-distance: 0%;
