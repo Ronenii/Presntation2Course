@@ -40,6 +40,8 @@
      defined "final" frame to freeze on paper, so print shows the static step
      list instead of the animated bars. */
   .anim__array { display: none !important; }
+  .anim__caption { display: none !important; }
+  .anim__array-legend { display: none !important; }
   .anim__array-steps-static {
     display: block !important; list-style: decimal !important;
     padding-inline-start: 1.5em !important; margin: 0 !important;

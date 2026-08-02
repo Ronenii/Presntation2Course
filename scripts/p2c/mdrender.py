@@ -227,10 +227,33 @@ def parse_animate(body: str) -> Animate:
     return Animate(pattern=pattern, steps=steps, before=before or "", after=after or "")
 
 
-_BAR_WIDTH = 32
-_BAR_GAP = 12
+_BAR_WIDTH = 36
+_BAR_GAP = 18
 _BAR_MAX_HEIGHT = 120
+_BAR_HEADROOM = 40  # verified in mockup: enough room above the tallest bar for a
+                    # 1.15x highlight scale-pulse to never approach the SVG's own edge
+_BAR_BASELINE_Y = _BAR_HEADROOM + _BAR_MAX_HEIGHT  # y-coordinate of the x-axis line
 _PATH_PADDING = 10
+
+_ARRAY_VERB_LABEL = {"compare": "comparing", "swap": "swapping", "highlight": "highlighting"}
+
+
+def _timeline_island_json(timeline: dict) -> str:
+    """Serialize a timeline for embedding in <script type="application/json">.
+
+    html.escape() must NOT be used here. A <script> element is an HTML *raw text*
+    element: character references inside it are never decoded, so an escaped "<"
+    reaches JSON.parse as the four literal characters "&lt;" rather than "<". That
+    silently corrupts every step whose `position` is "<" (anime.js's
+    "start with the previous step" token) into an unrecognized position string,
+    so steps meant to run in parallel play sequentially instead.
+
+    Escaping "<" as the JSON escape \\u003c is the correct encoding: it is decoded
+    by JSON.parse (not by the HTML parser), so the value arrives as a real "<",
+    while no literal "<" remains in the markup to begin a "</script>" sequence --
+    strictly safer than html.escape(..., quote=False), which left ">" intact.
+    """
+    return json.dumps(timeline).replace("<", "\\u003c")
 
 
 def _animate_html(anim: Animate, token: str) -> str:
@@ -266,7 +289,7 @@ def _step_reveal_html(anim: Animate, token: str) -> str:
             "position": None if i == 0 else "<",
         })
     timeline = {"loop": True, "loopDelay": 0, "steps": steps_json}
-    timeline_json = html.escape(json.dumps(timeline), quote=False)
+    timeline_json = _timeline_island_json(timeline)
     return (
         f'<div class="anim anim--step-reveal"><ol class="anim__steps">{items}</ol>'
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
@@ -302,7 +325,7 @@ def _state_toggle_html(anim: Animate, token: str) -> str:
             {"kind": "set", "targets": [f"#{after_id}"], "props": {"opacity": 0}},
         ],
     }
-    timeline_json = html.escape(json.dumps(timeline), quote=False)
+    timeline_json = _timeline_island_json(timeline)
     return (
         '<div class="anim anim--state-toggle">'
         f'<div class="anim__state anim__state--before" id="{before_id}">'
@@ -315,105 +338,156 @@ def _state_toggle_html(anim: Animate, token: str) -> str:
 
 
 def _array_ops_html(anim: Animate, token: str) -> str:
-    """Bars occupy fixed slot positions; each bar is a <g> that TRANSLATES
-    between slots as ops replay, so a "swap" is a bar physically crossing the
-    others rather than two bars quietly changing opacity in place -- the
-    previous rects-in-place-with-stacked-style-declarations approach never
-    moved anything and silently dropped every op but the last one touching a
-    given index (CSS custom-property redeclaration is last-wins). Each op is
-    now its own timed step with its own keyframe percentage window, so
-    "compare 0 1" and "swap 0 1" both get their own visible moment even when
-    they touch the same indices.
+    """Bars occupy fixed slot x-positions expressed as plain SVG attributes (never a
+    transform="translate(...)" ATTRIBUTE): animating any transform-family property
+    (translateX, scale) makes anime.js set a CSS transform, which fully replaces
+    -- does not compose with -- an SVG transform attribute on the same element (see
+    .claude/skills/animejs/references/api-reference.md's Gotchas section). Each
+    bar's <g> also gets transform-box: fill-box; transform-origin: center so a
+    scale-pulse grows from the bar's own visual center, not the SVG viewport's
+    (0,0) origin.
     """
     max_value = max(anim.array) or 1
     n = len(anim.array)
     slot_width = _BAR_WIDTH + _BAR_GAP
-    width = n * slot_width
-    # slot_of_bar[original_index] = which slot that bar currently occupies, replayed
-    # step by step. Bars are tracked by their ORIGINAL index (not by slot), so each
-    # bar's <g> carries one translate keyframe across every step even as its slot
-    # changes when it's swapped -- the value shown on a bar never changes, only its
-    # x-position does.
-    slot_of_bar = list(range(n))
-    timeline: list[list[tuple[int, str]]] = [
-        [(slot_of_bar[i], "idle")] for i in range(n)
-    ]
-    for verb, a, b in anim.ops:
-        if verb == "swap":
-            slot_of_bar[a], slot_of_bar[b] = slot_of_bar[b], slot_of_bar[a]
-        for i in range(n):
-            if i == a or i == b:
-                timeline[i].append((slot_of_bar[i], verb))
-            else:
-                timeline[i].append((slot_of_bar[i], "idle"))
-    steps = len(anim.ops)
-    cycle = (steps + 1) * STEP_SECONDS
-    groups = []
-    keyframes = []
-    # Keyframe names must be unique per animate block on the page (they are NOT
-    # scoped by the surrounding <style> tag -- @keyframes names are document-global),
-    # and deterministic across identical reruns (this project's whole build is
-    # required to be byte-reproducible, so id()/random-based names are never an
-    # option here). fence.token ("P2CBLOCK{n}ENDBLOCK") is already a stable,
-    # unique-per-occurrence string, but the token's own literal text must NEVER
-    # appear inside this function's returned HTML: blocks.restore() does a second,
-    # unconditional text.replace(token, value) pass after substituting every
-    # token, and if `value` (this return value) itself contains the token
-    # substring, that second pass matches it too and splices the whole HTML block
-    # in a second time, nested inside its own keyframe name. Extracting just the
-    # digits (the token's ordinal, e.g. "0" from "P2CBLOCK0ENDBLOCK") keeps
-    # uniqueness/determinism without ever reproducing the marker text itself.
+    width = n * slot_width + _BAR_GAP
+    # See _step_reveal_html's token_seed comment: the token's literal text must
+    # never appear in this function's return value (blocks.restore() does an
+    # unconditional second substitution pass keyed on the token), so only the
+    # token's ordinal digits are used to build element ids.
     token_seed = re.sub(r"\D", "", token) or "0"
-    for bar_index in range(n):
-        value = anim.array[bar_index]
+
+    # slot_of_bar[original_index] = which slot that bar currently occupies, replayed
+    # op by op. Bars are tracked by their ORIGINAL index, so a bar's value/height
+    # never changes -- only which slot it sits in does.
+    slot_of_bar = list(range(n))
+    bar_ids = [f"anim-bar-{token_seed}-{i}" for i in range(n)]
+    rect_ids = [f"anim-rect-{token_seed}-{i}" for i in range(n)]
+    caption_id = f"anim-caption-{token_seed}"
+
+    def home_x(slot: int) -> int:
+        return _BAR_GAP + slot * slot_width
+
+    bars_html = []
+    for i in range(n):
+        value = anim.array[i]
         height = round((value / max_value) * _BAR_MAX_HEIGHT, 1)
-        y = _BAR_MAX_HEIGHT - height
-        frames = timeline[bar_index]
-        name = f"anim-array-bar-{token_seed}-{bar_index}"
-        # A CSS class can only apply one fixed look for the whole animation, but a
-        # bar's highlight needs to change PER STEP (idle most of the time, colored
-        # only during the step(s) that touch it) -- so color is driven by the same
-        # per-step keyframe as position, as a `fill` value alongside `transform`,
-        # rather than a static class. Each step gets a sharp on/off transition (two
-        # stops at the same percentage) so a highlight reads as a discrete step,
-        # not a fade.
-        pct_stops = []
-        for step_i, (slot, kind) in enumerate(frames):
-            start_pct = round(step_i / (steps + 1) * 100, 3)
-            end_pct = round((step_i + 1) / (steps + 1) * 100, 3)
-            x = slot * slot_width
-            fill = f"var(--anim-array-{kind})" if kind != "idle" else "var(--anim-array-idle)"
-            pct_stops.append(
-                f"{start_pct}% {{ transform: translateX({x}px); --bar-fill: {fill}; }}"
-            )
-            pct_stops.append(
-                f"{end_pct}% {{ transform: translateX({x}px); --bar-fill: {fill}; }}"
-            )
-        keyframes.append(f"@keyframes {name} {{ {' '.join(pct_stops)} }}")
-        groups.append(
-            f'<g class="anim__array-bar" '
-            f'style="animation-name: {name}; animation-duration: {cycle}s;">'
-            f'<rect x="0" y="{y}" width="{_BAR_WIDTH}" height="{height}"></rect>'
-            f'<text class="anim__array-label" x="{_BAR_WIDTH / 2:g}" '
-            f'y="{_BAR_MAX_HEIGHT + 16}">{html.escape(str(value))}</text>'
+        x = home_x(i)
+        y = _BAR_BASELINE_Y - height
+        bars_html.append(
+            f'<g class="anim__array-bar" id="{bar_ids[i]}" '
+            f'style="transform-box: fill-box; transform-origin: center;">'
+            f'<rect id="{rect_ids[i]}" x="{x}" y="{y}" width="{_BAR_WIDTH}" height="{height}" '
+            f'rx="4" fill="var(--anim-array-idle)"></rect>'
+            f'<text class="anim__array-label" x="{x + _BAR_WIDTH / 2:g}" '
+            f'y="{_BAR_BASELINE_Y + 20}">{html.escape(str(value))}</text>'
             "</g>"
         )
-    style_tag = f"<style>{' '.join(keyframes)}</style>" if keyframes else ""
+
+    steps_json: list[dict] = []
+    for verb, a, b in anim.ops:
+        if verb == "highlight":
+            caption = f"{_ARRAY_VERB_LABEL[verb]} index {a}"
+            steps_json.append({
+                "targets": [f"#{rect_ids[a]}"],
+                "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-highlight)", "var(--anim-array-highlight)"]},
+                "duration": 900, "ease": "outQuad", "position": "+=300", "caption": caption,
+            })
+            steps_json.append({
+                "targets": [f"#{bar_ids[a]}"],
+                "props": {"scale": [1, 1.15, 1]},
+                "duration": 900, "ease": "outElastic(1, .6)", "position": "<",
+            })
+        elif verb == "compare":
+            caption = f"{_ARRAY_VERB_LABEL[verb]} index {a} and {b}"
+            steps_json.append({
+                "targets": [f"#{rect_ids[a]}", f"#{rect_ids[b]}"],
+                "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-compare)", "var(--anim-array-idle)"]},
+                "duration": 700, "ease": "inOutQuad", "position": None if not steps_json else "+=300",
+                "caption": caption,
+            })
+            steps_json.append({
+                "targets": [f"#{bar_ids[a]}", f"#{bar_ids[b]}"],
+                "props": {"scale": [1, 1.08, 1]},
+                "duration": 700, "ease": "inOutQuad", "position": "<",
+            })
+        else:  # swap
+            slot_of_bar[a], slot_of_bar[b] = slot_of_bar[b], slot_of_bar[a]
+            # Each bar's translateX is its OWN absolute displacement from its own
+            # home slot -- deliberately NOT a `delta`/`-delta` mirrored pair. The
+            # mirrored form is only correct while both bars still sit in their home
+            # slots; once an earlier swap has displaced either one, the two bars'
+            # required displacements are no longer negatives of each other (e.g.
+            # "swap 0 2" then "swap 0 1" needs +54 for bar 0 and +108 for bar 1).
+            # Absolute values also survive loop: true, since each lap re-animates
+            # toward the same fixed target rather than compounding a relative nudge.
+            delta_a = (slot_of_bar[a] - a) * slot_width
+            delta_b = (slot_of_bar[b] - b) * slot_width
+            caption = f"{_ARRAY_VERB_LABEL[verb]} index {a} and {b}"
+            steps_json.append({
+                "targets": [f"#{rect_ids[a]}", f"#{rect_ids[b]}"],
+                "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-swap)", "var(--anim-array-idle)"]},
+                "duration": 750, "ease": "inOutQuad", "position": "+=300", "caption": caption,
+            })
+            steps_json.append({
+                "targets": [f"#{bar_ids[a]}"], "props": {"translateX": delta_a},
+                "duration": 650, "ease": "inOutBack", "position": "<",
+            })
+            steps_json.append({
+                "targets": [f"#{bar_ids[b]}"], "props": {"translateX": delta_b},
+                "duration": 650, "ease": "inOutBack", "position": "<",
+            })
+
+    # Hold the final state on screen (a no-op animation on an already-idle target,
+    # purely for its 900ms of dwell time), then snap every bar's transform/fill back
+    # to idle right before the loop restarts (the loop-state-drift gotcha) -- a swap
+    # must look like a real, sticky reorder (the swapped bars stay in each other's
+    # slots through the following highlight step), never a bounce-back.
+    steps_json.append({"targets": [f"#{bar_ids[0]}"], "props": {}, "duration": 900})
+    steps_json.append({
+        "kind": "set", "targets": [f"#{b}" for b in bar_ids], "props": {"translateX": 0, "scale": 1},
+    })
+    steps_json.append({
+        "kind": "set", "targets": [f"#{r}" for r in rect_ids], "props": {"fill": "var(--anim-array-idle)"},
+    })
+
+    timeline = {"loop": True, "loopDelay": 1200, "steps": steps_json}
+    timeline_json = _timeline_island_json(timeline)
+
+    legend_items = "".join(
+        f'<span class="anim__array-legend-item"><span class="anim__array-legend-swatch '
+        f'anim__array-legend-swatch--{kind}"></span>{kind}</span>'
+        for kind in ("idle", "compare", "swap", "highlight")
+    )
+
+    axis_y = _BAR_BASELINE_Y
+    mid_y = _BAR_HEADROOM + _BAR_MAX_HEIGHT / 2
+    chrome = (
+        f'<line class="anim__array-axis" x1="0" y1="{_BAR_HEADROOM - 4}" '
+        f'x2="0" y2="{axis_y}"></line>'
+        f'<line class="anim__array-axis" x1="0" y1="{axis_y}" x2="{width}" y2="{axis_y}"></line>'
+        f'<line class="anim__array-gridline" x1="0" y1="{mid_y:g}" x2="{width}" y2="{mid_y:g}"></line>'
+    )
+
     # Reduced-motion/print static fallback (same dual-render precedent as
     # state-toggle): the animated <svg> is hidden and this plain step list shown
-    # instead, rather than trying to freeze an infinitely-looping animation
-    # mid-cycle (animation-play-state: paused has no defined "which lap" to stop
-    # on for an `infinite` animation, so it can't reliably show the final result).
+    # instead, rather than trying to freeze an infinitely-looping timeline
+    # mid-cycle.
     op_lines = "".join(
-        f"<li>{html.escape(verb)} index {a}"
-        + (f" and {b}" if b is not None else "")
-        + "</li>"
+        f"<li>{html.escape(verb)} index {a}" + (f" and {b}" if b is not None else "") + "</li>"
         for verb, a, b in anim.ops
     )
     static_fallback = f'<ol class="anim__array-steps-static">{op_lines}</ol>'
+
     return (
-        f'<div class="anim anim--array-ops"><svg class="anim__array" '
-        f'viewBox="0 0 {width} {_BAR_MAX_HEIGHT + 20}">{style_tag}{"".join(groups)}</svg>'
+        f'<div class="anim anim--array-ops">'
+        f'<p class="anim__caption" id="{caption_id}" data-anim-id="{caption_id}">'
+        f"Step 1 of {len(anim.ops)}</p>"
+        f'<svg class="anim__array" dir="ltr" viewBox="0 0 {width} {_BAR_BASELINE_Y + 40}">'
+        f"{chrome}{''.join(bars_html)}</svg>"
+        f'<div class="anim__array-legend">{legend_items}</div>'
+        f'<script type="application/json" class="anim__timeline" data-anim-id="{caption_id}">'
+        f"{timeline_json}</script>"
         f"{static_fallback}</div>"
     )
 

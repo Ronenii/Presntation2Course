@@ -516,6 +516,44 @@ def test_parse_animate_array_ops_rejects_before_after():
         )
 
 
+@pytest.mark.parametrize(
+    "block",
+    [
+        'pattern: step-reveal\nsteps:\n  - First\n  - Second\n  - Third',
+        'pattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\nops:\n  - compare 0 1\n  - swap 0 1',
+    ],
+)
+def test_timeline_island_position_tokens_are_not_html_escaped(block):
+    """A <script> is an HTML *raw text* element, so character references inside it
+    are never decoded. html.escape()-ing the island would hand JSON.parse the four
+    literal characters "&lt;" instead of "<", turning anime.js's
+    "start with the previous step" position token into an unrecognized string and
+    silently making parallel steps play sequentially. The island must therefore
+    contain no "&lt;", and every position that means "<" must parse back to "<".
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        f'```animate\n{block}\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    assert match, "no anim__timeline data island found"
+    raw = match.group(1)
+    assert "&lt;" not in raw
+    # No literal "<" survives either, so the payload can never begin a "</script>"
+    # sequence that would break out of the island.
+    assert "<" not in raw
+    positions = [s.get("position") for s in json.loads(raw)["steps"]]
+    assert "<" in positions, positions
+
+
 def test_step_reveal_renders_with_a_timeline_island():
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
@@ -692,34 +730,107 @@ def test_parse_animate_path_trace_rejects_steps():
         )
 
 
-def test_array_ops_renders_bars_and_ops():
+def test_array_ops_renders_bars_and_a_timeline_island():
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\n'
-        'ops:\n  - compare 0 1\n  - swap 0 1\n```\n\n'
+        '```animate\npattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\n  - 1\n'
+        'ops:\n  - compare 0 1\n  - swap 0 1\n  - highlight 2\n```\n\n'
         '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
         '```glossary\nTLB: definition\n```\n'
     )
     rendered = render_course(md)
     assert rendered.errors == []
-    assert '<div class="anim anim--array-ops">' in rendered.html_body
-    assert 'class="anim__array"' in rendered.html_body
-    assert rendered.html_body.count('<g class="anim__array-bar"') == 3
-    # Each bar is a value label, so the reader sees the numbers, not just heights.
-    assert '<text class="anim__array-label" x="16" y="136">5</text>' in rendered.html_body
-    assert '<text class="anim__array-label" x="16" y="136">3</text>' in rendered.html_body
-    assert '<text class="anim__array-label" x="16" y="136">8</text>' in rendered.html_body
-    # A swap actually moves a bar's x-position via its own @keyframes rule --
-    # bars 0 and 1 (touched by "compare 0 1" then "swap 0 1") each get a keyframe
-    # naming them by index, and their translateX values genuinely differ between
-    # the two, proving position (not just color) changes across the sequence.
-    assert "@keyframes anim-array-bar-" in rendered.html_body
-    assert "--bar-fill: var(--anim-array-compare)" in rendered.html_body
-    assert "--bar-fill: var(--anim-array-swap)" in rendered.html_body
-    # Reduced-motion/print fallback: the ops replay as a plain step list.
+    assert rendered.html_body.count('<g class="anim__array-bar"') == 4
+    assert rendered.html_body.count('<text class="anim__array-label"') == 4
+    assert '>5<' in rendered.html_body
+    assert '>3<' in rendered.html_body
+    assert '>8<' in rendered.html_body
+    assert '>1<' in rendered.html_body
+    assert 'class="anim__array-legend"' in rendered.html_body
+    assert 'class="anim__caption"' in rendered.html_body
+    assert 'transform-box: fill-box; transform-origin: center' in rendered.html_body
+    assert 'transform="translate(' not in rendered.html_body  # the SVG-transform-attribute gotcha
     assert '<ol class="anim__array-steps-static">' in rendered.html_body
-    assert "<li>compare index 0 and 1</li>" in rendered.html_body
-    assert "<li>swap index 0 and 1</li>" in rendered.html_body
+    assert '<li>compare index 0 and 1</li>' in rendered.html_body
+    assert '<li>swap index 0 and 1</li>' in rendered.html_body
+    assert '<li>highlight index 2</li>' in rendered.html_body
+
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    assert match, "no anim__timeline data island found"
+    timeline = json.loads(match.group(1))
+    assert timeline["loop"] is True
+    kinds = [step.get("kind", "add") for step in timeline["steps"]]
+    assert kinds[-1] == "set" and kinds[-2] == "set"  # the loop-reset pair, last in the list
+    swap_steps = [s for s in timeline["steps"] if s.get("caption", "").startswith("swapping")]
+    assert len(swap_steps) >= 1
+
+
+def test_array_ops_swap_displacement_lands_each_bar_in_the_other_bars_slot():
+    """A swap's translateX must be each bar's ABSOLUTE displacement from its own
+    home slot -- (slot_of_bar[i] - i) * slot_width computed independently per bar,
+    never `delta` and `-delta`. The mirrored form is only right when both bars
+    start in their home slots; after any earlier swap has already displaced one of
+    them it sends that bar to the wrong x. `swap 0 2` then `swap 0 1` exercises
+    exactly that: by the second swap, bar 1 sits in slot 0 and bar 0 sits in slot
+    2, so the two bars' displacements are NOT negatives of each other.
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\n  - 1\n'
+        'ops:\n  - swap 0 2\n  - swap 0 1\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    assert match
+    timeline = json.loads(match.group(1))
+
+    # Recover each bar's rendered home x from its <rect> so the expected
+    # displacements are derived from the real emitted geometry, not a constant
+    # duplicated from the implementation.
+    home_x = {
+        int(m.group(1)): float(m.group(2))
+        for m in re.finditer(r'<rect id="anim-rect-\d+-(\d)" x="([\d.]+)"', rendered.html_body)
+    }
+    assert len(home_x) == 4
+
+    # translateX steps, in emission order, keyed by the bar id they target.
+    moves = [
+        (int(re.search(r"-(\d)$", s["targets"][0]).group(1)), s["props"]["translateX"])
+        for s in timeline["steps"]
+        if s.get("kind") != "set" and "translateX" in s.get("props", {})
+    ]
+    # swap 0 2 moves bars 0 and 2; swap 0 1 then moves bars 0 and 1.
+    assert [bar for bar, _ in moves] == [0, 2, 0, 1]
+
+    # After both swaps: slot_of_bar == [1, 0, 2 -> see below]. Walk it explicitly.
+    slot_of_bar = [0, 1, 2, 3]
+    slot_of_bar[0], slot_of_bar[2] = slot_of_bar[2], slot_of_bar[0]
+    slot_of_bar[0], slot_of_bar[1] = slot_of_bar[1], slot_of_bar[0]
+    assert slot_of_bar == [1, 2, 0, 3]
+
+    # Each move must place its bar exactly on the home x of the slot it now occupies.
+    final = {}
+    for bar, dx in moves:
+        final[bar] = home_x[bar] + dx
+    for bar in (0, 1, 2):
+        assert final[bar] == home_x[slot_of_bar[bar]], (
+            f"bar {bar} landed at {final[bar]}, slot {slot_of_bar[bar]} is at "
+            f"{home_x[slot_of_bar[bar]]}"
+        )
+    # The second swap's two deltas are genuinely NOT mirror images -- this is the
+    # case the naive `delta`/`-delta` pair gets wrong.
+    assert moves[2][1] != -moves[3][1]
 
 
 def test_path_trace_renders_polyline_and_marker():

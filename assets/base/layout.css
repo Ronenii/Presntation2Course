@@ -251,33 +251,45 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 }
 
 .anim--array-ops { text-align: center; }
+/* Live step narration, rewritten by each timeline step's onBegin (see
+   wireAnimations in course.js). Rendered with the pre-JS "Step 1 of N" text so
+   the slot never collapses to zero height and shift the bars when JS lands. */
+.anim__caption {
+  text-align: center; font-weight: 600; font-size: 1rem; color: var(--color-fg);
+  margin: 0 0 var(--space-3);
+}
 .anim__array {
   width: 100%; height: auto;
   /* Bar fill for each of the three op verbs, plus the resting/idle color -- read
-     by every bar's per-step @keyframes (generated inline per block, since the
-     exact transform/fill values depend on that specific block's data) via the
-     shared --bar-fill custom property. compare/swap/highlight reuse the same
-     semantic colors quiz feedback already uses (warn/accent/correct), so a
-     reader doesn't have to learn a second color vocabulary for the same ideas
-     ("being inspected", "in motion", "settled/done"). */
+     by the anime.js timeline island's per-step `fill` keyframes and by the initial
+     fill attribute on every rect. compare/swap/highlight reuse the same semantic
+     colors quiz feedback already uses (warn/accent/correct), so a reader doesn't
+     have to learn a second color vocabulary for the same ideas ("being
+     inspected", "in motion", "settled/done"). */
   --anim-array-idle: var(--color-border);
   --anim-array-compare: var(--color-warn);
   --anim-array-swap: var(--color-accent);
   --anim-array-highlight: var(--color-correct);
 }
-.anim__array-bar rect {
-  fill: var(--bar-fill, var(--anim-array-idle));
-  transition: fill 0.15s ease;
-}
-.anim__array-bar {
-  animation-timing-function: steps(1, end);
-  animation-iteration-count: infinite;
-}
+.anim__array-axis { stroke: var(--color-fg); stroke-width: 1.5; }
+.anim__array-gridline { stroke: var(--color-border); stroke-width: 1; stroke-dasharray: 3,3; }
 .anim__array-label {
-  font-size: 11px;
+  font-size: 15px;
   fill: var(--color-fg);
   text-anchor: middle;
 }
+.anim__array-legend {
+  display: flex; gap: var(--space-4); justify-content: center;
+  margin-block-start: var(--space-2); font-size: 0.75rem; color: var(--color-muted);
+}
+.anim__array-legend-swatch {
+  display: inline-block; inline-size: 10px; block-size: 10px; border-radius: 2px;
+  margin-inline-end: var(--space-1);
+}
+.anim__array-legend-swatch--idle { background: var(--color-border); }
+.anim__array-legend-swatch--compare { background: var(--color-warn); }
+.anim__array-legend-swatch--swap { background: var(--color-accent); }
+.anim__array-legend-swatch--highlight { background: var(--color-correct); }
 /* Hidden during normal animated playback; shown only under the static
    print/reduced-motion presentation below, same toggle-pair pattern as
    .anim__state-label. */
@@ -316,6 +328,11 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 
 @media (prefers-reduced-motion: reduce) {
   .anim__array { display: none; }
+  /* The caption and legend only mean anything while the timeline is playing --
+     wireAnimations() bails out entirely under reduced motion, so both would
+     otherwise sit there frozen on the pre-JS "Step 1 of N" text. */
+  .anim__caption { display: none; }
+  .anim__array-legend { display: none; }
   .anim__array-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
   .anim__path-marker { animation: none; offset-distance: 100%; }
 }
