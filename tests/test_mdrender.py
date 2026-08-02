@@ -611,3 +611,39 @@ def test_a_figure_or_animate_block_also_counts_as_a_visual():
     )
     rendered = render_course(md)
     assert rendered.topics_missing_visual == []
+
+
+def test_parse_animate_path_trace():
+    anim = parse_animate(
+        "pattern: path-trace\npoints:\n  - 0, 10\n  - 5, 2\n  - 10, 8\n  - 15, 0\n"
+        "caption: Gradient descent converging toward the minimum"
+    )
+    assert anim == Animate(
+        pattern="path-trace",
+        points=[(0.0, 10.0), (5.0, 2.0), (10.0, 8.0), (15.0, 0.0)],
+        caption="Gradient descent converging toward the minimum",
+    )
+
+
+def test_parse_animate_path_trace_rejects_one_point():
+    with pytest.raises(AnimateError, match="at least 2 points"):
+        parse_animate("pattern: path-trace\npoints:\n  - 0, 0\ncaption: c")
+
+
+def test_parse_animate_path_trace_rejects_a_malformed_point():
+    with pytest.raises(AnimateError, match=r"invalid path-trace point: 'not-a-point'"):
+        parse_animate(
+            "pattern: path-trace\npoints:\n  - 0, 0\n  - not-a-point\ncaption: c"
+        )
+
+
+def test_parse_animate_path_trace_rejects_missing_caption():
+    with pytest.raises(AnimateError, match="path-trace needs 'caption:'"):
+        parse_animate("pattern: path-trace\npoints:\n  - 0, 0\n  - 1, 1")
+
+
+def test_parse_animate_path_trace_rejects_steps():
+    with pytest.raises(AnimateError, match="path-trace does not use 'before:'/'after:'"):
+        parse_animate(
+            "pattern: path-trace\npoints:\n  - 0, 0\n  - 1, 1\ncaption: c\nbefore: x"
+        )
