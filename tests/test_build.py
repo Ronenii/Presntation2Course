@@ -186,7 +186,7 @@ def test_content_reaches_the_html_with_structure(built):
     assert '<h3 id="what-a-tlb-caches">' in html
     assert 'class="callout callout--analogy"' in html
     assert 'class="callout callout--prereq"' in html
-    assert html.count('class="quiz"') == 3
+    assert html.count('<details class="quiz"') == 3
     assert '<dt id="def-tlb">TLB</dt>' in html
     assert 'aria-controls="def-tlb"' in html
     assert '<a href="#thrashing">' in html
