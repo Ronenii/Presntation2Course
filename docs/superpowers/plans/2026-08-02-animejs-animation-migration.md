@@ -511,6 +511,8 @@ In `assets/base/course.js`, add the new function before the closing `function st
       (data.steps || []).forEach(function (step) {
         var props = {};
         Object.keys(step.props || {}).forEach(function (key) { props[key] = step.props[key]; });
+        if (step.duration != null) { props.duration = step.duration; }
+        if (step.ease) { props.ease = step.ease; }
         if (step.caption && caption) {
           props.onBegin = function () { caption.textContent = step.caption; };
         }
@@ -1409,6 +1411,8 @@ In `assets/base/course.js`, modify the `wireAnimations()` function added in Task
         }
         var props = {};
         Object.keys(step.props || {}).forEach(function (key) { props[key] = step.props[key]; });
+        if (step.duration != null) { props.duration = step.duration; }
+        if (step.ease) { props.ease = step.ease; }
         if (step.caption && caption) {
           props.onBegin = function () { caption.textContent = step.caption; };
         }
