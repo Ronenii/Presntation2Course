@@ -520,7 +520,10 @@ def test_parse_animate_array_ops_rejects_before_after():
 @pytest.mark.parametrize(
     "block",
     [
-        'pattern: step-reveal\nsteps:\n  - First\n  - Second\n  - Third',
+        # step-reveal is deliberately absent: its steps are sequential by design
+        # (see test_step_reveal_steps_play_sequentially_not_all_at_once), so it
+        # emits no "<" position for this test to check the escaping of.
+        'pattern: state-toggle\nbefore: Shared\nafter: Modified',
         'pattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\nops:\n  - compare 0 1\n  - swap 0 1',
     ],
 )
@@ -579,6 +582,36 @@ def test_step_reveal_renders_with_a_timeline_island():
     assert len(timeline["steps"]) == 3
     first_step = timeline["steps"][0]
     assert first_step["props"]["opacity"] == [0.65, 1, 0.65]
+
+
+def test_step_reveal_steps_play_sequentially_not_all_at_once():
+    """A step-reveal must reveal its items ONE AT A TIME. anime.js's "<" position
+    token means "start with the previous step", so using it for every item after
+    the first made all three pulse in unison -- a regression against both the
+    pattern's name and the pre-migration CSS, which staggered each item by its own
+    animation-delay. No position at all is what appends a step after the previous
+    one ends, and each item gets a full-length beat rather than a 1/n slice of one
+    shared cycle.
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: step-reveal\nsteps:\n  - First\n  - Second\n  - Third\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    assert match, "no anim__timeline data island found"
+    steps = json.loads(match.group(1))["steps"]
+    assert [s.get("position") for s in steps] == [None, None, None]
+    # Every item gets its own equal, full-length beat -- not cycle/n each, which
+    # would shrink every reveal as the author adds steps.
+    assert [s["duration"] for s in steps] == [2000, 2000, 2000]
 
 
 def test_state_toggle_renders_before_and_after_with_a_timeline_island():
@@ -769,6 +802,23 @@ def test_array_ops_renders_bars_and_a_timeline_island():
     swap_steps = [s for s in timeline["steps"] if s.get("caption", "").startswith("swapping")]
     assert len(swap_steps) >= 1
 
+    # Fill-only steps carry no "ease": their keyframes are var(--anim-array-*)
+    # references, which anime.js cannot interpolate as colors (its classifier only
+    # accepts #hex/rgb()/rgba()/hsl()/hsla()), so the swap is an instant cut and an
+    # ease would only advertise a smoothness that never happens. Steps that animate
+    # a real numeric property (scale/translateX) still ease.
+    fill_only = [
+        s for s in timeline["steps"]
+        if s.get("kind", "add") == "add" and set(s["props"]) == {"fill"}
+    ]
+    assert len(fill_only) == 3  # one per op: compare, swap, highlight
+    assert all("ease" not in s for s in fill_only), fill_only
+    motion_steps = [
+        s for s in timeline["steps"]
+        if s.get("kind", "add") == "add" and s["props"] and "fill" not in s["props"]
+    ]
+    assert motion_steps and all("ease" in s for s in motion_steps)
+
 
 def test_array_ops_swap_displacement_lands_each_bar_in_the_other_bars_slot():
     """A swap's translateX must be each bar's ABSOLUTE displacement from its own
@@ -849,7 +899,10 @@ def test_path_trace_renders_gridlines_trail_and_a_timeline_island():
     assert '<polyline class="anim__path-line"' in rendered.html_body
     assert '<path class="anim__path-trail"' in rendered.html_body
     assert '<circle class="anim__path-marker"' in rendered.html_body
-    assert 'class="anim__caption"' in rendered.html_body
+    # Both classes: .anim__caption is the live-narration hook, .anim__path-caption
+    # marks this caption as the author's own text so the print/reduced-motion rules
+    # (scoped to .anim--array-ops) leave it visible.
+    assert 'class="anim__caption anim__path-caption"' in rendered.html_body
     assert '<ol class="anim__path-steps-static">' in rendered.html_body
     assert '<li>from (0, 10) to (5, 2)</li>' in rendered.html_body
     assert '<li>from (5, 2) to (10, 8)</li>' in rendered.html_body

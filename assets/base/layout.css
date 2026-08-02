@@ -260,9 +260,14 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 }
 .anim__array {
   width: 100%; height: auto;
-  /* Bar fill for each of the three op verbs, plus the resting/idle color -- read
+  /* Bar fill for each of the three op verbs, plus the resting/idle color -- named
      by the anime.js timeline island's per-step `fill` keyframes and by the initial
-     fill attribute on every rect. compare/swap/highlight reuse the same semantic
+     fill attribute on every rect. Those keyframes carry these var() references
+     verbatim, which anime.js cannot interpolate as colors, so each step swaps the
+     fill instantly at the keyframe boundary rather than fading between the two
+     colors. That is deliberate: it keeps the bars theme-aware (each theme defines
+     these tokens differently in light and dark mode) at the cost of a hard cut.
+     compare/swap/highlight reuse the same semantic
      colors quiz feedback already uses (warn/accent/correct), so a reader doesn't
      have to learn a second color vocabulary for the same ideas ("being
      inspected", "in motion", "settled/done"). */
@@ -321,7 +326,14 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   opacity: 0.6;
 }
 .anim__path-marker { fill: var(--color-accent); }
-.anim__path-caption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
+/* Path-trace's caption carries the course author's own written text (anim.caption),
+   not the generated "Step N of M" chrome array-ops shows -- which is why the
+   print/reduced-motion hiding rules below are scoped to .anim--array-ops and
+   leave this one visible. It otherwise inherits .anim__caption's styling
+   (full-contrast --color-fg at 1rem, margin BELOW it since it renders above the
+   plot); the earlier muted/0.9rem/margin-block-start declarations here fought
+   that and are gone. Authored prose wraps, so keep it readable at any width. */
+.anim__path-caption { text-wrap: balance; }
 /* Hidden during animated playback; shown only under the static
    print/reduced-motion presentation below, same toggle pair as array-ops. */
 .anim__path-steps-static { display: none; }
@@ -330,14 +342,16 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .anim__array { display: none; }
   /* The caption and legend only mean anything while the timeline is playing --
      wireAnimations() bails out entirely under reduced motion, so both would
-     otherwise sit there frozen on the pre-JS "Step 1 of N" text. */
-  .anim__caption { display: none; }
+     otherwise sit there frozen on the pre-JS "Step 1 of N" text. Scoped to
+     array-ops on purpose: path-trace's caption is the course author's own
+     written text, real content that must stay visible without motion. */
+  .anim--array-ops .anim__caption { display: none; }
   .anim__array-legend { display: none; }
   .anim__array-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
   /* No CSS animation left to disable -- wireAnimations() bails out entirely under
      reduced motion, so the marker/trail simply stay at their rendered starting
      position. The step list carries the sequence information instead, exactly as
-     it does for array-ops (the .anim__caption rule above hides the live caption,
-     which would otherwise sit frozen on its pre-JS text). */
+     it does for array-ops -- but unlike array-ops the caption stays visible here,
+     since it holds the author's own text rather than live step narration. */
   .anim__path-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
 }

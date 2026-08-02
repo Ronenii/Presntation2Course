@@ -40,7 +40,10 @@
      defined "final" frame to freeze on paper, so print shows the static step
      list instead of the animated bars. */
   .anim__array { display: none !important; }
-  .anim__caption { display: none !important; }
+  /* Scoped to array-ops: that caption is generated "Step N of M" narration, which
+     is meaningless frozen on paper. Path-trace's caption is the course author's
+     own written text and must print. */
+  .anim--array-ops .anim__caption { display: none !important; }
   .anim__array-legend { display: none !important; }
   .anim__array-steps-static {
     display: block !important; list-style: decimal !important;

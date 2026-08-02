@@ -187,6 +187,24 @@ def test_layout_css_only_uses_tokens_the_themes_define():
     assert used - layout_owned <= set(REQUIRED_TOKENS)
 
 
+def test_caption_hiding_is_scoped_to_array_ops_so_authored_captions_survive():
+    """Array-ops and path-trace share .anim__caption, but they hold different kinds
+    of text. Array-ops' caption is generated chrome ("Step 1 of 3") that means
+    nothing once frozen, so print and reduced motion hide it. Path-trace's caption
+    is the course author's OWN written text (anim.caption) -- real content, which a
+    bare `.anim__caption { display: none }` silently deleted from every printout and
+    from every reduced-motion reader's page. Both hiding rules must therefore be
+    scoped to .anim--array-ops.
+    """
+    for name in (ASSETS / "base" / "layout.css", ASSETS / "print.css"):
+        css = name.read_text()
+        hide_rules = re.findall(r"^\s*([^\n{]*\.anim__caption[^\n{]*)\{[^}]*display:\s*none",
+                                css, re.MULTILINE)
+        assert hide_rules, f"{name.name}: no .anim__caption hiding rule found at all"
+        for selector in hide_rules:
+            assert ".anim--array-ops" in selector, f"{name.name}: unscoped hide {selector!r}"
+
+
 def test_print_css_reveals_quiz_answers_and_hides_chrome():
     css = (ASSETS / "print.css").read_text()
     assert "@media print" in css

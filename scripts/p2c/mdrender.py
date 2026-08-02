@@ -286,15 +286,22 @@ def _step_reveal_html(anim: Animate, token: str) -> str:
         for i, step in enumerate(anim.steps)
     )
     n = len(anim.steps)
-    cycle = n * STEP_SECONDS
     steps_json = []
     for i in range(n):
         steps_json.append({
             "targets": [f"#anim-step-{token_seed}-{i}"],
             "props": {"opacity": [0.65, 1, 0.65], "fontWeight": [400, 600, 400]},
-            "duration": cycle * 1000 // n if n else 0,
+            # Each item gets its own full STEP_SECONDS-long reveal-hold-recede
+            # beat, NOT a 1/n slice of one shared cycle, so adding steps makes
+            # the loop longer rather than making every beat faster.
+            "duration": STEP_SECONDS * 1000,
             "ease": "linear",
-            "position": None if i == 0 else "<",
+            # No "<" anywhere: "<" would start this step alongside the previous
+            # one, so every item would pulse in unison. Leaving position unset
+            # takes anime.js's default timeline behaviour -- append after the
+            # previous step ends -- which is what "step-reveal" means: one item
+            # reveals after the one before it has receded.
+            "position": None,
         })
     timeline = {"loop": True, "loopDelay": 0, "steps": steps_json}
     timeline_json = _timeline_island_json(timeline)
@@ -392,6 +399,15 @@ def _array_ops_html(anim: Animate, token: str) -> str:
             "</g>"
         )
 
+    # Every `fill` keyframe array below holds CSS custom-property references
+    # (var(--anim-array-*)), which anime.js cannot interpolate as colors -- its
+    # color classifier only recognizes #hex/rgb()/rgba()/hsl()/hsla() literals.
+    # So a fill "transition" is an intentional instant color-swap at each
+    # keyframe boundary, not a smooth fade, and no "ease" is set on fill-only
+    # steps because an ease has no effect on a discrete value change. The
+    # indirection is kept deliberately: each of the three themes defines these
+    # tokens differently in light AND dark mode, so resolving them to literals
+    # at render time would hard-code one theme's palette into every build.
     steps_json: list[dict] = []
     for verb, a, b in anim.ops:
         if verb == "highlight":
@@ -399,7 +415,7 @@ def _array_ops_html(anim: Animate, token: str) -> str:
             steps_json.append({
                 "targets": [f"#{rect_ids[a]}"],
                 "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-highlight)", "var(--anim-array-highlight)"]},
-                "duration": 900, "ease": "outQuad", "position": "+=300", "caption": caption,
+                "duration": 900, "position": "+=300", "caption": caption,
             })
             steps_json.append({
                 "targets": [f"#{bar_ids[a]}"],
@@ -411,7 +427,7 @@ def _array_ops_html(anim: Animate, token: str) -> str:
             steps_json.append({
                 "targets": [f"#{rect_ids[a]}", f"#{rect_ids[b]}"],
                 "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-compare)", "var(--anim-array-idle)"]},
-                "duration": 700, "ease": "inOutQuad", "position": None if not steps_json else "+=300",
+                "duration": 700, "position": None if not steps_json else "+=300",
                 "caption": caption,
             })
             steps_json.append({
@@ -435,7 +451,7 @@ def _array_ops_html(anim: Animate, token: str) -> str:
             steps_json.append({
                 "targets": [f"#{rect_ids[a]}", f"#{rect_ids[b]}"],
                 "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-swap)", "var(--anim-array-idle)"]},
-                "duration": 750, "ease": "inOutQuad", "position": "+=300", "caption": caption,
+                "duration": 750, "position": "+=300", "caption": caption,
             })
             steps_json.append({
                 "targets": [f"#{bar_ids[a]}"], "props": {"translateX": delta_a},
@@ -593,7 +609,14 @@ def _path_trace_html(anim: Animate, token: str) -> str:
 
     return (
         '<div class="anim anim--path-trace">'
-        f'<p class="anim__caption" id="{caption_id}" data-anim-id="{caption_id}">'
+        # Both classes: .anim__caption is the live-narration hook wireAnimations()
+        # rewrites per segment, while .anim__path-caption marks this caption as
+        # carrying the COURSE AUTHOR'S own text (anim.caption) rather than the
+        # generated "Step N of M" chrome array-ops shows. That distinction is why
+        # the print/reduced-motion hiding rule is scoped to .anim--array-ops:
+        # hiding real authored content on paper would lose information.
+        f'<p class="anim__caption anim__path-caption" id="{caption_id}" '
+        f'data-anim-id="{caption_id}">'
         f"{html.escape(anim.caption)}</p>"
         f'<svg class="anim__path" dir="ltr" '
         f'viewBox="{min_x:g} {min_y:g} {max_x - min_x:g} {max_y - min_y:g}">'
