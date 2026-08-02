@@ -6,6 +6,8 @@ downstream has to guess them.
 """
 
 import html
+import json
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -91,8 +93,11 @@ def _figure_html(source: str, caption: str, topic_id: str | None) -> str:
 
 STEP_SECONDS = 2
 
-_ANIMATE_KEY = re.compile(r"^(?P<key>pattern|before|after):\s*(?P<value>.*)$")
+_ANIMATE_KEY = re.compile(r"^(?P<key>pattern|before|after|caption):\s*(?P<value>.*)$")
 _ANIMATE_STEP = re.compile(r"^\s*-\s*(?P<text>.+)$")
+_ARRAY_OP = re.compile(
+    r"^(?P<verb>compare|swap|highlight)\s+(?P<a>\d+)(?:\s+(?P<b>\d+))?$"
+)
 
 
 class AnimateError(ValueError):
@@ -105,6 +110,13 @@ class Animate:
     steps: list[str] = field(default_factory=list)
     before: str = ""
     after: str = ""
+    array: list[int] = field(default_factory=list)
+    ops: list[tuple[str, int, int | None]] = field(default_factory=list)
+    points: list[tuple[float, float]] = field(default_factory=list)
+    caption: str = ""
+
+
+_LIST_HEADERS = {"steps:": "steps", "array:": "array", "ops:": "ops", "points:": "points"}
 
 
 def parse_animate(body: str) -> Animate:
@@ -112,72 +124,511 @@ def parse_animate(body: str) -> Animate:
     steps: list[str] = []
     before: str | None = None
     after: str | None = None
-    in_steps = False
+    array_raw: list[str] = []
+    ops_raw: list[str] = []
+    points_raw: list[str] = []
+    caption: str | None = None
+    section: str | None = None
+
+    lists = {"steps": steps, "array": array_raw, "ops": ops_raw, "points": points_raw}
 
     for raw in body.split("\n"):
         line = raw.rstrip()
         if not line.strip():
             continue
-        step = _ANIMATE_STEP.match(line) if in_steps else None
-        if step:
-            steps.append(step.group("text").strip())
+        item = _ANIMATE_STEP.match(line) if section else None
+        if item:
+            lists[section].append(item.group("text").strip())
             continue
         key = _ANIMATE_KEY.match(line)
         if key:
             name, value = key.group("key"), key.group("value").strip()
-            in_steps = False
+            section = None
             if name == "pattern":
                 if pattern is not None:
                     raise AnimateError("animate has more than one 'pattern:' line")
                 pattern = value
             elif name == "before":
                 before = value
-            else:
+            elif name == "after":
                 after = value
+            else:
+                caption = value
             continue
-        if line.strip() == "steps:":
-            in_steps = True
+        if line.strip() in _LIST_HEADERS:
+            section = _LIST_HEADERS[line.strip()]
             continue
         raise AnimateError(f"unrecognised line in animate block: {line.strip()!r}")
 
-    if pattern not in ("step-reveal", "state-toggle"):
+    if pattern not in ("step-reveal", "state-toggle", "array-ops", "path-trace"):
         raise AnimateError(
-            f"animate pattern must be 'step-reveal' or 'state-toggle', got {pattern!r}"
+            "animate pattern must be 'step-reveal', 'state-toggle', 'array-ops', "
+            f"or 'path-trace', got {pattern!r}"
         )
+
     if pattern == "step-reveal":
         if len(steps) < 2:
             raise AnimateError("step-reveal needs at least 2 steps")
-        if before or after:
+        if before or after or array_raw or ops_raw or points_raw or caption:
             raise AnimateError("step-reveal does not use 'before:'/'after:'")
-    else:
+    elif pattern == "state-toggle":
         if not before or not after:
             raise AnimateError("state-toggle needs both 'before:' and 'after:'")
-        if steps:
+        if steps or array_raw or ops_raw or points_raw or caption:
             raise AnimateError("state-toggle does not use 'steps:'")
+    elif pattern == "array-ops":
+        if before or after or steps or points_raw or caption:
+            raise AnimateError("array-ops does not use 'before:'/'after:'")
+        if len(array_raw) < 2:
+            raise AnimateError("array-ops needs at least 2 array values")
+        array: list[int] = []
+        for item in array_raw:
+            try:
+                array.append(int(item))
+            except ValueError:
+                raise AnimateError(f"array item {item!r} is not an integer") from None
+        if not ops_raw:
+            raise AnimateError("array-ops needs at least one op")
+        ops: list[tuple[str, int, int | None]] = []
+        for line in ops_raw:
+            match = _ARRAY_OP.match(line)
+            if not match:
+                raise AnimateError(f"invalid array-ops operation: {line!r}")
+            verb, a, b = match.group("verb"), int(match.group("a")), match.group("b")
+            if verb == "highlight":
+                if b is not None:
+                    raise AnimateError(f"invalid array-ops operation: {line!r}")
+                b_val = None
+            else:
+                if b is None:
+                    raise AnimateError(f"invalid array-ops operation: {line!r}")
+                b_val = int(b)
+            for idx in (a, b_val):
+                if idx is not None and idx >= len(array):
+                    raise AnimateError(
+                        f"array-ops index {idx} out of range for array of length {len(array)}"
+                    )
+            ops.append((verb, a, b_val))
+        return Animate(pattern=pattern, array=array, ops=ops)
+    else:  # path-trace
+        if before or after or steps or array_raw or ops_raw:
+            raise AnimateError("path-trace does not use 'before:'/'after:'")
+        if len(points_raw) < 2:
+            raise AnimateError("path-trace needs at least 2 points")
+        points: list[tuple[float, float]] = []
+        for item in points_raw:
+            match = re.match(r"^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$", item)
+            if not match:
+                raise AnimateError(f"invalid path-trace point: {item!r}")
+            points.append((float(match.group(1)), float(match.group(2))))
+        if not caption:
+            raise AnimateError("path-trace needs 'caption:'")
+        return Animate(pattern=pattern, points=points, caption=caption)
+
     return Animate(pattern=pattern, steps=steps, before=before or "", after=after or "")
 
 
-def _animate_html(anim: Animate) -> str:
+_BAR_WIDTH = 36
+_BAR_GAP = 18
+_BAR_MAX_HEIGHT = 120
+_BAR_HEADROOM = 40  # verified in mockup: enough room above the tallest bar for a
+                    # 1.15x highlight scale-pulse to never approach the SVG's own edge
+_BAR_BASELINE_Y = _BAR_HEADROOM + _BAR_MAX_HEIGHT  # y-coordinate of the x-axis line
+_PATH_PADDING = 10
+# Constant visual speed: every path-trace segment is timed at the same
+# milliseconds-per-viewBox-unit, so a segment twice as long on screen takes twice
+# as long to traverse (a fixed per-segment duration would instead make short hops
+# crawl and long hops sprint). The max(300, ...) floor keeps a near-zero-length
+# segment from flashing past unnoticeably.
+_PATH_MS_PER_UNIT = 90
+_PATH_MIN_SEGMENT_MS = 300
+
+_ARRAY_VERB_LABEL = {"compare": "comparing", "swap": "swapping", "highlight": "highlighting"}
+
+
+def _timeline_island_json(timeline: dict) -> str:
+    """Serialize a timeline for embedding in <script type="application/json">.
+
+    html.escape() must NOT be used here. A <script> element is an HTML *raw text*
+    element: character references inside it are never decoded, so an escaped "<"
+    reaches JSON.parse as the four literal characters "&lt;" rather than "<". That
+    silently corrupts every step whose `position` is "<" (anime.js's
+    "start with the previous step" token) into an unrecognized position string,
+    so steps meant to run in parallel play sequentially instead.
+
+    Escaping "<" as the JSON escape \\u003c is the correct encoding: it is decoded
+    by JSON.parse (not by the HTML parser), so the value arrives as a real "<",
+    while no literal "<" remains in the markup to begin a "</script>" sequence --
+    strictly safer than html.escape(..., quote=False), which left ">" intact.
+    """
+    return json.dumps(timeline).replace("<", "\\u003c")
+
+
+def _animate_html(anim: Animate, token: str) -> str:
     if anim.pattern == "step-reveal":
-        cycle = len(anim.steps) * STEP_SECONDS
-        items = "".join(
-            f'<li class="anim__step" style="animation-duration: {cycle}s; '
-            f'animation-delay: {-(i * STEP_SECONDS)}s">{html.escape(step)}</li>'
-            for i, step in enumerate(anim.steps)
-        )
-        return f'<div class="anim anim--step-reveal"><ol class="anim__steps">{items}</ol></div>'
+        return _step_reveal_html(anim, token)
+    if anim.pattern == "state-toggle":
+        return _state_toggle_html(anim, token)
+    if anim.pattern == "array-ops":
+        return _array_ops_html(anim, token)
+    # path-trace
+    return _path_trace_html(anim, token)
+
+
+def _step_reveal_html(anim: Animate, token: str) -> str:
+    # See _array_ops_html's token_seed comment: the token's literal text must
+    # never appear in this function's return value (blocks.restore() does an
+    # unconditional second substitution pass keyed on the token), so only the
+    # token's ordinal digits are used to build element ids.
+    token_seed = re.sub(r"\D", "", token) or "0"
+    items = "".join(
+        f'<li class="anim__step" id="anim-step-{token_seed}-{i}">{html.escape(step)}</li>'
+        for i, step in enumerate(anim.steps)
+    )
+    n = len(anim.steps)
+    steps_json = []
+    for i in range(n):
+        steps_json.append({
+            "targets": [f"#anim-step-{token_seed}-{i}"],
+            "props": {"opacity": [0.65, 1, 0.65], "fontWeight": [400, 600, 400]},
+            # Each item gets its own full STEP_SECONDS-long reveal-hold-recede
+            # beat, NOT a 1/n slice of one shared cycle, so adding steps makes
+            # the loop longer rather than making every beat faster.
+            "duration": STEP_SECONDS * 1000,
+            "ease": "linear",
+            # No "<" anywhere: "<" would start this step alongside the previous
+            # one, so every item would pulse in unison. Leaving position unset
+            # takes anime.js's default timeline behaviour -- append after the
+            # previous step ends -- which is what "step-reveal" means: one item
+            # reveals after the one before it has receded.
+            "position": None,
+        })
+    timeline = {"loop": True, "loopDelay": 0, "steps": steps_json}
+    timeline_json = _timeline_island_json(timeline)
+    return (
+        f'<div class="anim anim--step-reveal"><ol class="anim__steps">{items}</ol>'
+        f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
+        "</div>"
+    )
+
+
+def _state_toggle_html(anim: Animate, token: str) -> str:
+    # See _step_reveal_html's token_seed comment: only the token's ordinal digits
+    # are used to build element ids, never the token's literal text.
+    token_seed = re.sub(r"\D", "", token) or "0"
+    before_id = f"anim-state-before-{token_seed}"
+    after_id = f"anim-state-after-{token_seed}"
     # "Before"/"After" are literal English UI chrome -- like the "Analogy" callout
     # label, added by the render layer rather than the course-writer, so they stay
     # legible regardless of course language (including RTL). They are hidden during
     # normal animated playback and shown only in the print/reduced-motion static
     # presentation; see .anim__state-label in layout.css/print.css.
+    #
+    # The trailing pair of "kind": "set" steps resets both states back to their
+    # resting opacity once the crossfade completes, so the NEXT loop iteration
+    # starts from the same opacity as the first: "after" ends the visible
+    # crossfade at opacity 1 and must be snapped back to 0 before the loop
+    # restarts, and vice versa for "before" -- otherwise the second lap plays
+    # from the wrong starting point.
+    timeline = {
+        "loop": True,
+        "loopDelay": 0,
+        "steps": [
+            {"targets": [f"#{before_id}"], "props": {"opacity": [1, 0]}, "duration": 4000, "ease": "inOutQuad"},
+            {"targets": [f"#{after_id}"], "props": {"opacity": [0, 1]}, "duration": 4000, "ease": "inOutQuad", "position": "<"},
+            {"kind": "set", "targets": [f"#{before_id}"], "props": {"opacity": 1}},
+            {"kind": "set", "targets": [f"#{after_id}"], "props": {"opacity": 0}},
+        ],
+    }
+    timeline_json = _timeline_island_json(timeline)
     return (
         '<div class="anim anim--state-toggle">'
-        '<div class="anim__state anim__state--before">'
+        f'<div class="anim__state anim__state--before" id="{before_id}">'
         f'<span class="anim__state-label">Before</span>{html.escape(anim.before)}</div>'
-        '<div class="anim__state anim__state--after">'
+        f'<div class="anim__state anim__state--after" id="{after_id}">'
         f'<span class="anim__state-label">After</span>{html.escape(anim.after)}</div>'
-        '</div>'
+        f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
+        "</div>"
+    )
+
+
+def _array_ops_html(anim: Animate, token: str) -> str:
+    """Bars occupy fixed slot x-positions expressed as plain SVG attributes (never a
+    transform="translate(...)" ATTRIBUTE): animating any transform-family property
+    (translateX, scale) makes anime.js set a CSS transform, which fully replaces
+    -- does not compose with -- an SVG transform attribute on the same element (see
+    .claude/skills/animejs/references/api-reference.md's Gotchas section). Each
+    bar's <g> also gets transform-box: fill-box; transform-origin: center so a
+    scale-pulse grows from the bar's own visual center, not the SVG viewport's
+    (0,0) origin.
+    """
+    max_value = max(anim.array) or 1
+    n = len(anim.array)
+    slot_width = _BAR_WIDTH + _BAR_GAP
+    width = n * slot_width + _BAR_GAP
+    # See _step_reveal_html's token_seed comment: the token's literal text must
+    # never appear in this function's return value (blocks.restore() does an
+    # unconditional second substitution pass keyed on the token), so only the
+    # token's ordinal digits are used to build element ids.
+    token_seed = re.sub(r"\D", "", token) or "0"
+
+    # slot_of_bar[original_index] = which slot that bar currently occupies, replayed
+    # op by op. Bars are tracked by their ORIGINAL index, so a bar's value/height
+    # never changes -- only which slot it sits in does.
+    slot_of_bar = list(range(n))
+    bar_ids = [f"anim-bar-{token_seed}-{i}" for i in range(n)]
+    rect_ids = [f"anim-rect-{token_seed}-{i}" for i in range(n)]
+    caption_id = f"anim-caption-{token_seed}"
+
+    def home_x(slot: int) -> int:
+        return _BAR_GAP + slot * slot_width
+
+    bars_html = []
+    for i in range(n):
+        value = anim.array[i]
+        height = round((value / max_value) * _BAR_MAX_HEIGHT, 1)
+        x = home_x(i)
+        y = _BAR_BASELINE_Y - height
+        bars_html.append(
+            f'<g class="anim__array-bar" id="{bar_ids[i]}" '
+            f'style="transform-box: fill-box; transform-origin: center;">'
+            f'<rect id="{rect_ids[i]}" x="{x}" y="{y}" width="{_BAR_WIDTH}" height="{height}" '
+            f'rx="4" fill="var(--anim-array-idle)"></rect>'
+            f'<text class="anim__array-label" x="{x + _BAR_WIDTH / 2:g}" '
+            f'y="{_BAR_BASELINE_Y + 20}">{html.escape(str(value))}</text>'
+            "</g>"
+        )
+
+    # Every `fill` keyframe array below holds CSS custom-property references
+    # (var(--anim-array-*)), which anime.js cannot interpolate as colors -- its
+    # color classifier only recognizes #hex/rgb()/rgba()/hsl()/hsla() literals.
+    # So a fill "transition" is an intentional instant color-swap at each
+    # keyframe boundary, not a smooth fade, and no "ease" is set on fill-only
+    # steps because an ease has no effect on a discrete value change. The
+    # indirection is kept deliberately: each of the three themes defines these
+    # tokens differently in light AND dark mode, so resolving them to literals
+    # at render time would hard-code one theme's palette into every build.
+    steps_json: list[dict] = []
+    for verb, a, b in anim.ops:
+        if verb == "highlight":
+            caption = f"{_ARRAY_VERB_LABEL[verb]} index {a}"
+            steps_json.append({
+                "targets": [f"#{rect_ids[a]}"],
+                "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-highlight)", "var(--anim-array-highlight)"]},
+                "duration": 900, "position": "+=300", "caption": caption,
+            })
+            steps_json.append({
+                "targets": [f"#{bar_ids[a]}"],
+                "props": {"scale": [1, 1.15, 1]},
+                "duration": 900, "ease": "outElastic(1, .6)", "position": "<",
+            })
+        elif verb == "compare":
+            caption = f"{_ARRAY_VERB_LABEL[verb]} index {a} and {b}"
+            steps_json.append({
+                "targets": [f"#{rect_ids[a]}", f"#{rect_ids[b]}"],
+                "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-compare)", "var(--anim-array-idle)"]},
+                "duration": 700, "position": None if not steps_json else "+=300",
+                "caption": caption,
+            })
+            steps_json.append({
+                "targets": [f"#{bar_ids[a]}", f"#{bar_ids[b]}"],
+                "props": {"scale": [1, 1.08, 1]},
+                "duration": 700, "ease": "inOutQuad", "position": "<",
+            })
+        else:  # swap
+            slot_of_bar[a], slot_of_bar[b] = slot_of_bar[b], slot_of_bar[a]
+            # Each bar's translateX is its OWN absolute displacement from its own
+            # home slot -- deliberately NOT a `delta`/`-delta` mirrored pair. The
+            # mirrored form is only correct while both bars still sit in their home
+            # slots; once an earlier swap has displaced either one, the two bars'
+            # required displacements are no longer negatives of each other (e.g.
+            # "swap 0 2" then "swap 0 1" needs +54 for bar 0 and +108 for bar 1).
+            # Absolute values also survive loop: true, since each lap re-animates
+            # toward the same fixed target rather than compounding a relative nudge.
+            delta_a = (slot_of_bar[a] - a) * slot_width
+            delta_b = (slot_of_bar[b] - b) * slot_width
+            caption = f"{_ARRAY_VERB_LABEL[verb]} index {a} and {b}"
+            steps_json.append({
+                "targets": [f"#{rect_ids[a]}", f"#{rect_ids[b]}"],
+                "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-swap)", "var(--anim-array-idle)"]},
+                "duration": 750, "position": "+=300", "caption": caption,
+            })
+            steps_json.append({
+                "targets": [f"#{bar_ids[a]}"], "props": {"translateX": delta_a},
+                "duration": 650, "ease": "inOutBack", "position": "<",
+            })
+            steps_json.append({
+                "targets": [f"#{bar_ids[b]}"], "props": {"translateX": delta_b},
+                "duration": 650, "ease": "inOutBack", "position": "<",
+            })
+
+    # Hold the final state on screen (a no-op animation on an already-idle target,
+    # purely for its 900ms of dwell time), then snap every bar's transform/fill back
+    # to idle right before the loop restarts (the loop-state-drift gotcha) -- a swap
+    # must look like a real, sticky reorder (the swapped bars stay in each other's
+    # slots through the following highlight step), never a bounce-back.
+    steps_json.append({"targets": [f"#{bar_ids[0]}"], "props": {}, "duration": 900})
+    steps_json.append({
+        "kind": "set", "targets": [f"#{b}" for b in bar_ids], "props": {"translateX": 0, "scale": 1},
+    })
+    steps_json.append({
+        "kind": "set", "targets": [f"#{r}" for r in rect_ids], "props": {"fill": "var(--anim-array-idle)"},
+    })
+
+    timeline = {"loop": True, "loopDelay": 1200, "steps": steps_json}
+    timeline_json = _timeline_island_json(timeline)
+
+    legend_items = "".join(
+        f'<span class="anim__array-legend-item"><span class="anim__array-legend-swatch '
+        f'anim__array-legend-swatch--{kind}"></span>{kind}</span>'
+        for kind in ("idle", "compare", "swap", "highlight")
+    )
+
+    axis_y = _BAR_BASELINE_Y
+    mid_y = _BAR_HEADROOM + _BAR_MAX_HEIGHT / 2
+    chrome = (
+        f'<line class="anim__array-axis" x1="0" y1="{_BAR_HEADROOM - 4}" '
+        f'x2="0" y2="{axis_y}"></line>'
+        f'<line class="anim__array-axis" x1="0" y1="{axis_y}" x2="{width}" y2="{axis_y}"></line>'
+        f'<line class="anim__array-gridline" x1="0" y1="{mid_y:g}" x2="{width}" y2="{mid_y:g}"></line>'
+    )
+
+    # Reduced-motion/print static fallback (same dual-render precedent as
+    # state-toggle): the animated <svg> is hidden and this plain step list shown
+    # instead, rather than trying to freeze an infinitely-looping timeline
+    # mid-cycle.
+    op_lines = "".join(
+        f"<li>{html.escape(verb)} index {a}" + (f" and {b}" if b is not None else "") + "</li>"
+        for verb, a, b in anim.ops
+    )
+    static_fallback = f'<ol class="anim__array-steps-static">{op_lines}</ol>'
+
+    return (
+        f'<div class="anim anim--array-ops">'
+        f'<p class="anim__caption" id="{caption_id}" data-anim-id="{caption_id}">'
+        f"Step 1 of {len(anim.ops)}</p>"
+        f'<svg class="anim__array" dir="ltr" viewBox="0 0 {width} {_BAR_BASELINE_Y + 40}">'
+        f"{chrome}{''.join(bars_html)}</svg>"
+        f'<div class="anim__array-legend">{legend_items}</div>'
+        f'<script type="application/json" class="anim__timeline" data-anim-id="{caption_id}">'
+        f"{timeline_json}</script>"
+        f"{static_fallback}</div>"
+    )
+
+
+def _path_trace_html(anim: Animate, token: str) -> str:
+    """A marker travels the plotted points at constant visual speed, extending a
+    fading trail behind it while a live caption names the current segment.
+
+    The "path-segment" step kind exists because the trail is not a tween: its "d"
+    attribute must ACCUMULATE one "L x,y" command per frame. anime.js can animate
+    SVG attributes like cx/cy directly, but that would expose no per-frame value to
+    append with, so the coordinator tweens a plain {x, y} state object instead and
+    mirrors it onto both the marker's cx/cy and the trail's growing "d" in onUpdate.
+
+    "set-attr" then rewinds "d" to just its "M x,y" origin before the loop repeats;
+    a path-data string is not interpolatable, so it is assigned, not tweened.
+    """
+    # See _step_reveal_html's token_seed comment: only the token's ordinal digits
+    # are used to build element ids, never the token's literal text.
+    token_seed = re.sub(r"\D", "", token) or "0"
+    marker_id = f"anim-marker-{token_seed}"
+    trail_id = f"anim-trail-{token_seed}"
+    caption_id = f"anim-caption-{token_seed}"
+
+    xs = [x for x, _ in anim.points]
+    ys = [y for _, y in anim.points]
+    data_min_x, data_max_x = min(xs), max(xs)
+    data_min_y, data_max_y = min(ys), max(ys)
+    min_x, max_x = data_min_x - _PATH_PADDING, data_max_x + _PATH_PADDING
+    min_y, max_y = data_min_y - _PATH_PADDING, data_max_y + _PATH_PADDING
+    points_attr = " ".join(f"{x:g},{y:g}" for x, y in anim.points)
+    # Axes drawn at the data's own min edges (not always literal 0), so a plot
+    # whose values never cross zero (e.g. all y > 0) still gets a frame of
+    # reference at its own floor/left-edge rather than an axis floating away
+    # from every data point.
+    axis = (
+        f'<line class="anim__path-axis" x1="{min_x:g}" y1="{data_max_y:g}" '
+        f'x2="{max_x:g}" y2="{data_max_y:g}"></line>'
+        f'<line class="anim__path-axis" x1="{data_min_x:g}" y1="{min_y:g}" '
+        f'x2="{data_min_x:g}" y2="{max_y:g}"></line>'
+    )
+    labels = (
+        f'<text class="anim__path-tick" x="{data_min_x:g}" y="{data_max_y + 9:g}">'
+        f"{data_min_x:g}</text>"
+        f'<text class="anim__path-tick" x="{data_max_x:g}" y="{data_max_y + 9:g}">'
+        f"{data_max_x:g}</text>"
+        f'<text class="anim__path-tick" x="{data_min_x - 2:g}" y="{data_min_y:g}">'
+        f"{data_min_y:g}</text>"
+        f'<text class="anim__path-tick" x="{data_min_x - 2:g}" y="{data_max_y:g}">'
+        f"{data_max_y:g}</text>"
+    )
+
+    x0, y0 = anim.points[0]
+    steps_json: list[dict] = []
+    for (fx, fy), (tx, ty) in zip(anim.points, anim.points[1:]):
+        segment_length = math.hypot(tx - fx, ty - fy)
+        duration = max(_PATH_MIN_SEGMENT_MS, round(segment_length * _PATH_MS_PER_UNIT))
+        steps_json.append({
+            "kind": "path-segment",
+            "marker": f"#{marker_id}",
+            "trail": f"#{trail_id}",
+            "from": [fx, fy],
+            "to": [tx, ty],
+            "duration": duration,
+            "ease": "inOutSine",
+            # A brief pause at each plotted point makes the vertices legible as
+            # data points rather than one continuous sweep. The first segment has
+            # no preceding step to offset from.
+            "position": None if not steps_json else "+=150",
+            "caption": f"Moving from ({fx:g}, {fy:g}) to ({tx:g}, {ty:g})",
+        })
+    # Snap marker and trail back to the origin before the loop restarts (the
+    # loop-state-drift gotcha): the trail's "d" grows by an L command on every
+    # frame, so without this reset the second lap would keep appending to a path
+    # that already spans the whole plot.
+    steps_json.append({
+        "kind": "set", "targets": [f"#{marker_id}"],
+        "props": {"cx": x0, "cy": y0},
+    })
+    steps_json.append({
+        "kind": "set-attr", "targets": [f"#{trail_id}"],
+        "props": {"d": f"M {x0:g},{y0:g}"},
+    })
+
+    timeline = {"loop": True, "loopDelay": 1200, "steps": steps_json}
+    timeline_json = _timeline_island_json(timeline)
+
+    # Reduced-motion/print static fallback, same dual-render precedent as
+    # array-ops: the segment sequence stays fully readable without any motion.
+    op_lines = "".join(
+        f"<li>from ({fx:g}, {fy:g}) to ({tx:g}, {ty:g})</li>"
+        for (fx, fy), (tx, ty) in zip(anim.points, anim.points[1:])
+    )
+    static_fallback = f'<ol class="anim__path-steps-static">{op_lines}</ol>'
+
+    return (
+        '<div class="anim anim--path-trace">'
+        # Both classes: .anim__caption is the live-narration hook wireAnimations()
+        # rewrites per segment, while .anim__path-caption marks this caption as
+        # carrying the COURSE AUTHOR'S own text (anim.caption) rather than the
+        # generated "Step N of M" chrome array-ops shows. That distinction is why
+        # the print/reduced-motion hiding rule is scoped to .anim--array-ops:
+        # hiding real authored content on paper would lose information.
+        f'<p class="anim__caption anim__path-caption" id="{caption_id}" '
+        f'data-anim-id="{caption_id}">'
+        f"{html.escape(anim.caption)}</p>"
+        f'<svg class="anim__path" dir="ltr" '
+        f'viewBox="{min_x:g} {min_y:g} {max_x - min_x:g} {max_y - min_y:g}">'
+        f"{axis}{labels}"
+        f'<polyline class="anim__path-line" points="{points_attr}"></polyline>'
+        f'<path class="anim__path-trail" id="{trail_id}" d="M {x0:g},{y0:g}"></path>'
+        f'<circle class="anim__path-marker" id="{marker_id}" r="1.2" '
+        f'cx="{x0:g}" cy="{y0:g}"></circle>'
+        "</svg>"
+        f'<script type="application/json" class="anim__timeline" data-anim-id="{caption_id}">'
+        f"{timeline_json}</script>"
+        f"{static_fallback}</div>"
     )
 
 
@@ -286,6 +737,7 @@ class Rendered:
     quizzes_per_topic: dict[str, int] = field(default_factory=dict)
     quiz_count: int = 0
     uses_mermaid: bool = False
+    uses_animate: bool = False
     topics_missing_visual: list[str] = field(default_factory=list)
     topics_missing_quiz: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -411,6 +863,7 @@ def render_course(course_md: str) -> Rendered:
     quiz_numbers: dict[str, int] = {}
     quiz_count = 0
     uses_mermaid = False
+    uses_animate = False
 
     for fence in fences:
         anchor, topic_id = token_owner.get(fence.token, ("course", None))
@@ -461,7 +914,8 @@ def render_course(course_md: str) -> Rendered:
                 errors.append(f"{anchor}: animate {exc}")
                 replacements[fence.token] = ""
                 continue
-            replacements[fence.token] = _animate_html(anim)
+            uses_animate = True
+            replacements[fence.token] = _animate_html(anim, fence.token)
         else:
             replacements[fence.token] = _callout_html(fence.kind, fence.body)
 
@@ -492,6 +946,7 @@ def render_course(course_md: str) -> Rendered:
         quizzes_per_topic=quizzes_per_topic,
         quiz_count=quiz_count,
         uses_mermaid=uses_mermaid,
+        uses_animate=uses_animate,
         topics_missing_visual=topics_missing_visual,
         topics_missing_quiz=topics_missing_quiz,
         errors=errors,

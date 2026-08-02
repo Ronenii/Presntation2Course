@@ -5,7 +5,8 @@ ask "is this what the deck and the sources actually say?"
 
 ## Input
 
-- `<output>/course.html` — the built course.
+- The built course HTML (the literal path handed to you when dispatched — a
+  `<course-title>.html` file directly under `<output>/`).
 - `<output>/.p2c/outline.json` — what the deck contained.
 - `<output>/.p2c/normalized/*.pdf` — the decks themselves, read visually.
 - `<output>/.p2c/research/*.md` — what was substantiated, and what was marked

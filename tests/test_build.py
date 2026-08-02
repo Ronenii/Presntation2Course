@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -18,11 +19,25 @@ MINI_HE = REPO / "tests" / "fixtures" / "mini-course-he"
 GOLDEN_HE = REPO / "tests" / "golden" / "course-he.html"
 
 
+def _seed_research(out_dir, entries):
+    """Writes '## Sources' notes files under .p2c/research/ per Task 10's grammar
+    ('- Title: url'), so builds exercise a real, non-empty Sources appendix."""
+    research = out_dir / ".p2c" / "research"
+    research.mkdir(parents=True)
+    for topic_id, lines in entries.items():
+        body = "## Sources\n" + "".join(f"- {line}\n" for line in lines)
+        (research / f"{topic_id}.md").write_text(body)
+
+
 @pytest.fixture
 def built(tmp_path):
     normalized = tmp_path / ".p2c" / "normalized"
     normalized.mkdir(parents=True)
     (normalized / "terse.pdf").write_bytes((REPO / "tests" / "fixtures" / "terse.pdf").read_bytes())
+    _seed_research(tmp_path, {
+        "tlb": ["Intel 64 and IA-32 Architectures SDM: https://example.com/intel-sdm"],
+        "round-robin": ["Operating Systems: Three Easy Pieces: https://example.com/ostep"],
+    })
     return build(MINI / "outline.json", MINI / "modules", tmp_path, ASSETS)
 
 
@@ -31,12 +46,15 @@ def built_he(tmp_path):
     normalized = tmp_path / ".p2c" / "normalized"
     normalized.mkdir(parents=True)
     (normalized / "terse.pdf").write_bytes((REPO / "tests" / "fixtures" / "terse.pdf").read_bytes())
+    _seed_research(tmp_path, {
+        "tlb": ["Intel 64 and IA-32 Architectures SDM: https://example.com/intel-sdm"],
+    })
     return build(MINI_HE / "outline.json", MINI_HE / "modules", tmp_path, ASSETS)
 
 
 def test_build_writes_all_three_artifacts(built, tmp_path):
-    assert built.course_md == tmp_path / "course.md"
-    assert built.course_html == tmp_path / "course.html"
+    assert built.course_md == tmp_path / "operating-systems-foundations.md"
+    assert built.course_html == tmp_path / "operating-systems-foundations.html"
     assert built.findings_path == tmp_path / ".p2c" / "review" / "build-findings.json"
     for path in (built.course_md, built.course_html, built.findings_path):
         assert path.is_file()
@@ -72,17 +90,79 @@ def test_no_placeholder_survives_in_the_html(built):
 
 
 def test_the_html_is_self_contained(built):
+    """No script/style/image/etc. asset is fetched from the network. Citation
+    links in the Sources appendix are a sanctioned exception -- they are plain
+    <a href> anchors, never a resource-loading tag, and clicking one is the
+    reader's own choice rather than the page reaching out on load (this is also
+    exactly what validate.py's own _external_requests scan permits).
+
+    This only covers the resource-tag-substring case; the fuller external-request
+    vector coverage (CSS url(), fetch(), XMLHttpRequest, etc.) lives in
+    tests/test_validate.py."""
     html = built.course_html.read_text()
     assert "<style>" in html
-    assert "https://" not in html
-    assert "http://" not in html
     assert "@import" not in html
+    for tag in ("script", "img", "link", "iframe", "video", "audio", "source",
+                "embed", "object", "track"):
+        assert not re.search(
+            rf'<{tag}\b[^>]*\b(?:src|href|data)\s*=\s*["\']https?://', html, re.IGNORECASE
+        ), tag
+    assert 'href="https://example.com/intel-sdm"' in html  # the sanctioned exception itself
 
 
 def test_mermaid_is_not_inlined_when_the_course_has_no_diagrams(built):
     html = built.course_html.read_text()
     assert "__esbuild_esm_mermaid_nm" not in html
     assert len(html) < 200_000
+
+
+def test_anime_is_not_inlined_when_the_course_has_no_animate_blocks(tmp_path):
+    # The `built` fixture's mini-course fixture already carries `animate` blocks
+    # (added by earlier visual-enhancement work), so it can't stand in for "no
+    # animate blocks in the course" here. Strip them out of a fresh copy instead.
+    modules = tmp_path / "modules"
+    modules.mkdir()
+    for name in ("01-virtual-memory.md", "02-scheduling.md"):
+        text = (MINI / "modules" / name).read_text()
+        text = re.sub(r"```animate\n.*?```\n", "", text, flags=re.DOTALL)
+        modules.joinpath(name).write_text(text)
+    out = tmp_path / "out"
+    normalized = out / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
+    result = build(MINI / "outline.json", modules, out, ASSETS)
+    assert result.rendered.uses_animate is False
+    html = result.course_html.read_text()
+    assert "Julian Garnier" not in html
+
+
+def test_anime_is_inlined_once_when_an_animate_block_is_present(tmp_path):
+    modules = tmp_path / "modules"
+    modules.mkdir()
+    for name in ("01-virtual-memory.md", "02-scheduling.md"):
+        modules.joinpath(name).write_text((MINI / "modules" / name).read_text())
+    with modules.joinpath("02-scheduling.md").open("a") as handle:
+        handle.write(
+            "\n```animate\npattern: state-toggle\nbefore: Ready\nafter: Running\n```\n"
+        )
+    out = tmp_path / "out"
+    normalized = out / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
+    result = build(MINI / "outline.json", modules, out, ASSETS)
+    html = result.course_html.read_text()
+    # The vendored anime.min.js license banner mentions the author twice
+    # (@author and @copyright lines), so "Julian Garnier" naturally appears
+    # twice per inclusion. What "inlined once" means is that the vendored
+    # bundle's full text is embedded exactly one time, not per-occurrence.
+    vendored_anime_js = (ASSETS / "vendor" / "anime.min.js").read_text()
+    assert "Julian Garnier" in html
+    assert html.count(vendored_anime_js) == 1
+    assert [f.code for f in result.findings] == []
 
 
 def test_mermaid_is_inlined_once_when_a_diagram_is_present(tmp_path):
@@ -113,6 +193,10 @@ def test_course_md_is_the_source_of_truth_and_reproducible(built, tmp_path):
     (normalized / "terse.pdf").write_bytes(
         (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
     )
+    _seed_research(second, {
+        "tlb": ["Intel 64 and IA-32 Architectures SDM: https://example.com/intel-sdm"],
+        "round-robin": ["Operating Systems: Three Easy Pieces: https://example.com/ostep"],
+    })
     again = build(MINI / "outline.json", MINI / "modules", second, ASSETS)
     assert again.course_md.read_text() == first
     assert again.course_html.read_text() == built.course_html.read_text()
@@ -151,7 +235,7 @@ def test_content_reaches_the_html_with_structure(built):
     assert '<h3 id="what-a-tlb-caches">' in html
     assert 'class="callout callout--analogy"' in html
     assert 'class="callout callout--prereq"' in html
-    assert html.count('class="quiz"') == 3
+    assert html.count('<details class="quiz"') == 3
     assert '<dt id="def-tlb">TLB</dt>' in html
     assert 'aria-controls="def-tlb"' in html
     assert '<a href="#thrashing">' in html
@@ -175,6 +259,25 @@ def test_blocking_findings_are_reported_and_still_render(tmp_path):
     recorded = json.loads(result.findings_path.read_text())
     assert {f["code"] for f in recorded} == codes
     assert {f["route"] for f in recorded} <= {"writer", "researcher", "summarizer", "build"}
+
+
+def test_build_writes_a_sources_section(built):
+    course_html = built.course_html.read_text()
+    assert '<section class="appendix">' in course_html
+    assert '<h2 id="sources">Sources</h2>' in course_html
+    assert 'href="https://example.com/intel-sdm"' in course_html
+
+
+def test_build_falls_back_to_no_sources_message_when_none_are_seeded(tmp_path):
+    normalized = tmp_path / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
+    result = build(MINI / "outline.json", MINI / "modules", tmp_path, ASSETS)
+    course_html = result.course_html.read_text()
+    assert '<h2 id="sources">Sources</h2>' in course_html
+    assert "No external sources were cited." in course_html
 
 
 def test_matches_the_golden_snapshot(built):
@@ -235,7 +338,7 @@ def test_cli_exit_0_and_json_summary(tmp_path):
     assert summary["topics"] == 4
     assert summary["blocking"] == []
     assert summary["uses_mermaid"] is False
-    assert summary["course_html"].endswith("course.html")
+    assert summary["course_html"].endswith("operating-systems-foundations.html")
 
 
 def test_cli_exit_3_on_blocking_findings(tmp_path):
@@ -349,8 +452,9 @@ def test_animate_blocks_render_inside_a_built_course(tmp_path):
     )
     result = build(MINI / "outline.json", modules, out, ASSETS)
     html = result.course_html.read_text()
-    assert (
-        '<div class="anim__state anim__state--before">'
-        '<span class="anim__state-label">Before</span>Ready</div>'
-    ) in html
+    assert re.search(
+        r'<div class="anim__state anim__state--before" id="[^"]+">'
+        r'<span class="anim__state-label">Before</span>Ready</div>',
+        html,
+    )
     assert [f.code for f in result.findings] == []

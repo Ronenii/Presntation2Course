@@ -93,15 +93,49 @@ after: Cache line marked Modified after a local write
 ```
 ````
 
-Exactly two patterns exist:
+`array-ops` visualizes an array operation sequence (e.g. one pass of a sort):
 
-- `step-reveal` — `steps:` followed by 2 or more `- ` lines, highlighted in
-  turn via a looping CSS animation. Use for an ordered sequence.
-- `state-toggle` — `before:` and `after:`, both required, cross-fading via a
-  looping CSS animation. Use for a two-state comparison.
+````
+```animate
+pattern: array-ops
+array:
+  - 5
+  - 3
+  - 8
+  - 1
+ops:
+  - compare 0 1
+  - swap 0 1
+  - highlight 2
+```
+````
 
-Both respect `prefers-reduced-motion` and render fully static (every
-step/state shown at once, not a single frozen frame) in print.
+`array:` needs at least 2 integer values. `ops:` needs at least one line, each one
+of `compare i j`, `swap i j`, or `highlight i` (indices into `array`, 0-based).
+
+`path-trace` visualizes a point moving along a plotted line or curve (also usable
+for a tree/graph edge being traced):
+
+````
+```animate
+pattern: path-trace
+points:
+  - 0, 10
+  - 5, 2
+  - 10, 8
+  - 15, 0
+caption: Gradient descent converging toward the minimum
+```
+````
+
+`points:` needs at least 2 `x, y` pairs (plain numbers, not a function
+expression). `caption:` is required.
+
+Four patterns exist: `step-reveal`, `state-toggle`, `array-ops`, `path-trace` — no
+others. This is a deliberately bounded set, not a general animation authoring tool.
+
+All patterns respect `prefers-reduced-motion` and render fully static (every
+step/state/frame shown at once, not a single frozen frame) in print.
 
 ## `glossary` — the module's jargon definitions
 

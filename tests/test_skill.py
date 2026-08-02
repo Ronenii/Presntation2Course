@@ -33,7 +33,7 @@ def test_every_script_is_invoked_with_its_documented_exit_codes():
 
 def test_the_run_layout_matches_the_design():
     for artifact in (
-        "course.html", "course.pdf", "course.md", "KNOWN-ISSUES.md",
+        "<basename>.html", "<basename>.pdf", "<basename>.md", "KNOWN-ISSUES.md",
         ".p2c/normalized", ".p2c/outline.json", ".p2c/research/",
         ".p2c/modules/", ".p2c/review/",
     ):

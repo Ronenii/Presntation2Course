@@ -20,6 +20,16 @@ source: terse.pdf#1
 caption: The original slide this diagram is redrawn from.
 ```
 
+```animate
+pattern: path-trace
+points:
+  - 0, 10
+  - 5, 2
+  - 10, 8
+  - 15, 0
+caption: TLB hit rate rising as the working set warms up
+```
+
 ```quiz
 q: What does a TLB actually cache?
 - [ ] The contents of recently used pages

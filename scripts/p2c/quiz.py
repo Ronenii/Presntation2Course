@@ -83,10 +83,15 @@ def parse_quiz(body: str) -> Quiz:
 
 
 def quiz_to_html(quiz: Quiz, qid: str) -> str:
-    """Ungraded, retryable, stateless. No scores means no storage to corrupt."""
+    """Ungraded, retryable, stateless. No scores means no storage to corrupt.
+
+    Rendered as <details>/<summary> so each quiz is collapsible; expanded by
+    default (the `open` attribute) to match the pre-existing always-visible
+    behavior, with collapse now available to the student.
+    """
     esc = html.escape
-    parts = [f'<div class="quiz" data-quiz="{esc(qid)}">']
-    parts.append(f'<p class="quiz__q">{esc(quiz.question)}</p>')
+    parts = [f'<details class="quiz" data-quiz="{esc(qid)}" open>']
+    parts.append(f'<summary class="quiz__q">{esc(quiz.question)}</summary>')
     parts.append('<ol class="quiz__options">')
     for n, text in enumerate(quiz.options):
         correct = "true" if n == quiz.correct_index else "false"
@@ -101,5 +106,5 @@ def quiz_to_html(quiz: Quiz, qid: str) -> str:
         f"<strong>{esc(quiz.options[quiz.correct_index])}</strong></p>"
     )
     parts.append(f'<p class="quiz__why" id="{esc(qid)}-why" hidden>{esc(quiz.why)}</p>')
-    parts.append("</div>")
+    parts.append("</details>")
     return "\n".join(parts)

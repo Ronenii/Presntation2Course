@@ -27,6 +27,16 @@ source: terse.pdf#1
 caption: השקופית המקורית שהתרשים הזה משוחזר ממנה.
 ```
 
+```animate
+pattern: path-trace
+points:
+  - 0, 10
+  - 5, 2
+  - 10, 8
+  - 15, 0
+caption: TLB hit rate rising as the working set warms up
+```
+
 לדוגמה: תוכנית שקוראת שוב ושוב מאותו מערך תמצא את התרגום כבר שמור ב-TLB אחרי
 הפעם הראשונה בלבד.
 
@@ -62,6 +72,19 @@ why: בלבול נפוץ הוא לחשוב שה-TLB שומר נתונים ממש
 pattern: state-toggle
 before: קבוצת העבודה בתוך הזיכרון הפיזי
 after: קבוצת העבודה מוחלפת (thrashing)
+```
+
+```animate
+pattern: array-ops
+array:
+  - 5
+  - 3
+  - 8
+  - 1
+ops:
+  - compare 0 1
+  - swap 0 1
+  - highlight 2
 ```
 
 ```quiz

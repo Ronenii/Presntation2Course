@@ -15,6 +15,7 @@ from p2c.theme import (
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 MERMAID_SHA256 = "74d7c46dabca328c2294733910a8aa1ed0c37451776e8d5295da38a2b758fb9b"
+ANIME_SHA256 = "e8e5dc8345ef66c35ce323783e55cca518253b4f06e174b5c599941f63e66895"
 _ABSOLUTE_URL = re.compile(r"""(?:src|href)\s*=\s*["'](?:[a-z]+:)?//""", re.IGNORECASE)
 _CSS_REMOTE = re.compile(r"url\(\s*[\"']?(?:[a-z]+:)?//", re.IGNORECASE)
 
@@ -29,6 +30,7 @@ def test_every_mapped_theme_exists_and_is_complete(name):
 def test_every_mapped_theme_loads(name):
     theme = load_theme(ASSETS, name)
     assert theme.mermaid_js is not None
+    assert theme.anime_js is not None
     assert theme.template and theme.layout_css and theme.print_css and theme.course_js
 
 
@@ -83,6 +85,13 @@ def test_vendored_mermaid_matches_the_pin():
     assert data.rstrip().endswith(b'globalThis.__esbuild_esm_mermaid_nm["mermaid"].default;')
 
 
+def test_vendored_anime_matches_the_pin():
+    data = (ASSETS / "vendor" / "anime.min.js").read_bytes()
+    assert hashlib.sha256(data).hexdigest() == ANIME_SHA256
+    assert b"anime.js" in data[:200]
+    assert b"Julian Garnier" in data[:200]
+
+
 def test_course_js_drives_the_dom_contract_the_renderers_emit():
     js = (ASSETS / "base" / "course.js").read_text()
     for hook in (
@@ -97,6 +106,14 @@ def test_course_js_drives_the_dom_contract_the_renderers_emit():
         "print-pdf",
         "data-mermaid-ready",
         "IntersectionObserver",
+        ".anim__timeline",
+        "wireAnimations",
+        "prefers-reduced-motion",
+        "createTimeline",
+        "step.duration",
+        "step.ease",
+        "path-segment",
+        "set-attr",
     ):
         assert hook in js, hook
     assert "localStorage" not in js  # stateless by design
@@ -109,6 +126,13 @@ def test_the_mermaid_rerender_uses_textcontent_not_innerhtml():
     js = (ASSETS / "base" / "course.js").read_text()
     assert 'node.innerHTML = node.getAttribute("data-source")' not in js
     assert 'node.textContent = node.getAttribute("data-source")' in js
+
+
+def test_course_js_wires_the_sidebar_drawer():
+    js = (ASSETS / "base" / "course.js").read_text()
+    for hook in ("sidebar-toggle", "sidebar-scrim", "data-open", "wireSidebarToggle"):
+        assert hook in js, hook
+    assert "localStorage" not in js  # drawer state stays non-persistent, same as today
 
 
 def test_layout_css_styles_every_component_the_renderers_emit():
@@ -125,7 +149,26 @@ def test_layout_css_styles_every_component_the_renderers_emit():
         ".callout--unverified",
         ".mermaid",
         ".glossary",
+        ".sources-group",
+        ".sources",
         ".diagram-fallback",
+        ".anim__caption",
+        ".anim--array-ops",
+        ".anim__array",
+        ".anim__array-axis",
+        ".anim__array-gridline",
+        ".anim__array-label",
+        ".anim__array-legend",
+        ".anim__array-steps-static",
+        ".anim--path-trace",
+        ".anim__path",
+        ".anim__path-axis",
+        ".anim__path-tick",
+        ".anim__path-line",
+        ".anim__path-marker",
+        ".anim__path-trail",
+        ".anim__path-caption",
+        ".anim__path-steps-static",
     ):
         assert selector in css, selector
 
@@ -133,8 +176,33 @@ def test_layout_css_styles_every_component_the_renderers_emit():
 def test_layout_css_only_uses_tokens_the_themes_define():
     css = (ASSETS / "base" / "layout.css").read_text()
     used = set(re.findall(r"var\((--[a-z0-9-]+)", css))
-    layout_owned = {t for t in used if t.startswith(("--space", "--radius", "--measure"))}
+    layout_owned = {
+        t
+        for t in used
+        if t.startswith((
+            "--space", "--radius", "--measure", "--z-", "--drawer-closed-x",
+            "--anim-array-",
+        ))
+    }
     assert used - layout_owned <= set(REQUIRED_TOKENS)
+
+
+def test_caption_hiding_is_scoped_to_array_ops_so_authored_captions_survive():
+    """Array-ops and path-trace share .anim__caption, but they hold different kinds
+    of text. Array-ops' caption is generated chrome ("Step 1 of 3") that means
+    nothing once frozen, so print and reduced motion hide it. Path-trace's caption
+    is the course author's OWN written text (anim.caption) -- real content, which a
+    bare `.anim__caption { display: none }` silently deleted from every printout and
+    from every reduced-motion reader's page. Both hiding rules must therefore be
+    scoped to .anim--array-ops.
+    """
+    for name in (ASSETS / "base" / "layout.css", ASSETS / "print.css"):
+        css = name.read_text()
+        hide_rules = re.findall(r"^\s*([^\n{]*\.anim__caption[^\n{]*)\{[^}]*display:\s*none",
+                                css, re.MULTILINE)
+        assert hide_rules, f"{name.name}: no .anim__caption hiding rule found at all"
+        for selector in hide_rules:
+            assert ".anim--array-ops" in selector, f"{name.name}: unscoped hide {selector!r}"
 
 
 def test_print_css_reveals_quiz_answers_and_hides_chrome():
@@ -209,3 +277,60 @@ def test_print_css_has_no_physical_directional_properties():
     for forbidden in ("text-align: left", "text-align: right", "border-left:",
                        "border-right:", "left:", "right:"):
         assert forbidden not in css, forbidden
+
+
+def test_content_column_is_centered_within_its_grid_track():
+    css = (ASSETS / "base" / "layout.css").read_text()
+    rule_start = css.index(".content {")
+    rule = css[rule_start : css.index("}", rule_start)]
+    assert "margin-inline: auto" in rule
+
+
+def test_template_has_a_sidebar_toggle_and_scrim():
+    template = (ASSETS / "base" / "template.html").read_text()
+    assert 'id="sidebar-toggle"' in template
+    assert 'aria-controls="sidebar"' in template
+    assert 'id="sidebar"' in template
+    assert 'id="sidebar-scrim"' in template
+    assert 'class="sidebar-scrim"' in template
+
+
+def test_layout_css_styles_the_mobile_drawer():
+    css = (ASSETS / "base" / "layout.css").read_text()
+    for selector in (".sidebar-toggle", ".sidebar-scrim", "--z-scrim", "--z-drawer", "--z-popover"):
+        assert selector in css, selector
+
+
+def test_sidebar_drawer_transform_is_direction_aware():
+    css = (ASSETS / "base" / "layout.css").read_text()
+    assert "--drawer-closed-x: -100%" in css
+    assert '[dir="rtl"]' in css
+    assert "--drawer-closed-x: 100%" in css
+
+
+def test_print_css_hides_the_sidebar_scrim():
+    css = (ASSETS / "print.css").read_text()
+    assert ".sidebar-scrim" in css
+
+
+def test_term_def_is_positioned_out_of_flow_not_a_block_sibling():
+    css = (ASSETS / "base" / "layout.css").read_text()
+    rule_start = css.index(".term__def {")
+    rule = css[rule_start : css.index("}", rule_start)]
+    assert "position: absolute" in rule
+    assert "max-inline-size:" in rule
+
+
+def test_print_css_returns_the_term_definition_to_normal_flow():
+    css = (ASSETS / "print.css").read_text()
+    rule_start = css.index(".term__def {")
+    rule = css[rule_start : css.index("}", rule_start)]
+    assert "position: static !important" in rule
+
+
+def test_course_js_closes_other_open_terms_and_supports_escape():
+    js = (ASSETS / "base" / "course.js").read_text()
+    assert "Escape" in js
+    # wireTerms must reference more than one .term__def when opening one, i.e. it
+    # iterates all defs to close siblings -- lock in the query used for that.
+    assert js.count('querySelectorAll(".term__def")') >= 1 or js.count('querySelectorAll(".term")') >= 1

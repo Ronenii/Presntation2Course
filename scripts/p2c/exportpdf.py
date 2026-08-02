@@ -1,4 +1,4 @@
-"""course.html -> course.pdf via headless Chromium, using the same print.css the
+"""Course HTML -> matching PDF via headless Chromium, using the same print.css the
 in-page Download PDF button uses, so the two outputs cannot drift.
 
 Mermaid renders client-side, so the print must not start before the diagrams exist.
@@ -26,8 +26,8 @@ CHROMIUM_CANDIDATES = (
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
 )
 SKIP_REASON = (
-    "headless Chromium was not found, so course.pdf was not written. "
-    "Open course.html and use the Download PDF button instead."
+    "headless Chromium was not found, so the PDF was not written. "
+    "Open the course HTML and use the Download PDF button instead."
 )
 VIRTUAL_TIME_BUDGET_MS = 20000
 
@@ -116,7 +116,7 @@ def main(argv: list[str]) -> int:
     import sys
 
     parser = argparse.ArgumentParser(
-        prog="export-pdf", description="Render course.html to course.pdf."
+        prog="export-pdf", description="Render the course HTML to a matching PDF."
     )
     parser.add_argument("--html", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)

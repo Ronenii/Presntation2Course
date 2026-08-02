@@ -7,6 +7,8 @@ heading levels are structurally identical across modules and cannot drift.
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from p2c.outline import topic_ids
+from p2c.sources import Source, SourceError, parse_research_sources
 from p2c.text import slugify
 from p2c.theme import theme_for
 
@@ -109,3 +111,24 @@ def assemble(outline: dict, modules_dir: Path) -> str:
             parts.extend(["```", ""])
         parts.extend([body, ""])
     return "\n".join(parts).rstrip("\n") + "\n"
+
+
+def collect_sources(research_dir: Path, outline: dict) -> dict[str, list[Source]]:
+    """Reads each topic's already-written researcher notes file, if present.
+
+    A missing file (research phase skipped, or this topic had none) is zero
+    sources, not an error -- research files are several build phases upstream
+    of this step and a punctuation slip shouldn't block a build.
+    """
+    research_dir = Path(research_dir)
+    result: dict[str, list[Source]] = {}
+    for topic_id in topic_ids(outline):
+        path = research_dir / f"{topic_id}.md"
+        if not path.is_file():
+            result[topic_id] = []
+            continue
+        try:
+            result[topic_id] = parse_research_sources(path.read_text(encoding="utf-8"))
+        except SourceError:
+            result[topic_id] = []
+    return result

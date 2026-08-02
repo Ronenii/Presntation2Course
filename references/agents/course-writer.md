@@ -163,3 +163,10 @@ after: Cache line marked Modified after a local write
 
 `step-reveal` needs at least 2 steps; `state-toggle` needs both `before:` and
 `after:`. See `references/quiz-format.md` for the full grammar.
+
+Use `array-ops` when a topic is about an array/list transformation you can express
+as a short sequence of compare/swap/highlight steps (e.g. one pass of a sort, a
+partition step). Use `path-trace` when a topic is about a value moving along a
+continuous path — a point sliding along a plotted curve, a traversal along a tree
+or graph edge — and you can supply the path as literal (x, y) coordinate pairs
+(never write a function expression; give the actual point list).

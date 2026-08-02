@@ -9,7 +9,18 @@
   --space-12: 3rem;
   --radius: 6px;
   --measure: 70ch;
+  /* Stacking order for overlay UI: skip-link at top (keyboard accessibility escape
+     hatch must never be buried), then popover, drawer, scrim at the bottom. */
+  --z-skip-link: 40;
+  --z-popover: 30;
+  --z-drawer: 20;
+  --z-scrim: 10;
+  /* transform: translateX() has no logical-property equivalent (unlike every other
+     directional value in this file) -- flip the sign here instead, under [dir="rtl"]
+     below, so the drawer still closes toward its own start edge in both directions. */
+  --drawer-closed-x: -100%;
 }
+[dir="rtl"] { --drawer-closed-x: 100%; }
 *, *::before, *::after { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: var(--space-8); }
 body {
@@ -41,7 +52,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   background: var(--color-accent); color: var(--color-accent-contrast);
   padding: var(--space-2) var(--space-4);
 }
-.skip-link:focus { inset-inline-start: var(--space-4); top: var(--space-4); z-index: 10; }
+.skip-link:focus { inset-inline-start: var(--space-4); top: var(--space-4); z-index: var(--z-skip-link); }
 
 .shell { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: var(--space-8); }
 .sidebar {
@@ -51,6 +62,13 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   border-inline-end: 1px solid var(--color-border);
   background: var(--color-surface);
 }
+.sidebar-toggle { display: none; }
+.sidebar-scrim {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: var(--z-scrim);
+}
+.sidebar-scrim[hidden] { display: none; }
 .sidebar__eyebrow {
   margin: 0; text-transform: uppercase; letter-spacing: 0.08em;
   font-size: 0.7rem; color: var(--color-muted);
@@ -82,7 +100,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   color: var(--color-accent); border-inline-start-color: var(--color-accent); background: var(--color-bg);
 }
 
-.content { max-width: var(--measure); padding: var(--space-8) var(--space-6) var(--space-12); }
+.content { max-width: var(--measure); margin-inline: auto; padding: var(--space-8) var(--space-6) var(--space-12); }
 
 .callout {
   margin: var(--space-6) 0; padding: var(--space-4) var(--space-6);
@@ -108,7 +126,14 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 }
 .term:hover { border-bottom-style: solid; }
 .term__def {
-  display: block; margin: var(--space-2) 0; padding: var(--space-3);
+  display: block;
+  position: absolute;
+  top: 100%;
+  inset-inline-start: 0;
+  z-index: var(--z-popover);
+  margin-block-start: var(--space-2);
+  padding: var(--space-3);
+  max-inline-size: min(24rem, calc(100vw - 2 * var(--space-4)));
   border: 1px solid var(--color-border); border-inline-start: 3px solid var(--color-accent);
   border-radius: var(--radius); background: var(--color-surface);
   font-size: 0.92rem; color: var(--color-fg);
@@ -120,7 +145,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   border: 1px solid var(--color-border); border-radius: var(--radius);
   background: var(--color-surface);
 }
-.quiz__q { font-weight: 600; margin: var(--space-2) 0 var(--space-4); }
+.quiz__q { font-weight: 600; margin-block: var(--space-2) var(--space-4); cursor: pointer; }
 .quiz__options { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
 .quiz__option {
   font: inherit; text-align: start; width: 100%; cursor: pointer;
@@ -149,13 +174,37 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .glossary { display: grid; grid-template-columns: minmax(8rem, 14rem) 1fr; gap: var(--space-2) var(--space-6); }
 .glossary dt { font-weight: 600; font-family: var(--font-heading); }
 .glossary dd { margin: 0; color: var(--color-fg); }
+.sources-group { margin-block-end: var(--space-6); }
+.sources-group h3 { font: inherit; font-weight: 600; font-family: var(--font-heading); margin: 0 0 var(--space-2); }
+.sources-group:last-child { margin-block-end: 0; }
+.sources { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.sources li { font-size: 0.92rem; }
 .footer { margin-top: var(--space-12); color: var(--color-muted); font-size: 0.85rem; }
 
 @media (max-width: 860px) {
   .shell { grid-template-columns: 1fr; gap: 0; }
-  .sidebar { position: static; height: auto; border-inline-end: none; border-bottom: 1px solid var(--color-border); }
+  .sidebar {
+    position: fixed; inset-block: 0; inset-inline-start: 0;
+    inline-size: min(300px, 85vw); height: 100vh;
+    border-inline-end: 1px solid var(--color-border);
+    box-shadow: 0 0 12px rgba(0, 0, 0, 0.2);
+    z-index: var(--z-drawer);
+    transform: translateX(var(--drawer-closed-x));
+    transition: transform 0.25s ease;
+  }
+  .sidebar[data-open="true"] { transform: translateX(0); }
+  .sidebar-toggle { display: inline-flex; }
   .content { padding: var(--space-6) var(--space-4); }
   .glossary { grid-template-columns: 1fr; }
+  .term__def {
+    inset-inline-start: 50%;
+    transform: translateX(-50%);
+    max-inline-size: calc(100vw - 2 * var(--space-4));
+  }
+}
+
+@media (max-width: 860px) and (prefers-reduced-motion: reduce) {
+  .sidebar { transition: none; }
 }
 .figure { margin: var(--space-6) 0; text-align: center; }
 .figure img { max-width: 100%; height: auto; border-radius: var(--radius); }
@@ -167,18 +216,11 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   display: grid; gap: var(--space-2);
 }
 .anim__step {
-  /* 0.65 keeps the not-yet-highlighted step legible (~4.5:1 against the
-     background) while still visually receding behind the highlighted step;
-     0.35 (~1.5:1) was effectively unreadable while a student waited their turn. */
+  /* Idle/at-rest look before JS runs, and the permanent look under
+     prefers-reduced-motion (wireAnimations() never touches the element in that
+     case) or print. wireAnimations()'s timeline animates opacity/font-weight
+     directly on top of this once JS runs. */
   opacity: 0.65; font-weight: 400;
-  animation-name: anim-step-pulse; animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-}
-@keyframes anim-step-pulse {
-  0%   { opacity: 1;    font-weight: 600; }
-  15%  { opacity: 1;    font-weight: 600; }
-  25%  { opacity: 0.65; font-weight: 400; }
-  100% { opacity: 0.65; font-weight: 400; }
 }
 /* display: grid + a shared grid-area (rather than position: absolute) sizes the
    container to the tallest state's content, so realistic caption-length text that
@@ -187,17 +229,11 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .anim--state-toggle { display: grid; min-block-size: 3em; }
 .anim__state {
   grid-area: 1 / 1;
-  animation-name: anim-state-crossfade; animation-duration: 4s;
-  animation-timing-function: ease-in-out; animation-iteration-count: infinite;
+  opacity: 0; /* wireAnimations() drives visibility once JS runs; the "before"
+                state is shown before JS via the reduced-motion/print override
+                below, so this 0 is only the JS-enabled resting default */
 }
-.anim__state--before { animation-delay: 0s; }
-.anim__state--after { animation-delay: -2s; }
-@keyframes anim-state-crossfade {
-  0%   { opacity: 1; }
-  45%  { opacity: 1; }
-  55%  { opacity: 0; }
-  100% { opacity: 0; }
-}
+.anim__state--before { opacity: 1; }
 /* Literal English UI chrome (see mdrender._animate_html), language-agnostic like the
    "Analogy" callout label. Hidden during normal animated playback; shown only under
    the static print/reduced-motion presentation below and in print.css. */
@@ -205,12 +241,117 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .anim__step, .anim__state {
-    animation: none; opacity: 1; font-weight: 400;
-  }
+  .anim__step { opacity: 1; font-weight: 400; }
+  .anim__state { opacity: 1; }
   /* Both states are shown at once (no animation to convey them over time), so lay
      them out labeled side-by-side instead of stacked on top of each other. */
   .anim--state-toggle { grid-template-columns: 1fr 1fr; gap: var(--space-4); }
   .anim__state { grid-area: auto; }
   .anim__state-label { display: block; font-weight: 600; margin-block-end: var(--space-1); }
+}
+
+.anim--array-ops { text-align: center; }
+/* Live step narration, rewritten by each timeline step's onBegin (see
+   wireAnimations in course.js). Rendered with the pre-JS "Step 1 of N" text so
+   the slot never collapses to zero height and shift the bars when JS lands. */
+.anim__caption {
+  text-align: center; font-weight: 600; font-size: 1rem; color: var(--color-fg);
+  margin: 0 0 var(--space-3);
+}
+.anim__array {
+  width: 100%; height: auto;
+  /* Bar fill for each of the three op verbs, plus the resting/idle color -- named
+     by the anime.js timeline island's per-step `fill` keyframes and by the initial
+     fill attribute on every rect. Those keyframes carry these var() references
+     verbatim, which anime.js cannot interpolate as colors, so each step swaps the
+     fill instantly at the keyframe boundary rather than fading between the two
+     colors. That is deliberate: it keeps the bars theme-aware (each theme defines
+     these tokens differently in light and dark mode) at the cost of a hard cut.
+     compare/swap/highlight reuse the same semantic
+     colors quiz feedback already uses (warn/accent/correct), so a reader doesn't
+     have to learn a second color vocabulary for the same ideas ("being
+     inspected", "in motion", "settled/done"). */
+  --anim-array-idle: var(--color-border);
+  --anim-array-compare: var(--color-warn);
+  --anim-array-swap: var(--color-accent);
+  --anim-array-highlight: var(--color-correct);
+}
+.anim__array-axis { stroke: var(--color-fg); stroke-width: 1.5; }
+.anim__array-gridline { stroke: var(--color-border); stroke-width: 1; stroke-dasharray: 3,3; }
+.anim__array-label {
+  font-size: 15px;
+  fill: var(--color-fg);
+  text-anchor: middle;
+}
+.anim__array-legend {
+  display: flex; gap: var(--space-4); justify-content: center;
+  margin-block-start: var(--space-2); font-size: 0.75rem; color: var(--color-muted);
+}
+.anim__array-legend-swatch {
+  display: inline-block; inline-size: 10px; block-size: 10px; border-radius: 2px;
+  margin-inline-end: var(--space-1);
+}
+.anim__array-legend-swatch--idle { background: var(--color-border); }
+.anim__array-legend-swatch--compare { background: var(--color-warn); }
+.anim__array-legend-swatch--swap { background: var(--color-accent); }
+.anim__array-legend-swatch--highlight { background: var(--color-correct); }
+/* Hidden during normal animated playback; shown only under the static
+   print/reduced-motion presentation below, same toggle-pair pattern as
+   .anim__state-label. */
+.anim__array-steps-static { display: none; }
+
+.anim--path-trace { text-align: center; }
+.anim__path { width: 100%; height: auto; max-block-size: 16rem; }
+.anim__path-axis {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+.anim__path-tick {
+  font-size: 6px;
+  fill: var(--color-muted);
+}
+.anim__path-line {
+  fill: none;
+  stroke: var(--color-border);
+  stroke-width: 2;
+}
+/* The trail is drawn by wireAnimations() appending to this path's "d" as the
+   marker advances; the reduced opacity keeps it reading as a motion wake behind
+   the marker rather than a second data series competing with .anim__path-line. */
+.anim__path-trail {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  opacity: 0.6;
+}
+.anim__path-marker { fill: var(--color-accent); }
+/* Path-trace's caption carries the course author's own written text (anim.caption),
+   not the generated "Step N of M" chrome array-ops shows -- which is why the
+   print/reduced-motion hiding rules below are scoped to .anim--array-ops and
+   leave this one visible. It otherwise inherits .anim__caption's styling
+   (full-contrast --color-fg at 1rem, margin BELOW it since it renders above the
+   plot); the earlier muted/0.9rem/margin-block-start declarations here fought
+   that and are gone. Authored prose wraps, so keep it readable at any width. */
+.anim__path-caption { text-wrap: balance; }
+/* Hidden during animated playback; shown only under the static
+   print/reduced-motion presentation below, same toggle pair as array-ops. */
+.anim__path-steps-static { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim__array { display: none; }
+  /* The caption and legend only mean anything while the timeline is playing --
+     wireAnimations() bails out entirely under reduced motion, so both would
+     otherwise sit there frozen on the pre-JS "Step 1 of N" text. Scoped to
+     array-ops on purpose: path-trace's caption is the course author's own
+     written text, real content that must stay visible without motion. */
+  .anim--array-ops .anim__caption { display: none; }
+  .anim__array-legend { display: none; }
+  .anim__array-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
+  /* No CSS animation left to disable -- wireAnimations() bails out entirely under
+     reduced motion, so the marker/trail simply stay at their rendered starting
+     position. The step list carries the sequence information instead, exactly as
+     it does for array-ops -- but unlike array-ops the caption stays visible here,
+     since it holds the author's own text rather than live step narration. */
+  .anim__path-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
 }

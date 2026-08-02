@@ -4,7 +4,7 @@
 @media print {
   html, body { background: #fff !important; color: #000 !important; }
   .shell { display: block; }
-  .sidebar, .skip-link, .btn, .footer { display: none !important; }
+  .sidebar, .skip-link, .btn, .footer, .sidebar-scrim { display: none !important; }
   .content { max-width: none; padding: 0; }
 
   h1, h2, h3 { break-after: avoid-page; page-break-after: avoid; }
@@ -12,8 +12,8 @@
   h2:first-of-type { break-before: auto; page-break-before: auto; }
   .quiz, .callout, .mermaid, table, pre { break-inside: avoid; page-break-inside: avoid; }
   .figure, .anim { break-inside: avoid; page-break-inside: avoid; }
-  .anim__step, .anim__state { animation: none !important; opacity: 1 !important; }
-  .anim__step { font-weight: 400 !important; }
+  .anim__step { opacity: 1 !important; font-weight: 400 !important; }
+  .anim__state { opacity: 1 !important; }
   /* Both states are shown at once in print (no animation on paper), labeled and
      side-by-side rather than sharing the animated view's stacked grid cell. */
   .anim--state-toggle { grid-template-columns: 1fr 1fr !important; gap: 0.5em; }
@@ -23,12 +23,37 @@
   /* In print every question is immediately followed by its answer and explanation. */
   .quiz__answer, .quiz__why { display: block !important; }
   .quiz__option { border: 1px solid #999 !important; }
+  .quiz > :not(summary) { display: block !important; }
 
   /* Definitions are useless behind a click on paper. */
-  .term__def { display: block !important; }
+  .term__def {
+    position: static !important; display: block !important;
+    inset-inline-start: auto !important; top: auto !important;
+    max-inline-size: none !important; transform: none !important;
+  }
   .term { border-bottom: 1px dotted #666; }
 
   a { color: #000; text-decoration: underline; }
   .content a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.8em; word-break: break-all; unicode-bidi: isolate; direction: ltr; }
   .mermaid svg { max-width: 100% !important; }
+  /* Same reasoning as the reduced-motion rule: an infinite animation has no
+     defined "final" frame to freeze on paper, so print shows the static step
+     list instead of the animated bars. */
+  .anim__array { display: none !important; }
+  /* Scoped to array-ops: that caption is generated "Step N of M" narration, which
+     is meaningless frozen on paper. Path-trace's caption is the course author's
+     own written text and must print. */
+  .anim--array-ops .anim__caption { display: none !important; }
+  .anim__array-legend { display: none !important; }
+  .anim__array-steps-static {
+    display: block !important; list-style: decimal !important;
+    padding-inline-start: 1.5em !important; margin: 0 !important;
+  }
+  /* The marker/trail print at their static resting position (same reasoning as
+     reduced motion); the step list is what actually conveys the sequence on paper. */
+  .anim__path-trail { opacity: 1 !important; }
+  .anim__path-steps-static {
+    display: block !important; list-style: decimal !important;
+    padding-inline-start: 1.5em !important; margin-block-start: 0.5em !important;
+  }
 }

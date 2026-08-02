@@ -71,11 +71,18 @@ def test_html_marks_exactly_one_correct_option():
 
 def test_html_wires_ids_and_hides_the_answer_until_clicked():
     out = quiz_to_html(parse_quiz(VALID), "m01-t02-q1")
-    assert '<div class="quiz" data-quiz="m01-t02-q1">' in out
+    assert '<details class="quiz" data-quiz="m01-t02-q1" open>' in out
     assert 'id="m01-t02-q1-why"' in out
     assert 'aria-describedby="m01-t02-q1-why"' in out
     assert '<p class="quiz__answer" hidden>' in out
     assert '<p class="quiz__why" id="m01-t02-q1-why" hidden>' in out
+
+
+def test_html_uses_details_summary_for_collapsibility():
+    out = quiz_to_html(parse_quiz(VALID), "q1")
+    assert out.startswith('<details class="quiz" data-quiz="q1" open>')
+    assert '<summary class="quiz__q">What does a TLB actually cache?</summary>' in out
+    assert out.rstrip().endswith("</details>")
 
 
 def test_html_escapes_content():
