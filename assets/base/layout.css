@@ -216,18 +216,11 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   display: grid; gap: var(--space-2);
 }
 .anim__step {
-  /* 0.65 keeps the not-yet-highlighted step legible (~4.5:1 against the
-     background) while still visually receding behind the highlighted step;
-     0.35 (~1.5:1) was effectively unreadable while a student waited their turn. */
+  /* Idle/at-rest look before JS runs, and the permanent look under
+     prefers-reduced-motion (wireAnimations() never touches the element in that
+     case) or print. wireAnimations()'s timeline animates opacity/font-weight
+     directly on top of this once JS runs. */
   opacity: 0.65; font-weight: 400;
-  animation-name: anim-step-pulse; animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-}
-@keyframes anim-step-pulse {
-  0%   { opacity: 1;    font-weight: 600; }
-  15%  { opacity: 1;    font-weight: 600; }
-  25%  { opacity: 0.65; font-weight: 400; }
-  100% { opacity: 0.65; font-weight: 400; }
 }
 /* display: grid + a shared grid-area (rather than position: absolute) sizes the
    container to the tallest state's content, so realistic caption-length text that

@@ -6,6 +6,7 @@ downstream has to guess them.
 """
 
 import html
+import json
 import re
 from dataclasses import dataclass, field
 
@@ -234,13 +235,7 @@ _PATH_PADDING = 10
 
 def _animate_html(anim: Animate, token: str) -> str:
     if anim.pattern == "step-reveal":
-        cycle = len(anim.steps) * STEP_SECONDS
-        items = "".join(
-            f'<li class="anim__step" style="animation-duration: {cycle}s; '
-            f'animation-delay: {-(i * STEP_SECONDS)}s">{html.escape(step)}</li>'
-            for i, step in enumerate(anim.steps)
-        )
-        return f'<div class="anim anim--step-reveal"><ol class="anim__steps">{items}</ol></div>'
+        return _step_reveal_html(anim, token)
     if anim.pattern == "state-toggle":
         # "Before"/"After" are literal English UI chrome -- like the "Analogy" callout
         # label, added by the render layer rather than the course-writer, so they stay
@@ -259,6 +254,36 @@ def _animate_html(anim: Animate, token: str) -> str:
         return _array_ops_html(anim, token)
     # path-trace
     return _path_trace_html(anim)
+
+
+def _step_reveal_html(anim: Animate, token: str) -> str:
+    # See _array_ops_html's token_seed comment: the token's literal text must
+    # never appear in this function's return value (blocks.restore() does an
+    # unconditional second substitution pass keyed on the token), so only the
+    # token's ordinal digits are used to build element ids.
+    token_seed = re.sub(r"\D", "", token) or "0"
+    items = "".join(
+        f'<li class="anim__step" id="anim-step-{token_seed}-{i}">{html.escape(step)}</li>'
+        for i, step in enumerate(anim.steps)
+    )
+    n = len(anim.steps)
+    cycle = n * STEP_SECONDS
+    steps_json = []
+    for i in range(n):
+        steps_json.append({
+            "targets": [f"#anim-step-{token_seed}-{i}"],
+            "props": {"opacity": [0.65, 1, 0.65], "fontWeight": [400, 600, 400]},
+            "duration": cycle * 1000 // n if n else 0,
+            "ease": "linear",
+            "position": None if i == 0 else "<",
+        })
+    timeline = {"loop": True, "loopDelay": 0, "steps": steps_json}
+    timeline_json = html.escape(json.dumps(timeline), quote=False)
+    return (
+        f'<div class="anim anim--step-reveal"><ol class="anim__steps">{items}</ol>'
+        f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
+        "</div>"
+    )
 
 
 def _array_ops_html(anim: Animate, token: str) -> str:

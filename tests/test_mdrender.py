@@ -1,3 +1,6 @@
+import json
+import re
+
 import pytest
 
 from p2c.mdrender import Animate, AnimateError, FigureError, mermaid_problem, parse_animate, parse_figure, render_course
@@ -513,7 +516,7 @@ def test_parse_animate_array_ops_rejects_before_after():
         )
 
 
-def test_step_reveal_renders_with_staggered_negative_delays():
+def test_step_reveal_renders_with_a_timeline_island():
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
         '```animate\npattern: step-reveal\nsteps:\n  - First\n  - Second\n  - Third\n```\n\n'
@@ -522,9 +525,21 @@ def test_step_reveal_renders_with_staggered_negative_delays():
     )
     rendered = render_course(md)
     assert rendered.errors == []
-    assert 'animation-duration: 6s; animation-delay: 0s">First</li>' in rendered.html_body
-    assert 'animation-duration: 6s; animation-delay: -2s">Second</li>' in rendered.html_body
-    assert 'animation-duration: 6s; animation-delay: -4s">Third</li>' in rendered.html_body
+    assert '<li class="anim__step" id="anim-step-' in rendered.html_body
+    assert '">First</li>' in rendered.html_body
+    assert '">Second</li>' in rendered.html_body
+    assert '">Third</li>' in rendered.html_body
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    assert match, "no anim__timeline data island found"
+    timeline = json.loads(match.group(1))
+    assert timeline["loop"] is True
+    assert len(timeline["steps"]) == 3
+    first_step = timeline["steps"][0]
+    assert first_step["props"]["opacity"] == [0.65, 1, 0.65]
 
 
 def test_state_toggle_renders_before_and_after():
