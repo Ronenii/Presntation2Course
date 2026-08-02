@@ -111,6 +111,13 @@ def test_the_mermaid_rerender_uses_textcontent_not_innerhtml():
     assert 'node.textContent = node.getAttribute("data-source")' in js
 
 
+def test_course_js_wires_the_sidebar_drawer():
+    js = (ASSETS / "base" / "course.js").read_text()
+    for hook in ("sidebar-toggle", "sidebar-scrim", "data-open", "wireSidebarToggle"):
+        assert hook in js, hook
+    assert "localStorage" not in js  # drawer state stays non-persistent, same as today
+
+
 def test_layout_css_styles_every_component_the_renderers_emit():
     css = (ASSETS / "base" / "layout.css").read_text()
     for selector in (

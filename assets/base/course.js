@@ -40,6 +40,43 @@
     });
   }
 
+  /* --- mobile sidebar drawer: off-canvas, toggle/scrim/Escape to close ----- */
+  function wireSidebarToggle() {
+    var toggle = document.getElementById("sidebar-toggle");
+    var sidebar = document.getElementById("sidebar");
+    var scrim = document.getElementById("sidebar-scrim");
+    if (!toggle || !sidebar || !scrim) { return; }
+
+    function isOpen() { return sidebar.getAttribute("data-open") === "true"; }
+
+    function close() {
+      sidebar.removeAttribute("data-open");
+      scrim.hidden = true;
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.focus();
+    }
+
+    function open() {
+      sidebar.setAttribute("data-open", "true");
+      scrim.hidden = false;
+      toggle.setAttribute("aria-expanded", "true");
+      sidebar.focus();
+    }
+
+    toggle.addEventListener("click", function () {
+      if (isOpen()) { close(); } else { open(); }
+    });
+    scrim.addEventListener("click", close);
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && isOpen()) { close(); }
+    });
+    sidebar.querySelectorAll(".toc a").forEach(function (link) {
+      link.addEventListener("click", function () {
+        if (isOpen()) { close(); }
+      });
+    });
+  }
+
   /* --- sidebar: highlight the section being read -------------------------- */
   function wireToc() {
     var links = {};
@@ -134,6 +171,7 @@
   function start() {
     wireQuizzes();
     wireTerms();
+    wireSidebarToggle();
     wireToc();
     wireChrome();
     renderDiagrams();
