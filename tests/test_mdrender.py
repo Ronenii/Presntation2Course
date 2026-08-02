@@ -160,6 +160,23 @@ def test_mermaid_blocks_become_divs_and_set_the_flag():
     assert "--&gt; TLB" in r.html_body
 
 
+def test_an_animate_block_sets_the_uses_animate_flag():
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-toggle\nbefore: Ready\nafter: Running\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    assert rendered.uses_animate is True
+
+
+def test_uses_animate_is_false_with_no_animate_blocks():
+    rendered = render_course(course(MODULE))  # MODULE has no animate block
+    assert rendered.uses_animate is False
+
+
 def test_a_broken_mermaid_block_degrades_to_a_fallback_and_never_sets_the_flag():
     body = "## M\n\n<!-- topic: t -->\n### T\n\n```mermaid\nnope LR\n A --> B\n```\n"
     r = render_course(course(body))

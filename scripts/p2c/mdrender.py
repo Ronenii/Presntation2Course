@@ -513,6 +513,7 @@ class Rendered:
     quizzes_per_topic: dict[str, int] = field(default_factory=dict)
     quiz_count: int = 0
     uses_mermaid: bool = False
+    uses_animate: bool = False
     topics_missing_visual: list[str] = field(default_factory=list)
     topics_missing_quiz: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -638,6 +639,7 @@ def render_course(course_md: str) -> Rendered:
     quiz_numbers: dict[str, int] = {}
     quiz_count = 0
     uses_mermaid = False
+    uses_animate = False
 
     for fence in fences:
         anchor, topic_id = token_owner.get(fence.token, ("course", None))
@@ -688,6 +690,7 @@ def render_course(course_md: str) -> Rendered:
                 errors.append(f"{anchor}: animate {exc}")
                 replacements[fence.token] = ""
                 continue
+            uses_animate = True
             replacements[fence.token] = _animate_html(anim, fence.token)
         else:
             replacements[fence.token] = _callout_html(fence.kind, fence.body)
@@ -719,6 +722,7 @@ def render_course(course_md: str) -> Rendered:
         quizzes_per_topic=quizzes_per_topic,
         quiz_count=quiz_count,
         uses_mermaid=uses_mermaid,
+        uses_animate=uses_animate,
         topics_missing_visual=topics_missing_visual,
         topics_missing_quiz=topics_missing_quiz,
         errors=errors,

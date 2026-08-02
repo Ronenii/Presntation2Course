@@ -116,6 +116,55 @@ def test_mermaid_is_not_inlined_when_the_course_has_no_diagrams(built):
     assert len(html) < 200_000
 
 
+def test_anime_is_not_inlined_when_the_course_has_no_animate_blocks(tmp_path):
+    # The `built` fixture's mini-course fixture already carries `animate` blocks
+    # (added by earlier visual-enhancement work), so it can't stand in for "no
+    # animate blocks in the course" here. Strip them out of a fresh copy instead.
+    modules = tmp_path / "modules"
+    modules.mkdir()
+    for name in ("01-virtual-memory.md", "02-scheduling.md"):
+        text = (MINI / "modules" / name).read_text()
+        text = re.sub(r"```animate\n.*?```\n", "", text, flags=re.DOTALL)
+        modules.joinpath(name).write_text(text)
+    out = tmp_path / "out"
+    normalized = out / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
+    result = build(MINI / "outline.json", modules, out, ASSETS)
+    assert result.rendered.uses_animate is False
+    html = result.course_html.read_text()
+    assert "Julian Garnier" not in html
+
+
+def test_anime_is_inlined_once_when_an_animate_block_is_present(tmp_path):
+    modules = tmp_path / "modules"
+    modules.mkdir()
+    for name in ("01-virtual-memory.md", "02-scheduling.md"):
+        modules.joinpath(name).write_text((MINI / "modules" / name).read_text())
+    with modules.joinpath("02-scheduling.md").open("a") as handle:
+        handle.write(
+            "\n```animate\npattern: state-toggle\nbefore: Ready\nafter: Running\n```\n"
+        )
+    out = tmp_path / "out"
+    normalized = out / ".p2c" / "normalized"
+    normalized.mkdir(parents=True)
+    (normalized / "terse.pdf").write_bytes(
+        (REPO / "tests" / "fixtures" / "terse.pdf").read_bytes()
+    )
+    result = build(MINI / "outline.json", modules, out, ASSETS)
+    html = result.course_html.read_text()
+    # The vendored anime.min.js license banner mentions the author twice
+    # (@author and @copyright lines), so "Julian Garnier" naturally appears
+    # twice per inclusion. What "inlined once" means is that the vendored
+    # bundle's full text is embedded exactly one time, not per-occurrence.
+    vendored_anime_js = (ASSETS / "vendor" / "anime.min.js").read_text()
+    assert "Julian Garnier" in html
+    assert html.count(vendored_anime_js) == 1
+    assert [f.code for f in result.findings] == []
+
+
 def test_mermaid_is_inlined_once_when_a_diagram_is_present(tmp_path):
     modules = tmp_path / "modules"
     modules.mkdir()
