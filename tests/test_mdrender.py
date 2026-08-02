@@ -418,7 +418,7 @@ def test_parse_animate_state_toggle():
 
 
 def test_parse_animate_rejects_an_unknown_pattern():
-    with pytest.raises(AnimateError, match="must be 'step-reveal' or 'state-toggle'"):
+    with pytest.raises(AnimateError, match="animate pattern must be"):
         parse_animate("pattern: spin\nsteps:\n  - a\n  - b")
 
 
@@ -430,6 +430,70 @@ def test_parse_animate_rejects_a_step_reveal_with_one_step():
 def test_parse_animate_rejects_a_state_toggle_missing_after():
     with pytest.raises(AnimateError, match="needs both 'before:' and 'after:'"):
         parse_animate("pattern: state-toggle\nbefore: only before")
+
+
+def test_parse_animate_array_ops():
+    anim = parse_animate(
+        "pattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\n  - 1\n"
+        "ops:\n  - compare 0 1\n  - swap 0 1\n  - highlight 2"
+    )
+    assert anim == Animate(
+        pattern="array-ops",
+        array=[5, 3, 8, 1],
+        ops=[("compare", 0, 1), ("swap", 0, 1), ("highlight", 2, None)],
+    )
+
+
+def test_parse_animate_array_ops_rejects_too_few_values():
+    with pytest.raises(AnimateError, match="at least 2 array values"):
+        parse_animate("pattern: array-ops\narray:\n  - 5\nops:\n  - highlight 0")
+
+
+def test_parse_animate_array_ops_rejects_a_non_integer_value():
+    with pytest.raises(AnimateError, match="array item 'five' is not an integer"):
+        parse_animate(
+            "pattern: array-ops\narray:\n  - five\n  - 3\nops:\n  - highlight 0"
+        )
+
+
+def test_parse_animate_array_ops_rejects_no_ops():
+    with pytest.raises(AnimateError, match="at least one op"):
+        parse_animate("pattern: array-ops\narray:\n  - 1\n  - 2\nops:")
+
+
+def test_parse_animate_array_ops_rejects_a_malformed_op():
+    with pytest.raises(AnimateError, match="invalid array-ops operation: 'flip 0'"):
+        parse_animate(
+            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - flip 0"
+        )
+
+
+def test_parse_animate_array_ops_rejects_compare_with_one_index():
+    with pytest.raises(AnimateError, match="invalid array-ops operation: 'compare 0'"):
+        parse_animate(
+            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - compare 0"
+        )
+
+
+def test_parse_animate_array_ops_rejects_highlight_with_two_indices():
+    with pytest.raises(AnimateError, match="invalid array-ops operation: 'highlight 0 1'"):
+        parse_animate(
+            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 0 1"
+        )
+
+
+def test_parse_animate_array_ops_rejects_an_out_of_range_index():
+    with pytest.raises(AnimateError, match=r"index 2 out of range for array of length 2"):
+        parse_animate(
+            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 2"
+        )
+
+
+def test_parse_animate_array_ops_rejects_before_after():
+    with pytest.raises(AnimateError, match="array-ops does not use 'before:'/'after:'"):
+        parse_animate(
+            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 0\nbefore: x"
+        )
 
 
 def test_step_reveal_renders_with_staggered_negative_delays():

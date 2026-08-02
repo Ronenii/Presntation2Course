@@ -91,8 +91,11 @@ def _figure_html(source: str, caption: str, topic_id: str | None) -> str:
 
 STEP_SECONDS = 2
 
-_ANIMATE_KEY = re.compile(r"^(?P<key>pattern|before|after):\s*(?P<value>.*)$")
+_ANIMATE_KEY = re.compile(r"^(?P<key>pattern|before|after|caption):\s*(?P<value>.*)$")
 _ANIMATE_STEP = re.compile(r"^\s*-\s*(?P<text>.+)$")
+_ARRAY_OP = re.compile(
+    r"^(?P<verb>compare|swap|highlight)\s+(?P<a>\d+)(?:\s+(?P<b>\d+))?$"
+)
 
 
 class AnimateError(ValueError):
@@ -105,6 +108,13 @@ class Animate:
     steps: list[str] = field(default_factory=list)
     before: str = ""
     after: str = ""
+    array: list[int] = field(default_factory=list)
+    ops: list[tuple[str, int, int | None]] = field(default_factory=list)
+    points: list[tuple[float, float]] = field(default_factory=list)
+    caption: str = ""
+
+
+_LIST_HEADERS = {"steps:": "steps", "array:": "array", "ops:": "ops", "points:": "points"}
 
 
 def parse_animate(body: str) -> Animate:
@@ -112,48 +122,107 @@ def parse_animate(body: str) -> Animate:
     steps: list[str] = []
     before: str | None = None
     after: str | None = None
-    in_steps = False
+    array_raw: list[str] = []
+    ops_raw: list[str] = []
+    points_raw: list[str] = []
+    caption: str | None = None
+    section: str | None = None
+
+    lists = {"steps": steps, "array": array_raw, "ops": ops_raw, "points": points_raw}
 
     for raw in body.split("\n"):
         line = raw.rstrip()
         if not line.strip():
             continue
-        step = _ANIMATE_STEP.match(line) if in_steps else None
-        if step:
-            steps.append(step.group("text").strip())
+        item = _ANIMATE_STEP.match(line) if section else None
+        if item:
+            lists[section].append(item.group("text").strip())
             continue
         key = _ANIMATE_KEY.match(line)
         if key:
             name, value = key.group("key"), key.group("value").strip()
-            in_steps = False
+            section = None
             if name == "pattern":
                 if pattern is not None:
                     raise AnimateError("animate has more than one 'pattern:' line")
                 pattern = value
             elif name == "before":
                 before = value
-            else:
+            elif name == "after":
                 after = value
+            else:
+                caption = value
             continue
-        if line.strip() == "steps:":
-            in_steps = True
+        if line.strip() in _LIST_HEADERS:
+            section = _LIST_HEADERS[line.strip()]
             continue
         raise AnimateError(f"unrecognised line in animate block: {line.strip()!r}")
 
-    if pattern not in ("step-reveal", "state-toggle"):
+    if pattern not in ("step-reveal", "state-toggle", "array-ops", "path-trace"):
         raise AnimateError(
-            f"animate pattern must be 'step-reveal' or 'state-toggle', got {pattern!r}"
+            "animate pattern must be 'step-reveal', 'state-toggle', 'array-ops', "
+            f"or 'path-trace', got {pattern!r}"
         )
+
     if pattern == "step-reveal":
         if len(steps) < 2:
             raise AnimateError("step-reveal needs at least 2 steps")
-        if before or after:
+        if before or after or array_raw or ops_raw or points_raw or caption:
             raise AnimateError("step-reveal does not use 'before:'/'after:'")
-    else:
+    elif pattern == "state-toggle":
         if not before or not after:
             raise AnimateError("state-toggle needs both 'before:' and 'after:'")
-        if steps:
+        if steps or array_raw or ops_raw or points_raw or caption:
             raise AnimateError("state-toggle does not use 'steps:'")
+    elif pattern == "array-ops":
+        if before or after or steps or points_raw or caption:
+            raise AnimateError("array-ops does not use 'before:'/'after:'")
+        if len(array_raw) < 2:
+            raise AnimateError("array-ops needs at least 2 array values")
+        array: list[int] = []
+        for item in array_raw:
+            try:
+                array.append(int(item))
+            except ValueError:
+                raise AnimateError(f"array item {item!r} is not an integer") from None
+        if not ops_raw:
+            raise AnimateError("array-ops needs at least one op")
+        ops: list[tuple[str, int, int | None]] = []
+        for line in ops_raw:
+            match = _ARRAY_OP.match(line)
+            if not match:
+                raise AnimateError(f"invalid array-ops operation: {line!r}")
+            verb, a, b = match.group("verb"), int(match.group("a")), match.group("b")
+            if verb == "highlight":
+                if b is not None:
+                    raise AnimateError(f"invalid array-ops operation: {line!r}")
+                b_val = None
+            else:
+                if b is None:
+                    raise AnimateError(f"invalid array-ops operation: {line!r}")
+                b_val = int(b)
+            for idx in (a, b_val):
+                if idx is not None and idx >= len(array):
+                    raise AnimateError(
+                        f"array-ops index {idx} out of range for array of length {len(array)}"
+                    )
+            ops.append((verb, a, b_val))
+        return Animate(pattern=pattern, array=array, ops=ops)
+    else:  # path-trace
+        if before or after or steps or array_raw or ops_raw:
+            raise AnimateError("path-trace does not use 'before:'/'after:'")
+        if len(points_raw) < 2:
+            raise AnimateError("path-trace needs at least 2 points")
+        points: list[tuple[float, float]] = []
+        for item in points_raw:
+            match = re.match(r"^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$", item)
+            if not match:
+                raise AnimateError(f"invalid path-trace point: {item!r}")
+            points.append((float(match.group(1)), float(match.group(2))))
+        if not caption:
+            raise AnimateError("path-trace needs 'caption:'")
+        return Animate(pattern=pattern, points=points, caption=caption)
+
     return Animate(pattern=pattern, steps=steps, before=before or "", after=after or "")
 
 
