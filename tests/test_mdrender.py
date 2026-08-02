@@ -1,4 +1,5 @@
 import json
+import math
 import re
 
 import pytest
@@ -833,22 +834,53 @@ def test_array_ops_swap_displacement_lands_each_bar_in_the_other_bars_slot():
     assert moves[2][1] != -moves[3][1]
 
 
-def test_path_trace_renders_polyline_and_marker():
+def test_path_trace_renders_gridlines_trail_and_a_timeline_island():
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: path-trace\npoints:\n  - 0, 10\n  - 5, 2\n  - 10, 8\n'
-        'caption: Converging toward the minimum\n```\n\n'
+        '```animate\npattern: path-trace\npoints:\n  - 0, 10\n  - 5, 2\n  - 10, 8\n  - 15, 0\n'
+        'caption: TLB hit rate rising\n```\n\n'
         '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
         '```glossary\nTLB: definition\n```\n'
     )
     rendered = render_course(md)
     assert rendered.errors == []
-    assert '<div class="anim anim--path-trace">' in rendered.html_body
-    assert 'class="anim__path"' in rendered.html_body
-    assert 'dir="ltr"' in rendered.html_body
-    assert 'points="0,10 5,2 10,8"' in rendered.html_body
-    assert 'class="anim__path-marker"' in rendered.html_body
-    assert '<p class="anim__path-caption">Converging toward the minimum</p>' in rendered.html_body
+    assert '<line class="anim__path-axis"' in rendered.html_body
+    assert '<text class="anim__path-tick"' in rendered.html_body
+    assert '<polyline class="anim__path-line"' in rendered.html_body
+    assert '<path class="anim__path-trail"' in rendered.html_body
+    assert '<circle class="anim__path-marker"' in rendered.html_body
+    assert 'class="anim__caption"' in rendered.html_body
+    assert '<ol class="anim__path-steps-static">' in rendered.html_body
+    assert '<li>from (0, 10) to (5, 2)</li>' in rendered.html_body
+    assert '<li>from (5, 2) to (10, 8)</li>' in rendered.html_body
+    assert '<li>from (10, 8) to (15, 0)</li>' in rendered.html_body
+
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    assert match, "no anim__timeline data island found"
+    timeline = json.loads(match.group(1))
+    assert timeline["loop"] is True
+    # One path-segment step per segment (0->5->10->15), plus the two reset steps
+    # that snap the marker/trail back to the start before the loop restarts.
+    segments = [s for s in timeline["steps"] if s["kind"] == "path-segment"]
+    assert len(segments) == 3
+    assert [s["kind"] for s in timeline["steps"][3:]] == ["set", "set-attr"]
+    assert segments[0]["caption"] == "Moving from (0, 10) to (5, 2)"
+
+    # Constant visual speed: each segment's duration is proportional to its real
+    # Euclidean length. (0,10)->(5,2) spans hypot(5, 8) = 9.434 units while
+    # (5,2)->(10,8) spans only hypot(5, 6) = 7.810, so the FIRST segment is the
+    # longer one and must get the longer duration.
+    durations = [s["duration"] for s in segments]
+    assert durations[0] > durations[1]
+    assert durations[0] == durations[2]  # (0,10)->(5,2) and (10,8)->(15,0) are congruent
+    # Proportionality, not merely ordering: ms-per-unit is constant across segments.
+    ratios = [d / math.hypot(s["to"][0] - s["from"][0], s["to"][1] - s["from"][1])
+              for d, s in zip(durations, segments)]
+    assert all(abs(r - ratios[0]) < 1.0 for r in ratios)
 
 
 def test_a_broken_array_ops_block_becomes_an_error_not_a_crash():

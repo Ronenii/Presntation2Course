@@ -205,6 +205,75 @@
         : null;
       var tl = anime.createTimeline({ loop: !!data.loop, loopDelay: data.loopDelay || 0 });
       (data.steps || []).forEach(function (step) {
+        // A plain {x, y} state object is tweened rather than the marker's cx/cy
+        // directly (anime.js CAN animate SVG attributes) because the trail is not
+        // a tween at all: its "d" must ACCUMULATE an "L x,y" command per frame, so
+        // onUpdate needs the live interpolated coordinates as numbers. Reading them
+        // off a state object gives both the marker position and the trail growth
+        // from a single animation.
+        if (step.kind === "path-segment") {
+          var marker = document.querySelector(step.marker);
+          var trail = document.querySelector(step.trail);
+          var state = { x: step.from[0], y: step.from[1] };
+          var stepCaption = step.caption;
+          var fromX = step.from[0];
+          var fromY = step.from[1];
+          var segment = {
+            duration: step.duration,
+            ease: step.ease,
+            // Explicit [from, to] pairs rather than bare targets: the tween must
+            // start from this segment's own origin on EVERY loop iteration, not
+            // from wherever the shared state object was left by the previous lap.
+            x: [fromX, step.to[0]],
+            y: [fromY, step.to[1]],
+            onBegin: function () {
+              state.x = fromX;
+              state.y = fromY;
+              if (stepCaption && caption) { caption.textContent = stepCaption; }
+            },
+            onUpdate: function () {
+              if (marker) {
+                marker.setAttribute("cx", state.x);
+                marker.setAttribute("cy", state.y);
+              }
+              if (trail) {
+                trail.setAttribute("d", trail.getAttribute("d") + " L " + state.x + "," + state.y);
+              }
+            },
+          };
+          if (step.position) {
+            tl.add(state, segment, step.position);
+          } else {
+            tl.add(state, segment);
+          }
+          return;
+        }
+        // Instant attribute write for a non-interpolatable value: the trail's "d"
+        // is a path-data string ("M 0,10"), so it is assigned outright rather than
+        // routed through tl.set()'s tween machinery.
+        //
+        // It must be SCHEDULED on the timeline (a zero-duration step whose onBegin
+        // does the write), not executed here during wiring. Writing it inline would
+        // run it exactly once at page load, so on a looping timeline the trail's
+        // "d" -- which grows by one "L x,y" per frame -- would never rewind and
+        // would instead accumulate without bound across every lap.
+        if (step.kind === "set-attr") {
+          var attrTargets = step.targets || [];
+          var attrProps = step.props || {};
+          tl.add({}, {
+            duration: 0,
+            onBegin: function () {
+              attrTargets.forEach(function (selector) {
+                var el = document.querySelector(selector);
+                if (!el) { return; }
+                Object.keys(attrProps).forEach(function (attr) {
+                  el.setAttribute(attr, attrProps[attr]);
+                });
+              });
+            },
+          });
+          return;
+        }
         var props = {};
         Object.keys(step.props || {}).forEach(function (key) { props[key] = step.props[key]; });
         if (step.duration != null) { props.duration = step.duration; }

@@ -7,6 +7,7 @@ downstream has to guess them.
 
 import html
 import json
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -234,6 +235,13 @@ _BAR_HEADROOM = 40  # verified in mockup: enough room above the tallest bar for 
                     # 1.15x highlight scale-pulse to never approach the SVG's own edge
 _BAR_BASELINE_Y = _BAR_HEADROOM + _BAR_MAX_HEIGHT  # y-coordinate of the x-axis line
 _PATH_PADDING = 10
+# Constant visual speed: every path-trace segment is timed at the same
+# milliseconds-per-viewBox-unit, so a segment twice as long on screen takes twice
+# as long to traverse (a fixed per-segment duration would instead make short hops
+# crawl and long hops sprint). The max(300, ...) floor keeps a near-zero-length
+# segment from flashing past unnoticeably.
+_PATH_MS_PER_UNIT = 90
+_PATH_MIN_SEGMENT_MS = 300
 
 _ARRAY_VERB_LABEL = {"compare": "comparing", "swap": "swapping", "highlight": "highlighting"}
 
@@ -264,7 +272,7 @@ def _animate_html(anim: Animate, token: str) -> str:
     if anim.pattern == "array-ops":
         return _array_ops_html(anim, token)
     # path-trace
-    return _path_trace_html(anim)
+    return _path_trace_html(anim, token)
 
 
 def _step_reveal_html(anim: Animate, token: str) -> str:
@@ -492,7 +500,26 @@ def _array_ops_html(anim: Animate, token: str) -> str:
     )
 
 
-def _path_trace_html(anim: Animate) -> str:
+def _path_trace_html(anim: Animate, token: str) -> str:
+    """A marker travels the plotted points at constant visual speed, extending a
+    fading trail behind it while a live caption names the current segment.
+
+    The "path-segment" step kind exists because the trail is not a tween: its "d"
+    attribute must ACCUMULATE one "L x,y" command per frame. anime.js can animate
+    SVG attributes like cx/cy directly, but that would expose no per-frame value to
+    append with, so the coordinator tweens a plain {x, y} state object instead and
+    mirrors it onto both the marker's cx/cy and the trail's growing "d" in onUpdate.
+
+    "set-attr" then rewinds "d" to just its "M x,y" origin before the loop repeats;
+    a path-data string is not interpolatable, so it is assigned, not tweened.
+    """
+    # See _step_reveal_html's token_seed comment: only the token's ordinal digits
+    # are used to build element ids, never the token's literal text.
+    token_seed = re.sub(r"\D", "", token) or "0"
+    marker_id = f"anim-marker-{token_seed}"
+    trail_id = f"anim-trail-{token_seed}"
+    caption_id = f"anim-caption-{token_seed}"
+
     xs = [x for x, _ in anim.points]
     ys = [y for _, y in anim.points]
     data_min_x, data_max_x = min(xs), max(xs)
@@ -500,7 +527,6 @@ def _path_trace_html(anim: Animate) -> str:
     min_x, max_x = data_min_x - _PATH_PADDING, data_max_x + _PATH_PADDING
     min_y, max_y = data_min_y - _PATH_PADDING, data_max_y + _PATH_PADDING
     points_attr = " ".join(f"{x:g},{y:g}" for x, y in anim.points)
-    path_d = "M " + " L ".join(f"{x:g},{y:g}" for x, y in anim.points)
     # Axes drawn at the data's own min edges (not always literal 0), so a plot
     # whose values never cross zero (e.g. all y > 0) still gets a frame of
     # reference at its own floor/left-edge rather than an axis floating away
@@ -521,17 +547,65 @@ def _path_trace_html(anim: Animate) -> str:
         f'<text class="anim__path-tick" x="{data_min_x - 2:g}" y="{data_max_y:g}">'
         f"{data_max_y:g}</text>"
     )
+
+    x0, y0 = anim.points[0]
+    steps_json: list[dict] = []
+    for (fx, fy), (tx, ty) in zip(anim.points, anim.points[1:]):
+        segment_length = math.hypot(tx - fx, ty - fy)
+        duration = max(_PATH_MIN_SEGMENT_MS, round(segment_length * _PATH_MS_PER_UNIT))
+        steps_json.append({
+            "kind": "path-segment",
+            "marker": f"#{marker_id}",
+            "trail": f"#{trail_id}",
+            "from": [fx, fy],
+            "to": [tx, ty],
+            "duration": duration,
+            "ease": "inOutSine",
+            # A brief pause at each plotted point makes the vertices legible as
+            # data points rather than one continuous sweep. The first segment has
+            # no preceding step to offset from.
+            "position": None if not steps_json else "+=150",
+            "caption": f"Moving from ({fx:g}, {fy:g}) to ({tx:g}, {ty:g})",
+        })
+    # Snap marker and trail back to the origin before the loop restarts (the
+    # loop-state-drift gotcha): the trail's "d" grows by an L command on every
+    # frame, so without this reset the second lap would keep appending to a path
+    # that already spans the whole plot.
+    steps_json.append({
+        "kind": "set", "targets": [f"#{marker_id}"],
+        "props": {"cx": x0, "cy": y0},
+    })
+    steps_json.append({
+        "kind": "set-attr", "targets": [f"#{trail_id}"],
+        "props": {"d": f"M {x0:g},{y0:g}"},
+    })
+
+    timeline = {"loop": True, "loopDelay": 1200, "steps": steps_json}
+    timeline_json = _timeline_island_json(timeline)
+
+    # Reduced-motion/print static fallback, same dual-render precedent as
+    # array-ops: the segment sequence stays fully readable without any motion.
+    op_lines = "".join(
+        f"<li>from ({fx:g}, {fy:g}) to ({tx:g}, {ty:g})</li>"
+        for (fx, fy), (tx, ty) in zip(anim.points, anim.points[1:])
+    )
+    static_fallback = f'<ol class="anim__path-steps-static">{op_lines}</ol>'
+
     return (
         '<div class="anim anim--path-trace">'
+        f'<p class="anim__caption" id="{caption_id}" data-anim-id="{caption_id}">'
+        f"{html.escape(anim.caption)}</p>"
         f'<svg class="anim__path" dir="ltr" '
         f'viewBox="{min_x:g} {min_y:g} {max_x - min_x:g} {max_y - min_y:g}">'
         f"{axis}{labels}"
         f'<polyline class="anim__path-line" points="{points_attr}"></polyline>'
-        f'<circle class="anim__path-marker" r="4" '
-        f"style=\"offset-path: path('{path_d}')\"></circle>"
+        f'<path class="anim__path-trail" id="{trail_id}" d="M {x0:g},{y0:g}"></path>'
+        f'<circle class="anim__path-marker" id="{marker_id}" r="1.2" '
+        f'cx="{x0:g}" cy="{y0:g}"></circle>'
         "</svg>"
-        f'<p class="anim__path-caption">{html.escape(anim.caption)}</p>'
-        "</div>"
+        f'<script type="application/json" class="anim__timeline" data-anim-id="{caption_id}">'
+        f"{timeline_json}</script>"
+        f"{static_fallback}</div>"
     )
 
 

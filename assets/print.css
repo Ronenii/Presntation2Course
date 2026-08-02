@@ -46,5 +46,11 @@
     display: block !important; list-style: decimal !important;
     padding-inline-start: 1.5em !important; margin: 0 !important;
   }
-  .anim__path-marker { animation: none !important; offset-distance: 100% !important; }
+  /* The marker/trail print at their static resting position (same reasoning as
+     reduced motion); the step list is what actually conveys the sequence on paper. */
+  .anim__path-trail { opacity: 1 !important; }
+  .anim__path-steps-static {
+    display: block !important; list-style: decimal !important;
+    padding-inline-start: 1.5em !important; margin-block-start: 0.5em !important;
+  }
 }

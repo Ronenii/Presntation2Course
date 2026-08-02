@@ -310,21 +310,21 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   stroke: var(--color-border);
   stroke-width: 2;
 }
-/* 4s/linear mirrors the state-toggle crossfade's pacing above: slow enough to
-   follow the marker across the path, steady enough not to feel like it's racing. */
-.anim__path-marker {
-  fill: var(--color-accent);
-  offset-distance: 0%;
-  animation-name: anim-path-travel;
-  animation-duration: 4s;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
+/* The trail is drawn by wireAnimations() appending to this path's "d" as the
+   marker advances; the reduced opacity keeps it reading as a motion wake behind
+   the marker rather than a second data series competing with .anim__path-line. */
+.anim__path-trail {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  opacity: 0.6;
 }
-@keyframes anim-path-travel {
-  from { offset-distance: 0%; }
-  to   { offset-distance: 100%; }
-}
+.anim__path-marker { fill: var(--color-accent); }
 .anim__path-caption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
+/* Hidden during animated playback; shown only under the static
+   print/reduced-motion presentation below, same toggle pair as array-ops. */
+.anim__path-steps-static { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .anim__array { display: none; }
@@ -334,5 +334,10 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .anim__caption { display: none; }
   .anim__array-legend { display: none; }
   .anim__array-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
-  .anim__path-marker { animation: none; offset-distance: 100%; }
+  /* No CSS animation left to disable -- wireAnimations() bails out entirely under
+     reduced motion, so the marker/trail simply stay at their rendered starting
+     position. The step list carries the sequence information instead, exactly as
+     it does for array-ops (the .anim__caption rule above hides the live caption,
+     which would otherwise sit frozen on its pre-JS text). */
+  .anim__path-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
 }

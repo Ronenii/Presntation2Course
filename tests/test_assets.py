@@ -112,6 +112,8 @@ def test_course_js_drives_the_dom_contract_the_renderers_emit():
         "createTimeline",
         "step.duration",
         "step.ease",
+        "path-segment",
+        "set-attr",
     ):
         assert hook in js, hook
     assert "localStorage" not in js  # stateless by design
@@ -164,7 +166,9 @@ def test_layout_css_styles_every_component_the_renderers_emit():
         ".anim__path-tick",
         ".anim__path-line",
         ".anim__path-marker",
+        ".anim__path-trail",
         ".anim__path-caption",
+        ".anim__path-steps-static",
     ):
         assert selector in css, selector
 
