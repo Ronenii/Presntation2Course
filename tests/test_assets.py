@@ -15,6 +15,7 @@ from p2c.theme import (
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 MERMAID_SHA256 = "74d7c46dabca328c2294733910a8aa1ed0c37451776e8d5295da38a2b758fb9b"
+ANIME_SHA256 = "e8e5dc8345ef66c35ce323783e55cca518253b4f06e174b5c599941f63e66895"
 _ABSOLUTE_URL = re.compile(r"""(?:src|href)\s*=\s*["'](?:[a-z]+:)?//""", re.IGNORECASE)
 _CSS_REMOTE = re.compile(r"url\(\s*[\"']?(?:[a-z]+:)?//", re.IGNORECASE)
 
@@ -29,6 +30,7 @@ def test_every_mapped_theme_exists_and_is_complete(name):
 def test_every_mapped_theme_loads(name):
     theme = load_theme(ASSETS, name)
     assert theme.mermaid_js is not None
+    assert theme.anime_js is not None
     assert theme.template and theme.layout_css and theme.print_css and theme.course_js
 
 
@@ -81,6 +83,13 @@ def test_vendored_mermaid_matches_the_pin():
     data = (ASSETS / "vendor" / "mermaid.min.js").read_bytes()
     assert hashlib.sha256(data).hexdigest() == MERMAID_SHA256
     assert data.rstrip().endswith(b'globalThis.__esbuild_esm_mermaid_nm["mermaid"].default;')
+
+
+def test_vendored_anime_matches_the_pin():
+    data = (ASSETS / "vendor" / "anime.min.js").read_bytes()
+    assert hashlib.sha256(data).hexdigest() == ANIME_SHA256
+    assert b"anime.js" in data[:200]
+    assert b"Julian Garnier" in data[:200]
 
 
 def test_course_js_drives_the_dom_contract_the_renderers_emit():

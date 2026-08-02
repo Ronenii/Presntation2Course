@@ -106,6 +106,7 @@ def fill_template(
         "{{SOURCES}}": sources_html or "<p>No external sources were cited.</p>",
         "{{SOURCE_DECKS}}": html.escape(decks),
         "{{MERMAID_JS}}": theme.mermaid_js if (inline_mermaid and theme.mermaid_js) else "",
+        "{{ANIME_JS}}": theme.anime_js or "",
         "{{COURSE_JS}}": theme.course_js,
         "{{LANG}}": html.escape(language["code"]),
         "{{DIR}}": "rtl" if is_rtl(language["code"]) else "ltr",

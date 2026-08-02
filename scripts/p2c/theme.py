@@ -61,6 +61,7 @@ TEMPLATE_PLACEHOLDERS = (
     "{{SOURCES}}",
     "{{SOURCE_DECKS}}",
     "{{MERMAID_JS}}",
+    "{{ANIME_JS}}",
     "{{COURSE_JS}}",
     "{{LANG}}",
     "{{DIR}}",
@@ -80,6 +81,7 @@ class Theme:
     course_js: str
     template: str
     mermaid_js: str | None
+    anime_js: str | None
 
 
 def theme_for(domain: str | None) -> str:
@@ -127,6 +129,7 @@ def load_theme(assets_dir: Path, name: str) -> Theme:
     override = theme_dir / "template.html"
     template = _read(override if override.is_file() else assets / "base" / "template.html")
     mermaid = assets / "vendor" / "mermaid.min.js"
+    anime = assets / "vendor" / "anime.min.js"
     return Theme(
         name=name,
         theme_css=theme_css,
@@ -135,4 +138,5 @@ def load_theme(assets_dir: Path, name: str) -> Theme:
         course_js=_read(assets / "base" / "course.js"),
         template=template,
         mermaid_js=mermaid.read_text(encoding="utf-8") if mermaid.is_file() else None,
+        anime_js=anime.read_text(encoding="utf-8") if anime.is_file() else None,
     )
