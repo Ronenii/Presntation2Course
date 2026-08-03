@@ -194,6 +194,183 @@
       .catch(function () { markReady(); });
   }
 
+  /* --- diagram lightbox: click a diagram to pan/zoom it full-screen ------- */
+  function wireDiagramZoom() {
+    var lightbox = document.getElementById("diagram-lightbox");
+    var stage = document.getElementById("diagram-lightbox-stage");
+    var zoomIn = document.getElementById("diagram-zoom-in");
+    var zoomOut = document.getElementById("diagram-zoom-out");
+    var zoomReset = document.getElementById("diagram-zoom-reset");
+    var closeBtn = document.getElementById("diagram-lightbox-close");
+    if (!lightbox || !stage) { return; }
+
+    // Where the moved-in .mermaid div came from, so closing puts it back
+    // exactly where it was instead of leaving it stranded in the lightbox --
+    // renderDiagrams() re-populates whatever .mermaid it finds in the page on
+    // every theme toggle, so the diagram must return to the content flow.
+    var homeParent = null;
+    var homeNext = null;
+    var current = null;
+    var scale = 1;
+    var x = 0;
+    var y = 0;
+    var MIN_SCALE = 0.5;
+    var MAX_SCALE = 6;
+
+    function apply() {
+      current.style.transform = "translate(-50%, -50%) translate(" + x + "px, " + y + "px) scale(" + scale + ")";
+    }
+
+    function setScale(next, anchorClientX, anchorClientY) {
+      next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
+      if (next === scale) { return; }
+      // Zoom toward the pointer/pinch-midpoint rather than the stage center, so
+      // scrolling in on a specific node keeps that node under the cursor instead
+      // of always re-centering the whole diagram.
+      if (anchorClientX != null) {
+        var rect = stage.getBoundingClientRect();
+        var cx = anchorClientX - rect.left - rect.width / 2;
+        var cy = anchorClientY - rect.top - rect.height / 2;
+        var ratio = next / scale;
+        x = cx - (cx - x) * ratio;
+        y = cy - (cy - y) * ratio;
+      }
+      scale = next;
+      apply();
+    }
+
+    function reset() {
+      scale = 1; x = 0; y = 0;
+      apply();
+    }
+
+    function open(diagram) {
+      current = diagram;
+      homeParent = diagram.parentNode;
+      homeNext = diagram.nextSibling;
+      stage.appendChild(diagram);
+      reset();
+      lightbox.hidden = false;
+      closeBtn.focus();
+      document.body.style.overflow = "hidden";
+    }
+
+    function close() {
+      if (!current) { return; }
+      if (homeNext) {
+        homeParent.insertBefore(current, homeNext);
+      } else {
+        homeParent.appendChild(current);
+      }
+      current.style.transform = "";
+      current = null;
+      lightbox.hidden = true;
+      document.body.style.overflow = "";
+    }
+
+    document.querySelectorAll(".content .mermaid").forEach(function (diagram) {
+      diagram.setAttribute("tabindex", "0");
+      diagram.setAttribute("role", "button");
+      diagram.setAttribute("aria-label", "Open diagram, enlarged");
+      diagram.addEventListener("click", function () { open(diagram); });
+      diagram.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open(diagram);
+        }
+      });
+    });
+
+    // print.css hides .diagram-lightbox outright; without this, printing while a
+    // diagram is open would print a page missing that one diagram entirely,
+    // since it currently lives inside the (now display:none) lightbox rather
+    // than back in .content's normal flow.
+    window.addEventListener("beforeprint", close);
+
+    if (zoomIn) { zoomIn.addEventListener("click", function () { setScale(scale + 0.4); }); }
+    if (zoomOut) { zoomOut.addEventListener("click", function () { setScale(scale - 0.4); }); }
+    if (zoomReset) { zoomReset.addEventListener("click", reset); }
+    if (closeBtn) { closeBtn.addEventListener("click", close); }
+    lightbox.addEventListener("click", function (event) {
+      if (event.target === lightbox) { close(); }
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !lightbox.hidden) { close(); }
+    });
+
+    stage.addEventListener("wheel", function (event) {
+      if (!current) { return; }
+      event.preventDefault();
+      var factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+      setScale(scale * factor, event.clientX, event.clientY);
+    }, { passive: false });
+
+    // Pointer-based drag-to-pan and pinch-to-zoom, unified: Pointer Events cover
+    // mouse, touch, and pen through one API, tracked by pointerId so a second
+    // finger landing mid-drag is recognized as the start of a pinch rather than
+    // a jump in the first pointer's drag delta.
+    var pointers = {};
+    var dragId = null;
+    var dragStartX = 0, dragStartY = 0, dragOriginX = 0, dragOriginY = 0;
+    var pinchStartDist = 0, pinchStartScale = 1;
+
+    function pointerArray() {
+      return Object.keys(pointers).map(function (id) { return pointers[id]; });
+    }
+
+    function pinchDistance() {
+      var pts = pointerArray();
+      if (pts.length < 2) { return 0; }
+      return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    }
+
+    function pinchMidpoint() {
+      var pts = pointerArray();
+      return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+    }
+
+    stage.addEventListener("pointerdown", function (event) {
+      if (!current) { return; }
+      pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
+      if (pointerArray().length === 2) {
+        dragId = null;
+        pinchStartDist = pinchDistance();
+        pinchStartScale = scale;
+      } else if (pointerArray().length === 1) {
+        dragId = event.pointerId;
+        dragStartX = event.clientX; dragStartY = event.clientY;
+        dragOriginX = x; dragOriginY = y;
+        stage.setAttribute("data-panning", "true");
+        stage.setPointerCapture(event.pointerId);
+      }
+    });
+
+    stage.addEventListener("pointermove", function (event) {
+      if (!pointers[event.pointerId]) { return; }
+      pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
+      var pts = pointerArray();
+      if (pts.length === 2 && pinchStartDist > 0) {
+        var mid = pinchMidpoint();
+        setScale(pinchStartScale * (pinchDistance() / pinchStartDist), mid.x, mid.y);
+      } else if (dragId === event.pointerId) {
+        x = dragOriginX + (event.clientX - dragStartX);
+        y = dragOriginY + (event.clientY - dragStartY);
+        apply();
+      }
+    });
+
+    function endPointer(event) {
+      delete pointers[event.pointerId];
+      if (dragId === event.pointerId) {
+        dragId = null;
+        stage.removeAttribute("data-panning");
+      }
+      if (pointerArray().length < 2) { pinchStartDist = 0; }
+    }
+    stage.addEventListener("pointerup", endPointer);
+    stage.addEventListener("pointercancel", endPointer);
+  }
+
   /* --- animate blocks: JSON timeline data driven through anime.js -------- */
   function wireAnimations() {
     if (!window.anime) { return; }
@@ -307,6 +484,7 @@
     wireToc();
     wireChrome();
     renderDiagrams();
+    wireDiagramZoom();
     wireAnimations();
   }
 

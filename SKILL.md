@@ -25,10 +25,11 @@ than with an admitted gap.
 - `<output>`: `./<stem>-course/` in the current working directory, where `<stem>` is the
   input's filename without extension (single file) or its directory name (folder). If the
   user named an output directory, use theirs.
-- `<basename>`: the deliverables' shared stem — the course's own title, transliterated
-  to ASCII and slugified (so a non-Latin title, Hebrew/Arabic/..., still yields a
-  recognizable filename instead of the literal `section`; internal `.p2c/modules/`
-  working files are unaffected and keep plain slugify()). The build script (below)
+- `<basename>`: the deliverables' shared stem — slugified from outline.json's own
+  `slug` field, a short English identifier the summarizer writes deliberately
+  (the same way module/topic `id`s are always ASCII regardless of the course's
+  `language`). Never derived from `title` — a non-Latin title transliterated
+  phonetically would be unreadable, not translated. The build script (below)
   computes and reports this; do not derive it yourself — its JSON summary's
   `course_html`/`course_md` fields are the literal paths to use for every later phase.
 - `<language>`: the target language for this course. **Required — the user must
@@ -43,7 +44,7 @@ than with an admitted gap.
 Confirm the runtime dependencies:
 
 ```bash
-python3 -c "import markdown, pypdfium2, PIL, unidecode; assert markdown.__version_info__ >= (3, 5)" 2>/dev/null || echo MISSING
+python3 -c "import markdown, pypdfium2, PIL; assert markdown.__version_info__ >= (3, 5)" 2>/dev/null || echo MISSING
 ```
 
 If it prints `MISSING`, install everything the build needs and continue:

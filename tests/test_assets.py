@@ -135,6 +135,45 @@ def test_course_js_wires_the_sidebar_drawer():
     assert "localStorage" not in js  # drawer state stays non-persistent, same as today
 
 
+def test_course_js_wires_the_diagram_lightbox():
+    js = (ASSETS / "base" / "course.js").read_text()
+    for hook in (
+        "wireDiagramZoom",
+        "diagram-lightbox",
+        "diagram-lightbox-stage",
+        "diagram-zoom-in",
+        "diagram-zoom-out",
+        "diagram-zoom-reset",
+        "diagram-lightbox-close",
+        "pointerdown",
+        "pointermove",
+        "pointerup",
+        "beforeprint",
+    ):
+        assert hook in js, hook
+
+
+def test_the_lightbox_restores_the_diagram_to_its_original_parent_on_close():
+    """The moved-in .mermaid div must return to the content flow on close, not
+    stay stranded in the lightbox -- renderDiagrams() re-populates whatever
+    .mermaid nodes it finds anywhere in the document on every theme toggle, so a
+    diagram left behind in a hidden lightbox would silently vanish from the
+    page's normal reading flow."""
+    js = (ASSETS / "base" / "course.js").read_text()
+    assert "homeParent.insertBefore(current, homeNext)" in js
+    assert "homeParent.appendChild(current)" in js
+
+
+def test_the_lightbox_closes_before_print():
+    """print.css hides .diagram-lightbox outright; without closing first, a
+    diagram open at print time would be missing from the printed page entirely
+    instead of appearing back in its normal position."""
+    js = (ASSETS / "base" / "course.js").read_text()
+    assert 'window.addEventListener("beforeprint", close)' in js
+    css = (ASSETS / "print.css").read_text()
+    assert ".diagram-lightbox { display: none !important; }" in css
+
+
 def test_layout_css_styles_every_component_the_renderers_emit():
     css = (ASSETS / "base" / "layout.css").read_text()
     for selector in (
@@ -148,6 +187,9 @@ def test_layout_css_styles_every_component_the_renderers_emit():
         ".callout--prereq",
         ".callout--unverified",
         ".mermaid",
+        ".diagram-lightbox",
+        ".diagram-lightbox__toolbar",
+        ".diagram-lightbox__stage",
         ".glossary",
         ".sources-group",
         ".sources",
@@ -299,6 +341,27 @@ def test_layout_css_styles_the_mobile_drawer():
     css = (ASSETS / "base" / "layout.css").read_text()
     for selector in (".sidebar-toggle", ".sidebar-scrim", "--z-scrim", "--z-drawer", "--z-popover"):
         assert selector in css, selector
+
+
+def test_template_has_a_diagram_lightbox():
+    template = (ASSETS / "base" / "template.html").read_text()
+    for hook in (
+        'id="diagram-lightbox"',
+        'id="diagram-lightbox-stage"',
+        'id="diagram-zoom-in"',
+        'id="diagram-zoom-out"',
+        'id="diagram-zoom-reset"',
+        'id="diagram-lightbox-close"',
+    ):
+        assert hook in template, hook
+
+
+def test_layout_css_stacks_the_lightbox_above_every_other_overlay():
+    css = (ASSETS / "base" / "layout.css").read_text()
+    assert "--z-lightbox: 50" in css
+    rule_start = css.index(".diagram-lightbox {")
+    rule = css[rule_start : css.index("}", rule_start)]
+    assert "var(--z-lightbox)" in rule
 
 
 def test_sidebar_drawer_transform_is_direction_aware():

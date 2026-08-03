@@ -27,6 +27,15 @@
     </nav>
   </aside>
   <div class="sidebar-scrim" id="sidebar-scrim" hidden></div>
+  <div class="diagram-lightbox" id="diagram-lightbox" role="dialog" aria-modal="true" aria-label="Diagram, enlarged" hidden>
+    <div class="diagram-lightbox__toolbar">
+      <button type="button" class="btn" id="diagram-zoom-out" aria-label="Zoom out">−</button>
+      <button type="button" class="btn" id="diagram-zoom-reset" aria-label="Reset zoom">Reset</button>
+      <button type="button" class="btn" id="diagram-zoom-in" aria-label="Zoom in">+</button>
+      <button type="button" class="btn btn--accent" id="diagram-lightbox-close" aria-label="Close">Close</button>
+    </div>
+    <div class="diagram-lightbox__stage" id="diagram-lightbox-stage"></div>
+  </div>
   <main class="content" id="content" tabindex="-1">
     {{CONTENT}}
     <section class="appendix">

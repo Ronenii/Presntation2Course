@@ -4,9 +4,15 @@
   "title": "Presentation2Course outline",
   "description": "The summarizer's only output. Every later phase reads it.",
   "type": "object",
-  "required": ["title", "subject_domain", "source_decks", "modules", "language"],
+  "required": ["title", "slug", "subject_domain", "source_decks", "modules", "language"],
   "properties": {
     "title": {"type": "string", "minLength": 1},
+    "slug": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "A short English kebab-case identifier for the course, e.g. 'building-footprint-extraction' -- becomes the shipped filename stem (<slug>.html/.md/.pdf). Written in English regardless of 'language', the same way module/topic 'id's are always ASCII regardless of their 'title'. Summarize the course's actual subject; do not transliterate the (possibly non-Latin) title."
+    },
     "subject_domain": {
       "enum": ["systems", "theory", "life-sciences", "other"],
       "description": "Selects the shipped theme. Affects nothing else."

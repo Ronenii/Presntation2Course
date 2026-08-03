@@ -3,8 +3,6 @@
 import re
 import unicodedata
 
-from unidecode import unidecode
-
 _NON_WORD = re.compile(r"[^a-z0-9]+")
 
 
@@ -14,18 +12,6 @@ def slugify(text: str) -> str:
     ascii_only = decomposed.encode("ascii", "ignore").decode("ascii")
     slug = _NON_WORD.sub("-", ascii_only.lower()).strip("-")
     return slug or "section"
-
-
-def slugify_transliterated(text: str) -> str:
-    """Like slugify(), but transliterates non-Latin scripts (Hebrew, Arabic,
-    Cyrillic, ...) to ASCII first instead of discarding them — for filenames a
-    person needs to recognize, where 'section' for every non-Latin course title
-    is useless. Anchors don't need this: slugify() alone is fine there, since an
-    anchor only needs to be a valid, unique href target, not a readable name.
-    Still falls back to 'section' (via slugify()) if transliteration itself
-    yields nothing sluggable, e.g. a title that is only emoji or symbols.
-    """
-    return slugify(unidecode(text))
 
 
 class AnchorAllocator:

@@ -1,5 +1,6 @@
 {
   "title": "Operating Systems Foundations",
+  "slug": "operating-systems-foundations",
   "subject_domain": "systems",
   "language": {"name": "English", "code": "en"},
   "source_decks": ["week1.pdf"],

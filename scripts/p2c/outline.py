@@ -12,7 +12,7 @@ from pathlib import Path
 
 SUBJECT_DOMAINS = ("systems", "theory", "life-sciences", "other")
 TOPIC_DEPTHS = ("full", "brief")
-REQUIRED_TOP = ("title", "subject_domain", "source_decks", "modules", "language")
+REQUIRED_TOP = ("title", "slug", "subject_domain", "source_decks", "modules", "language")
 REQUIRED_MODULE = ("id", "title", "prerequisites", "topics")
 REQUIRED_TOPIC = ("id", "title", "slide_refs", "jargon", "diagrams", "gaps")
 REQUIRED_LANGUAGE = ("name", "code")
@@ -65,6 +65,8 @@ def validate_outline(obj: object) -> list[str]:
             problems.append(f"outline is missing required key '{key}'")
     if "title" in obj:
         _check_str(obj, "title", "outline", problems)
+    if "slug" in obj:
+        _check_str(obj, "slug", "outline", problems)
     if "subject_domain" in obj and obj["subject_domain"] not in SUBJECT_DOMAINS:
         problems.append(
             f"outline.subject_domain must be one of {list(SUBJECT_DOMAINS)}, "

@@ -4,7 +4,7 @@
 @media print {
   html, body { background: #fff !important; color: #000 !important; }
   .shell { display: block; }
-  .sidebar, .skip-link, .btn, .footer, .sidebar-scrim { display: none !important; }
+  .sidebar, .skip-link, .btn, .footer, .sidebar-scrim, .diagram-lightbox { display: none !important; }
   .content { max-width: none; padding: 0; }
 
   h1, h2, h3 { break-after: avoid-page; page-break-after: avoid; }

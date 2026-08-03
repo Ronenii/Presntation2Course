@@ -76,8 +76,10 @@
   --space-12: 3rem;
   --radius: 6px;
   --measure: 70ch;
-  /* Stacking order for overlay UI: skip-link at top (keyboard accessibility escape
-     hatch must never be buried), then popover, drawer, scrim at the bottom. */
+  /* Stacking order for overlay UI: the diagram lightbox is a modal above
+     everything (including the skip-link, since it captures focus itself while
+     open), then skip-link, popover, drawer, scrim at the bottom. */
+  --z-lightbox: 50;
   --z-skip-link: 40;
   --z-popover: 30;
   --z-drawer: 20;
@@ -233,12 +235,38 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 }
 .quiz__answer[hidden], .quiz__why[hidden] { display: none; }
 
-.mermaid { margin: var(--space-6) 0; text-align: center; overflow-x: auto; direction: ltr; }
+.mermaid { margin: var(--space-6) 0; text-align: center; overflow-x: auto; direction: ltr; cursor: zoom-in; }
 /* Render at the diagram's natural size (course.js disables mermaid's own
    useMaxWidth to match) so a complex diagram's text never shrinks below
    legible -- the container above scrolls horizontally instead. A small
    diagram is unaffected: its natural width is already less than the column. */
 .mermaid svg { max-width: none; height: auto; }
+
+/* --- diagram lightbox: click a diagram to pan/zoom it full-screen --------- */
+.diagram-lightbox {
+  position: fixed; inset: 0; z-index: var(--z-lightbox);
+  background: rgba(0, 0, 0, 0.85);
+  display: flex; flex-direction: column;
+}
+.diagram-lightbox[hidden] { display: none; }
+.diagram-lightbox__toolbar {
+  display: flex; justify-content: flex-end; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+.diagram-lightbox__stage {
+  flex: 1; overflow: hidden; position: relative;
+  cursor: grab; touch-action: none;
+}
+.diagram-lightbox__stage[data-panning="true"] { cursor: grabbing; }
+/* The moved-in <div class="mermaid"> keeps its own rules (direction:ltr, etc.)
+   but must not keep its normal-flow margin/cursor/scroll here -- it is now the
+   thing being panned and scaled as a whole, not a block in a text column. */
+.diagram-lightbox__stage .mermaid {
+  margin: 0; cursor: inherit; overflow: visible;
+  position: absolute; top: 50%; left: 50%;
+  transform-origin: center center;
+}
+.diagram-lightbox__stage .mermaid svg { max-width: none; }
 .diagram-fallback {
   margin: var(--space-6) 0; padding: var(--space-4);
   border: 1px dashed var(--color-warn); border-radius: var(--radius);
@@ -437,7 +465,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 @media print {
   html, body { background: #fff !important; color: #000 !important; }
   .shell { display: block; }
-  .sidebar, .skip-link, .btn, .footer, .sidebar-scrim { display: none !important; }
+  .sidebar, .skip-link, .btn, .footer, .sidebar-scrim, .diagram-lightbox { display: none !important; }
   .content { max-width: none; padding: 0; }
 
   h1, h2, h3 { break-after: avoid-page; page-break-after: avoid; }
@@ -519,6 +547,15 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
     </nav>
   </aside>
   <div class="sidebar-scrim" id="sidebar-scrim" hidden></div>
+  <div class="diagram-lightbox" id="diagram-lightbox" role="dialog" aria-modal="true" aria-label="Diagram, enlarged" hidden>
+    <div class="diagram-lightbox__toolbar">
+      <button type="button" class="btn" id="diagram-zoom-out" aria-label="Zoom out">−</button>
+      <button type="button" class="btn" id="diagram-zoom-reset" aria-label="Reset zoom">Reset</button>
+      <button type="button" class="btn" id="diagram-zoom-in" aria-label="Zoom in">+</button>
+      <button type="button" class="btn btn--accent" id="diagram-lightbox-close" aria-label="Close">Close</button>
+    </div>
+    <div class="diagram-lightbox__stage" id="diagram-lightbox-stage"></div>
+  </div>
   <main class="content" id="content" tabindex="-1">
     <h1 id="section">יסודות מערכות הפעלה</h1>
 <h2 id="section-2">זיכרון וירטואלי</h2>
@@ -4397,6 +4434,183 @@ var anime=function(t){"use strict";const e="undefined"!=typeof window,s=e?window
       .catch(function () { markReady(); });
   }
 
+  /* --- diagram lightbox: click a diagram to pan/zoom it full-screen ------- */
+  function wireDiagramZoom() {
+    var lightbox = document.getElementById("diagram-lightbox");
+    var stage = document.getElementById("diagram-lightbox-stage");
+    var zoomIn = document.getElementById("diagram-zoom-in");
+    var zoomOut = document.getElementById("diagram-zoom-out");
+    var zoomReset = document.getElementById("diagram-zoom-reset");
+    var closeBtn = document.getElementById("diagram-lightbox-close");
+    if (!lightbox || !stage) { return; }
+
+    // Where the moved-in .mermaid div came from, so closing puts it back
+    // exactly where it was instead of leaving it stranded in the lightbox --
+    // renderDiagrams() re-populates whatever .mermaid it finds in the page on
+    // every theme toggle, so the diagram must return to the content flow.
+    var homeParent = null;
+    var homeNext = null;
+    var current = null;
+    var scale = 1;
+    var x = 0;
+    var y = 0;
+    var MIN_SCALE = 0.5;
+    var MAX_SCALE = 6;
+
+    function apply() {
+      current.style.transform = "translate(-50%, -50%) translate(" + x + "px, " + y + "px) scale(" + scale + ")";
+    }
+
+    function setScale(next, anchorClientX, anchorClientY) {
+      next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
+      if (next === scale) { return; }
+      // Zoom toward the pointer/pinch-midpoint rather than the stage center, so
+      // scrolling in on a specific node keeps that node under the cursor instead
+      // of always re-centering the whole diagram.
+      if (anchorClientX != null) {
+        var rect = stage.getBoundingClientRect();
+        var cx = anchorClientX - rect.left - rect.width / 2;
+        var cy = anchorClientY - rect.top - rect.height / 2;
+        var ratio = next / scale;
+        x = cx - (cx - x) * ratio;
+        y = cy - (cy - y) * ratio;
+      }
+      scale = next;
+      apply();
+    }
+
+    function reset() {
+      scale = 1; x = 0; y = 0;
+      apply();
+    }
+
+    function open(diagram) {
+      current = diagram;
+      homeParent = diagram.parentNode;
+      homeNext = diagram.nextSibling;
+      stage.appendChild(diagram);
+      reset();
+      lightbox.hidden = false;
+      closeBtn.focus();
+      document.body.style.overflow = "hidden";
+    }
+
+    function close() {
+      if (!current) { return; }
+      if (homeNext) {
+        homeParent.insertBefore(current, homeNext);
+      } else {
+        homeParent.appendChild(current);
+      }
+      current.style.transform = "";
+      current = null;
+      lightbox.hidden = true;
+      document.body.style.overflow = "";
+    }
+
+    document.querySelectorAll(".content .mermaid").forEach(function (diagram) {
+      diagram.setAttribute("tabindex", "0");
+      diagram.setAttribute("role", "button");
+      diagram.setAttribute("aria-label", "Open diagram, enlarged");
+      diagram.addEventListener("click", function () { open(diagram); });
+      diagram.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open(diagram);
+        }
+      });
+    });
+
+    // print.css hides .diagram-lightbox outright; without this, printing while a
+    // diagram is open would print a page missing that one diagram entirely,
+    // since it currently lives inside the (now display:none) lightbox rather
+    // than back in .content's normal flow.
+    window.addEventListener("beforeprint", close);
+
+    if (zoomIn) { zoomIn.addEventListener("click", function () { setScale(scale + 0.4); }); }
+    if (zoomOut) { zoomOut.addEventListener("click", function () { setScale(scale - 0.4); }); }
+    if (zoomReset) { zoomReset.addEventListener("click", reset); }
+    if (closeBtn) { closeBtn.addEventListener("click", close); }
+    lightbox.addEventListener("click", function (event) {
+      if (event.target === lightbox) { close(); }
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !lightbox.hidden) { close(); }
+    });
+
+    stage.addEventListener("wheel", function (event) {
+      if (!current) { return; }
+      event.preventDefault();
+      var factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+      setScale(scale * factor, event.clientX, event.clientY);
+    }, { passive: false });
+
+    // Pointer-based drag-to-pan and pinch-to-zoom, unified: Pointer Events cover
+    // mouse, touch, and pen through one API, tracked by pointerId so a second
+    // finger landing mid-drag is recognized as the start of a pinch rather than
+    // a jump in the first pointer's drag delta.
+    var pointers = {};
+    var dragId = null;
+    var dragStartX = 0, dragStartY = 0, dragOriginX = 0, dragOriginY = 0;
+    var pinchStartDist = 0, pinchStartScale = 1;
+
+    function pointerArray() {
+      return Object.keys(pointers).map(function (id) { return pointers[id]; });
+    }
+
+    function pinchDistance() {
+      var pts = pointerArray();
+      if (pts.length < 2) { return 0; }
+      return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    }
+
+    function pinchMidpoint() {
+      var pts = pointerArray();
+      return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+    }
+
+    stage.addEventListener("pointerdown", function (event) {
+      if (!current) { return; }
+      pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
+      if (pointerArray().length === 2) {
+        dragId = null;
+        pinchStartDist = pinchDistance();
+        pinchStartScale = scale;
+      } else if (pointerArray().length === 1) {
+        dragId = event.pointerId;
+        dragStartX = event.clientX; dragStartY = event.clientY;
+        dragOriginX = x; dragOriginY = y;
+        stage.setAttribute("data-panning", "true");
+        stage.setPointerCapture(event.pointerId);
+      }
+    });
+
+    stage.addEventListener("pointermove", function (event) {
+      if (!pointers[event.pointerId]) { return; }
+      pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
+      var pts = pointerArray();
+      if (pts.length === 2 && pinchStartDist > 0) {
+        var mid = pinchMidpoint();
+        setScale(pinchStartScale * (pinchDistance() / pinchStartDist), mid.x, mid.y);
+      } else if (dragId === event.pointerId) {
+        x = dragOriginX + (event.clientX - dragStartX);
+        y = dragOriginY + (event.clientY - dragStartY);
+        apply();
+      }
+    });
+
+    function endPointer(event) {
+      delete pointers[event.pointerId];
+      if (dragId === event.pointerId) {
+        dragId = null;
+        stage.removeAttribute("data-panning");
+      }
+      if (pointerArray().length < 2) { pinchStartDist = 0; }
+    }
+    stage.addEventListener("pointerup", endPointer);
+    stage.addEventListener("pointercancel", endPointer);
+  }
+
   /* --- animate blocks: JSON timeline data driven through anime.js -------- */
   function wireAnimations() {
     if (!window.anime) { return; }
@@ -4510,6 +4724,7 @@ var anime=function(t){"use strict";const e="undefined"!=typeof window,s=e?window
     wireToc();
     wireChrome();
     renderDiagrams();
+    wireDiagramZoom();
     wireAnimations();
   }
 
