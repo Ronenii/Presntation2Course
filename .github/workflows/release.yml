@@ -35,11 +35,13 @@ jobs:
       - name: Build release archive
         run: |
           staging="presentation2course-${{ inputs.version }}"
-          mkdir "$staging"
-          cp -r SKILL.md references assets scripts requirements.txt "$staging/"
+          mkdir -p "$staging/presentation2course"
+          cp -r SKILL.md references assets scripts requirements.txt "$staging/presentation2course/"
+          cp -r .claude/skills/animejs "$staging/animejs"
           # Tar the staging dir's *contents*, not the dir itself: the README's Quick
-          # Start says to extract straight into .claude/skills/presentation2course/,
-          # so the archive must not add its own wrapper directory on top of that.
+          # Start says to extract straight into .claude/skills/, giving two sibling
+          # skill dirs (presentation2course/, animejs/) -- so the archive must not
+          # add its own wrapper directory on top of that.
           tar -czf "${staging}.tar.gz" -C "$staging" .
 
       - name: Create GitHub Release
