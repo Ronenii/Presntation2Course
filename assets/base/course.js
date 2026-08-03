@@ -214,15 +214,21 @@
     var scale = 1;
     var x = 0;
     var y = 0;
-    var MIN_SCALE = 0.5;
-    var MAX_SCALE = 6;
+    // The scale that fits the diagram's own natural size to the stage -- reset()
+    // returns to this, not to a hardcoded 1. A diagram is usually far smaller
+    // than the viewport (a few hundred px), so opening at scale:1 would just
+    // show it at the same small size it already had in the page; a huge
+    // diagram, conversely, needs scale < 1 to fit at all.
+    var fitScale = 1;
+    var MIN_SCALE_FACTOR = 0.2;
+    var MAX_SCALE_FACTOR = 8;
 
     function apply() {
       current.style.transform = "translate(-50%, -50%) translate(" + x + "px, " + y + "px) scale(" + scale + ")";
     }
 
     function setScale(next, anchorClientX, anchorClientY) {
-      next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
+      next = Math.min(fitScale * MAX_SCALE_FACTOR, Math.max(fitScale * MIN_SCALE_FACTOR, next));
       if (next === scale) { return; }
       // Zoom toward the pointer/pinch-midpoint rather than the stage center, so
       // scrolling in on a specific node keeps that node under the cursor instead
@@ -240,7 +246,7 @@
     }
 
     function reset() {
-      scale = 1; x = 0; y = 0;
+      scale = fitScale; x = 0; y = 0;
       apply();
     }
 
@@ -248,9 +254,30 @@
       current = diagram;
       homeParent = diagram.parentNode;
       homeNext = diagram.nextSibling;
-      stage.appendChild(diagram);
-      reset();
+      // Unhide BEFORE measuring: the stage is display:none while [hidden] is
+      // set (via the lightbox's [hidden] CSS rule), so getBoundingClientRect()
+      // on it beforehand would read back 0x0 -- there would be nothing yet to
+      // fit the diagram to.
       lightbox.hidden = false;
+      stage.appendChild(diagram);
+      // Measure the diagram's own SVG at its natural (untransformed) size --
+      // read it before appending the transform, since getBoundingClientRect()
+      // on an already-scaled element would report the scaled size, not the
+      // natural one fitScale needs to be computed from.
+      var svg = diagram.querySelector("svg");
+      var stageRect = stage.getBoundingClientRect();
+      if (svg) {
+        var natural = svg.getBoundingClientRect();
+        var margin = 0.9; // leave breathing room around the diagram's edges
+        fitScale = Math.min(
+          (stageRect.width * margin) / natural.width,
+          (stageRect.height * margin) / natural.height
+        );
+        if (!isFinite(fitScale) || fitScale <= 0) { fitScale = 1; }
+      } else {
+        fitScale = 1;
+      }
+      reset();
       closeBtn.focus();
       document.body.style.overflow = "hidden";
     }
@@ -287,8 +314,12 @@
     // than back in .content's normal flow.
     window.addEventListener("beforeprint", close);
 
-    if (zoomIn) { zoomIn.addEventListener("click", function () { setScale(scale + 0.4); }); }
-    if (zoomOut) { zoomOut.addEventListener("click", function () { setScale(scale - 0.4); }); }
+    // Multiplicative, not a fixed +/-0.4 step: fitScale (and so the useful scale
+    // range) varies a lot by diagram size, so a fixed absolute step is either
+    // imperceptible on a diagram that opened at scale 4 or too coarse on one
+    // that opened at scale 0.3.
+    if (zoomIn) { zoomIn.addEventListener("click", function () { setScale(scale * 1.3); }); }
+    if (zoomOut) { zoomOut.addEventListener("click", function () { setScale(scale / 1.3); }); }
     if (zoomReset) { zoomReset.addEventListener("click", reset); }
     if (closeBtn) { closeBtn.addEventListener("click", close); }
     lightbox.addEventListener("click", function (event) {

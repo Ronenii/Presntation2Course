@@ -153,6 +153,40 @@ def test_course_js_wires_the_diagram_lightbox():
         assert hook in js, hook
 
 
+def test_the_lightbox_fits_the_diagram_to_the_stage_instead_of_opening_at_scale_1():
+    """A diagram's natural size is usually a few hundred px, far smaller than a
+    full-screen stage -- opening at a hardcoded scale of 1 would show it at the
+    same small size it already had inline, defeating the point of a lightbox."""
+    js = (ASSETS / "base" / "course.js").read_text()
+    assert "var fitScale = 1;" in js
+    assert 'svg.getBoundingClientRect()' in js or "diagram.querySelector(\"svg\")" in js
+    assert "scale = fitScale" in js
+    assert "scale = 1; x = 0; y = 0;" not in js  # the old hardcoded reset
+
+
+def test_the_lightbox_measures_natural_size_after_unhiding_not_before():
+    """The stage is display:none while the lightbox has [hidden] -- measuring
+    its size before clearing that attribute would read back a 0x0 rect, making
+    every fitScale computation divide by zero-derived nonsense."""
+    js = (ASSETS / "base" / "course.js").read_text()
+    open_start = js.index("function open(diagram) {")
+    open_body = js[open_start : js.index("\n    function close()", open_start)]
+    unhide_index = open_body.index("lightbox.hidden = false;")
+    measure_index = open_body.index("stage.getBoundingClientRect()")
+    assert unhide_index < measure_index
+
+
+def test_the_lightbox_backdrop_is_fully_opaque():
+    """Even a high alpha like 0.85-0.96 still lets sharp text edges from the
+    page behind show through faintly -- looks like a stacking bug even though
+    it's just alpha math. The backdrop must be fully solid, not translucent."""
+    css = (ASSETS / "base" / "layout.css").read_text()
+    rule_start = css.index(".diagram-lightbox {")
+    rule = css[rule_start : css.index("}", rule_start)]
+    assert "rgba(" not in rule
+    assert "background: #000;" in rule
+
+
 def test_the_lightbox_restores_the_diagram_to_its_original_parent_on_close():
     """The moved-in .mermaid div must return to the content flow on close, not
     stay stranded in the lightbox -- renderDiagrams() re-populates whatever
