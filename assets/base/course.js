@@ -179,7 +179,15 @@
       startOnLoad: false,
       securityLevel: "strict",
       theme: "base",
-      themeVariables: themeVariables()
+      themeVariables: themeVariables(),
+      // Render at natural size instead of shrinking to fit the container -- a
+      // complex diagram (many nodes, long labels) needs its full width to stay
+      // legible; .mermaid's overflow-x:auto lets it scroll horizontally instead.
+      flowchart: { useMaxWidth: false },
+      sequence: { useMaxWidth: false },
+      state: { useMaxWidth: false },
+      er: { useMaxWidth: false },
+      architecture: { useMaxWidth: false }
     });
     mermaid.run({ nodes: nodes })
       .then(markReady)

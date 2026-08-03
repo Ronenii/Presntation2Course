@@ -65,6 +65,14 @@ def test_the_mini_course_builds_clean(built):
     assert json.loads(built.findings_path.read_text()) == []
 
 
+def test_a_non_latin_title_gets_a_transliterated_filename_not_section(built_he, tmp_path):
+    # "יסודות מערכות הפעלה" (foundations of operating systems) has no Latin
+    # characters, so plain slugify() alone would fall back to "section" -- the
+    # deliverable must instead get a filename a person can recognize.
+    assert built_he.course_html.name != "section.html"
+    assert built_he.course_html.parent == tmp_path
+
+
 def test_theme_comes_from_subject_domain(built):
     assert built.theme == "slate"
     html = built.course_html.read_text()

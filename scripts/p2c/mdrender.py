@@ -702,6 +702,9 @@ def _md(text: str) -> str:
     return markdown.Markdown(extensions=_EXTENSIONS).convert(text)
 
 
+_STYLE_FILL_LINE = re.compile(r"^\s*style\s+(\S+)\s+(.*)$")
+
+
 def mermaid_problem(body: str) -> str | None:
     """A structural check, not a real parse. Mermaid itself is the final authority."""
     stripped = body.strip()
@@ -715,6 +718,17 @@ def mermaid_problem(body: str) -> str | None:
     for opener, closer in (("[", "]"), ("(", ")"), ("{", "}")):
         if stripped.count(opener) != stripped.count(closer):
             return f"unbalanced '{opener}{closer}' brackets"
+    for line in stripped.splitlines():
+        match = _STYLE_FILL_LINE.match(line)
+        if not match:
+            continue
+        node, props = match.group(1), match.group(2)
+        if "fill:" in props and "color:" not in props:
+            return (
+                f"style {node!r} sets fill without color -- the theme's default text "
+                "color is not guaranteed to stay readable against a custom fill, so "
+                "every 'fill:' must be paired with an explicit 'color:' on the same line"
+            )
     return None
 
 
@@ -779,6 +793,11 @@ def _toc_html(sections: list[Section]) -> str:
             )
     if open_child:
         rows.append("</ul></li>")
+    # The template's appendix sections (glossary, sources) always exist, even when
+    # empty -- see {{GLOSSARY}}/{{SOURCES}} in template.html -- so the TOC always
+    # links to them too, the same literal English chrome as their <h2> labels.
+    rows.append('<li class="toc__module"><a href="#glossary">Glossary</a></li>')
+    rows.append('<li class="toc__module"><a href="#sources">Sources</a></li>')
     rows.append("</ul>")
     return "\n".join(rows)
 

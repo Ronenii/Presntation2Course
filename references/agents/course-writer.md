@@ -103,9 +103,13 @@ Working set: The pages a process is actively using in a given window of time.
 - Use an `unverified` block wherever the research says `unverified: true`, naming the
   specific claim to distrust.
 - Mermaid blocks must start with a diagram keyword and have balanced brackets and quotes.
-  A block the build rejects comes back to you for exactly one repair attempt; after that
-  replace it with a prose description of the diagram. A prose description is not itself a
-  visual, so when you replace a diagram this way also add
+  If you give any node a `style NODE fill:#xxxxxx` override, put an explicit
+  `color:#xxxxxx` on that same line — the theme's default text color is picked for the
+  diagram's normal background, not for whatever custom fill you chose, so an uncolored
+  override can render unreadable (light text on a light fill, or the reverse).
+  A block the build rejects comes back to you for exactly one repair attempt; after
+  that replace it with a prose description of the diagram. A prose description is not
+  itself a visual, so when you replace a diagram this way also add
   `<!-- no-visual: diagram could not be rendered; described in prose instead -->` to that
   topic — otherwise it fails the build's visual-coverage check for an unrelated reason.
 - No `TODO`, `TBD`, `FIXME`, `XXX`, `[insert …]`, `<placeholder`, or lorem ipsum. The build
@@ -124,28 +128,24 @@ step, but the build's visual check is not `depth`-aware — it only ever recogni
 `<!-- no-visual: <reason> -->` alongside its `<!-- no-quiz: ... -->`, even though it has
 nothing to draw.
 
-Pick the diagram type that matches the idea: `flowchart` for a process,
-`sequenceDiagram` for an interaction between parties, `stateDiagram-v2` for a
-lifecycle, `erDiagram`/`architecture-beta` for structure. Inline `<svg>` is
-for a static structure a flow/sequence/state diagram cannot express (a memory
-layout, a data structure). A second visual in one topic is rarely warranted —
-only add one if the topic genuinely covers two separate spatial ideas.
+Before picking a diagram type, apply this test: **would explaining the idea out loud
+require saying "first... then... after that", or naming a single thing that changes
+state/value/position?** If yes, use `animate`, not `mermaid` — a mermaid diagram is for
+relationships that all exist *at once* (components wired together, a hierarchy, a
+pipeline you'd want to see in full for reference); `animate` is for one thing changing
+*over time*, where watching intermediate states appear one at a time is itself the point,
+not just decoration. Concretely, prefer `animate` when the topic is:
 
-If your dispatch tells you a topic already has a `reusable_image` (a real
-slide image the summarizer flagged as worth reusing), do not author your own
-visual for that topic at all — write a `figure` block instead, restating the
-exact value you were given:
-
-```figure
-source: week1.pdf#12
-caption: The lookup path, as drawn in the lecture.
-```
-
-Write only the caption yourself; the source value must be copied exactly
-from your dispatch, never invented or re-derived.
-
-When a topic is genuinely about a sequence or a before/after comparison, an
-`animate` block is worth using instead of (or alongside) a mermaid diagram:
+- An ordered sequence of named steps with no useful branching (`step-reveal`) — a
+  request/value moving through a fixed pipeline, a protocol handshake, a lookup
+  procedure. If you'd draw it in mermaid it would be a straight line of boxes with no
+  fan-out — that shape is a `step-reveal` candidate, not a flowchart.
+- A single entity's before/after contrast (`state-toggle`) — one object, one state
+  change, no third state and no other actors worth drawing.
+- One pass of an array/list transformation you can express as compare/swap/highlight
+  steps (`array-ops`) — a sort pass, a partition step, a two-pointer scan.
+- A point moving along a plotted path (`path-trace`) — convergence, a traversal, a
+  value sliding along a curve — where you can supply literal `(x, y)` coordinates.
 
 ```animate
 pattern: step-reveal
@@ -162,11 +162,33 @@ after: Cache line marked Modified after a local write
 ```
 
 `step-reveal` needs at least 2 steps; `state-toggle` needs both `before:` and
-`after:`. See `references/quiz-format.md` for the full grammar.
+`after:`. See `references/quiz-format.md` for the full grammar, including `array-ops`
+and `path-trace`.
 
-Use `array-ops` when a topic is about an array/list transformation you can express
-as a short sequence of compare/swap/highlight steps (e.g. one pass of a sort, a
-partition step). Use `path-trace` when a topic is about a value moving along a
-continuous path — a point sliding along a plotted curve, a traversal along a tree
-or graph edge — and you can supply the path as literal (x, y) coordinate pairs
-(never write a function expression; give the actual point list).
+Stay with `mermaid` when the topic is a structure with more than one relationship to
+show at once (a branching flow, several components connected to each other, a
+lifecycle with more than a linear path) — forcing that into `step-reveal` would lose the
+branching a diagram shows for free. Pick the diagram type that matches the idea:
+`flowchart` for a process, `sequenceDiagram` for an interaction between parties,
+`stateDiagram-v2` for a lifecycle, `erDiagram`/`architecture-beta` for structure. Inline
+`<svg>` is for a static structure a flow/sequence/state diagram cannot express (a memory
+layout, a data structure).
+
+When a topic genuinely fits both — a sequence that also has a structure worth seeing
+whole — use `animate` for the sequence and, only if the structure adds information the
+steps didn't already convey, a second mermaid diagram alongside it. Otherwise a second
+visual in one topic is rarely warranted — only add one if the topic genuinely covers two
+separate spatial ideas.
+
+If your dispatch tells you a topic already has a `reusable_image` (a real
+slide image the summarizer flagged as worth reusing), do not author your own
+visual for that topic at all — write a `figure` block instead, restating the
+exact value you were given:
+
+```figure
+source: week1.pdf#12
+caption: The lookup path, as drawn in the lecture.
+```
+
+Write only the caption yourself; the source value must be copied exactly
+from your dispatch, never invented or re-derived.

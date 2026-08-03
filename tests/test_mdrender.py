@@ -77,6 +77,8 @@ Page table: The full in-memory map from virtual pages to physical frames.
         "  \n\nsequenceDiagram\n  A->>B: hi",
         "stateDiagram-v2\n  [*] --> Idle",
         'graph TD\n  A["a label"] --> B',
+        "flowchart LR\n  A --> B\n  style A fill:#2e7d32,color:#fff",
+        "flowchart LR\n  A --> B\n  style A stroke:#dc3545",
     ],
 )
 def test_mermaid_problem_accepts_valid_diagrams(body):
@@ -91,6 +93,10 @@ def test_mermaid_problem_accepts_valid_diagrams(body):
         ("nonsense LR\n A --> B", "unrecognised diagram type"),
         ("flowchart LR\n  A[unclosed --> B", "unbalanced"),
         ('flowchart LR\n  A["unclosed --> B', "unbalanced"),
+        (
+            "flowchart LR\n  A --> B\n  style A fill:#f8d7da,stroke:#dc3545",
+            "fill without color",
+        ),
     ],
 )
 def test_mermaid_problem_rejects_broken_diagrams(body, message):
@@ -110,6 +116,11 @@ def test_renders_headings_with_stable_anchors_and_a_nested_toc():
     assert '<li class="toc__topic"><a href="#the-tlb">' in r.toc_html
     assert r.toc_html.count("<ul") == r.toc_html.count("</ul>")
     assert "operating-systems" not in r.toc_html
+    # The template's appendix sections always exist (see {{GLOSSARY}}/{{SOURCES}}
+    # in template.html), so the TOC always links to them too -- otherwise they're
+    # reachable only by scrolling past the footer.
+    assert '<li class="toc__module"><a href="#glossary">Glossary</a></li>' in r.toc_html
+    assert '<li class="toc__module"><a href="#sources">Sources</a></li>' in r.toc_html
 
 
 def test_topic_markers_do_not_reach_the_html():
