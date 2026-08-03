@@ -70,7 +70,7 @@ you have no context to contribute — everything is reported at the end instead.
 For running this from a downloaded release rather than a git checkout:
 
 1. **Install Claude Code** (see [claude.com/claude-code](https://claude.com/claude-code)) and confirm the requirements above (`python3` with the packages in `requirements.txt`; `soffice` only if you have PPTX input) are installed.
-2. Create a project directory, then inside it create `.claude/skills/presentation2course/` and extract the release archive's contents into that folder.
+2. Create a project directory, then inside it create `.claude/skills/` and extract the release archive's contents into that folder. This gives you two sibling skill directories, `.claude/skills/presentation2course/` and `.claude/skills/animejs/` — the second is required by the animate-block rendering pipeline.
 3. Copy your lecture deck (PDF or PPTX) into the project directory alongside `.claude/`.
 4. Start Claude Code in that project directory and ask it to turn your deck into a course, stating the target language, e.g.:
    ```
