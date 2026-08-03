@@ -16,7 +16,7 @@ from p2c.imagery import ImageryError, extract_page_png
 from p2c.mdrender import Rendered, render_course
 from p2c.outline import iter_topics, load_outline
 from p2c.sources import sources_html_by_topic
-from p2c.text import slugify
+from p2c.text import slugify_transliterated
 from p2c.theme import Theme, is_rtl, load_theme, theme_for
 from p2c.validate import Finding, blocking, findings_to_json, validate_course
 
@@ -65,12 +65,14 @@ def _resolve_figures(html_text: str, out_dir: Path) -> str:
 
 def course_basename(title: str) -> str:
     """The shared stem for course.md/course.html/course.pdf: the course's own
-    title, slugified the same way module_filename() already handles module
-    titles -- so a non-Latin title (Hebrew, Arabic, ...) falls back to the same
-    literal "section" both mechanisms already agree on, rather than inventing a
-    second naming convention for the same edge case.
+    title, transliterated to ASCII before slugifying -- so a non-Latin title
+    (Hebrew, Arabic, ...) still yields a filename a person recognizes, not the
+    literal "section" plain slugify() falls back to. This is the deliverable's
+    own filename, unlike module_filename()'s internal .p2c/modules/ working
+    files, which stay on plain slugify() since nothing outside the build reads
+    their names.
     """
-    return slugify(title)
+    return slugify_transliterated(title)
 
 
 @dataclass
