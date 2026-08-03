@@ -1,5 +1,6 @@
 {
   "title": "Cache Coherence (deliberately defective)",
+  "slug": "cache-coherence",
   "subject_domain": "systems",
   "language": {"name": "English", "code": "en"},
   "source_decks": ["week5.pdf"],

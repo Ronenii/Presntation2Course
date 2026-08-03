@@ -135,6 +135,79 @@ def test_course_js_wires_the_sidebar_drawer():
     assert "localStorage" not in js  # drawer state stays non-persistent, same as today
 
 
+def test_course_js_wires_the_diagram_lightbox():
+    js = (ASSETS / "base" / "course.js").read_text()
+    for hook in (
+        "wireDiagramZoom",
+        "diagram-lightbox",
+        "diagram-lightbox-stage",
+        "diagram-zoom-in",
+        "diagram-zoom-out",
+        "diagram-zoom-reset",
+        "diagram-lightbox-close",
+        "pointerdown",
+        "pointermove",
+        "pointerup",
+        "beforeprint",
+    ):
+        assert hook in js, hook
+
+
+def test_the_lightbox_fits_the_diagram_to_the_stage_instead_of_opening_at_scale_1():
+    """A diagram's natural size is usually a few hundred px, far smaller than a
+    full-screen stage -- opening at a hardcoded scale of 1 would show it at the
+    same small size it already had inline, defeating the point of a lightbox."""
+    js = (ASSETS / "base" / "course.js").read_text()
+    assert "var fitScale = 1;" in js
+    assert 'svg.getBoundingClientRect()' in js or "diagram.querySelector(\"svg\")" in js
+    assert "scale = fitScale" in js
+    assert "scale = 1; x = 0; y = 0;" not in js  # the old hardcoded reset
+
+
+def test_the_lightbox_measures_natural_size_after_unhiding_not_before():
+    """The stage is display:none while the lightbox has [hidden] -- measuring
+    its size before clearing that attribute would read back a 0x0 rect, making
+    every fitScale computation divide by zero-derived nonsense."""
+    js = (ASSETS / "base" / "course.js").read_text()
+    open_start = js.index("function open(diagram) {")
+    open_body = js[open_start : js.index("\n    function close()", open_start)]
+    unhide_index = open_body.index("lightbox.hidden = false;")
+    measure_index = open_body.index("stage.getBoundingClientRect()")
+    assert unhide_index < measure_index
+
+
+def test_the_lightbox_backdrop_is_fully_opaque():
+    """Even a high alpha like 0.85-0.96 still lets sharp text edges from the
+    page behind show through faintly -- looks like a stacking bug even though
+    it's just alpha math. The backdrop must be fully solid, not translucent."""
+    css = (ASSETS / "base" / "layout.css").read_text()
+    rule_start = css.index(".diagram-lightbox {")
+    rule = css[rule_start : css.index("}", rule_start)]
+    assert "rgba(" not in rule
+    assert "background: #000;" in rule
+
+
+def test_the_lightbox_restores_the_diagram_to_its_original_parent_on_close():
+    """The moved-in .mermaid div must return to the content flow on close, not
+    stay stranded in the lightbox -- renderDiagrams() re-populates whatever
+    .mermaid nodes it finds anywhere in the document on every theme toggle, so a
+    diagram left behind in a hidden lightbox would silently vanish from the
+    page's normal reading flow."""
+    js = (ASSETS / "base" / "course.js").read_text()
+    assert "homeParent.insertBefore(current, homeNext)" in js
+    assert "homeParent.appendChild(current)" in js
+
+
+def test_the_lightbox_closes_before_print():
+    """print.css hides .diagram-lightbox outright; without closing first, a
+    diagram open at print time would be missing from the printed page entirely
+    instead of appearing back in its normal position."""
+    js = (ASSETS / "base" / "course.js").read_text()
+    assert 'window.addEventListener("beforeprint", close)' in js
+    css = (ASSETS / "print.css").read_text()
+    assert ".diagram-lightbox { display: none !important; }" in css
+
+
 def test_layout_css_styles_every_component_the_renderers_emit():
     css = (ASSETS / "base" / "layout.css").read_text()
     for selector in (
@@ -148,6 +221,9 @@ def test_layout_css_styles_every_component_the_renderers_emit():
         ".callout--prereq",
         ".callout--unverified",
         ".mermaid",
+        ".diagram-lightbox",
+        ".diagram-lightbox__toolbar",
+        ".diagram-lightbox__stage",
         ".glossary",
         ".sources-group",
         ".sources",
@@ -299,6 +375,27 @@ def test_layout_css_styles_the_mobile_drawer():
     css = (ASSETS / "base" / "layout.css").read_text()
     for selector in (".sidebar-toggle", ".sidebar-scrim", "--z-scrim", "--z-drawer", "--z-popover"):
         assert selector in css, selector
+
+
+def test_template_has_a_diagram_lightbox():
+    template = (ASSETS / "base" / "template.html").read_text()
+    for hook in (
+        'id="diagram-lightbox"',
+        'id="diagram-lightbox-stage"',
+        'id="diagram-zoom-in"',
+        'id="diagram-zoom-out"',
+        'id="diagram-zoom-reset"',
+        'id="diagram-lightbox-close"',
+    ):
+        assert hook in template, hook
+
+
+def test_layout_css_stacks_the_lightbox_above_every_other_overlay():
+    css = (ASSETS / "base" / "layout.css").read_text()
+    assert "--z-lightbox: 50" in css
+    rule_start = css.index(".diagram-lightbox {")
+    rule = css[rule_start : css.index("}", rule_start)]
+    assert "var(--z-lightbox)" in rule
 
 
 def test_sidebar_drawer_transform_is_direction_aware():

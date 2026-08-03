@@ -9,8 +9,10 @@
   --space-12: 3rem;
   --radius: 6px;
   --measure: 70ch;
-  /* Stacking order for overlay UI: skip-link at top (keyboard accessibility escape
-     hatch must never be buried), then popover, drawer, scrim at the bottom. */
+  /* Stacking order for overlay UI: the diagram lightbox is a modal above
+     everything (including the skip-link, since it captures focus itself while
+     open), then skip-link, popover, drawer, scrim at the bottom. */
+  --z-lightbox: 50;
   --z-skip-link: 40;
   --z-popover: 30;
   --z-drawer: 20;
@@ -166,12 +168,41 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 }
 .quiz__answer[hidden], .quiz__why[hidden] { display: none; }
 
-.mermaid { margin: var(--space-6) 0; text-align: center; overflow-x: auto; direction: ltr; }
+.mermaid { margin: var(--space-6) 0; text-align: center; overflow-x: auto; direction: ltr; cursor: zoom-in; }
 /* Render at the diagram's natural size (course.js disables mermaid's own
    useMaxWidth to match) so a complex diagram's text never shrinks below
    legible -- the container above scrolls horizontally instead. A small
    diagram is unaffected: its natural width is already less than the column. */
 .mermaid svg { max-width: none; height: auto; }
+
+/* --- diagram lightbox: click a diagram to pan/zoom it full-screen --------- */
+.diagram-lightbox {
+  position: fixed; inset: 0; z-index: var(--z-lightbox);
+  /* Fully solid, not translucent: even a high alpha like 0.96 still lets sharp
+     text edges from the page behind show through faintly, which reads as a
+     bug ("why can I half-see the sidebar") rather than an intentional dim. */
+  background: #000;
+  display: flex; flex-direction: column;
+}
+.diagram-lightbox[hidden] { display: none; }
+.diagram-lightbox__toolbar {
+  display: flex; justify-content: flex-end; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+.diagram-lightbox__stage {
+  flex: 1; overflow: hidden; position: relative;
+  cursor: grab; touch-action: none;
+}
+.diagram-lightbox__stage[data-panning="true"] { cursor: grabbing; }
+/* The moved-in <div class="mermaid"> keeps its own rules (direction:ltr, etc.)
+   but must not keep its normal-flow margin/cursor/scroll here -- it is now the
+   thing being panned and scaled as a whole, not a block in a text column. */
+.diagram-lightbox__stage .mermaid {
+  margin: 0; cursor: inherit; overflow: visible;
+  position: absolute; top: 50%; left: 50%;
+  transform-origin: center center;
+}
+.diagram-lightbox__stage .mermaid svg { max-width: none; }
 .diagram-fallback {
   margin: var(--space-6) 0; padding: var(--space-4);
   border: 1px dashed var(--color-warn); border-radius: var(--radius);

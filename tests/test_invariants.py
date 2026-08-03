@@ -14,7 +14,7 @@ ASSETS = REPO / "assets"
 MINI_HE = REPO / "tests" / "fixtures" / "mini-course-he"
 
 
-MINI_BASENAME = course_basename(json.loads((MINI / "outline.json").read_text())["title"])
+MINI_BASENAME = course_basename(json.loads((MINI / "outline.json").read_text())["slug"])
 
 
 @pytest.fixture

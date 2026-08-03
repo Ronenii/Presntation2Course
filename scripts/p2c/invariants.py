@@ -31,10 +31,10 @@ def check_course(out_dir: Path, *, require_pdf: bool = False) -> list[str]:
     except OutlineError as exc:
         return [f"outline.json is invalid: {exc}"]
 
-    # The course's own title decides its artifacts' shared basename (see
+    # The outline's own slug decides its artifacts' shared basename (see
     # build.course_basename) -- computed here, not assumed to be "course", so this
     # checker agrees with what a real build actually names its files.
-    basename = course_basename(outline["title"])
+    basename = course_basename(outline["slug"])
     course_md = out_dir / f"{basename}.md"
     course_html = out_dir / f"{basename}.html"
     for path in (course_md, course_html):

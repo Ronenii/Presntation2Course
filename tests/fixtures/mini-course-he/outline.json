@@ -1,5 +1,6 @@
 {
   "title": "יסודות מערכות הפעלה",
+  "slug": "operating-systems-foundations",
   "subject_domain": "systems",
   "language": {"name": "Hebrew", "code": "he"},
   "source_decks": ["week1.pdf"],

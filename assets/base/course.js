@@ -194,6 +194,214 @@
       .catch(function () { markReady(); });
   }
 
+  /* --- diagram lightbox: click a diagram to pan/zoom it full-screen ------- */
+  function wireDiagramZoom() {
+    var lightbox = document.getElementById("diagram-lightbox");
+    var stage = document.getElementById("diagram-lightbox-stage");
+    var zoomIn = document.getElementById("diagram-zoom-in");
+    var zoomOut = document.getElementById("diagram-zoom-out");
+    var zoomReset = document.getElementById("diagram-zoom-reset");
+    var closeBtn = document.getElementById("diagram-lightbox-close");
+    if (!lightbox || !stage) { return; }
+
+    // Where the moved-in .mermaid div came from, so closing puts it back
+    // exactly where it was instead of leaving it stranded in the lightbox --
+    // renderDiagrams() re-populates whatever .mermaid it finds in the page on
+    // every theme toggle, so the diagram must return to the content flow.
+    var homeParent = null;
+    var homeNext = null;
+    var current = null;
+    var scale = 1;
+    var x = 0;
+    var y = 0;
+    // The scale that fits the diagram's own natural size to the stage -- reset()
+    // returns to this, not to a hardcoded 1. A diagram is usually far smaller
+    // than the viewport (a few hundred px), so opening at scale:1 would just
+    // show it at the same small size it already had in the page; a huge
+    // diagram, conversely, needs scale < 1 to fit at all.
+    var fitScale = 1;
+    var MIN_SCALE_FACTOR = 0.2;
+    var MAX_SCALE_FACTOR = 8;
+
+    function apply() {
+      current.style.transform = "translate(-50%, -50%) translate(" + x + "px, " + y + "px) scale(" + scale + ")";
+    }
+
+    function setScale(next, anchorClientX, anchorClientY) {
+      next = Math.min(fitScale * MAX_SCALE_FACTOR, Math.max(fitScale * MIN_SCALE_FACTOR, next));
+      if (next === scale) { return; }
+      // Zoom toward the pointer/pinch-midpoint rather than the stage center, so
+      // scrolling in on a specific node keeps that node under the cursor instead
+      // of always re-centering the whole diagram.
+      if (anchorClientX != null) {
+        var rect = stage.getBoundingClientRect();
+        var cx = anchorClientX - rect.left - rect.width / 2;
+        var cy = anchorClientY - rect.top - rect.height / 2;
+        var ratio = next / scale;
+        x = cx - (cx - x) * ratio;
+        y = cy - (cy - y) * ratio;
+      }
+      scale = next;
+      apply();
+    }
+
+    function reset() {
+      scale = fitScale; x = 0; y = 0;
+      apply();
+    }
+
+    function open(diagram) {
+      current = diagram;
+      homeParent = diagram.parentNode;
+      homeNext = diagram.nextSibling;
+      // Unhide BEFORE measuring: the stage is display:none while [hidden] is
+      // set (via the lightbox's [hidden] CSS rule), so getBoundingClientRect()
+      // on it beforehand would read back 0x0 -- there would be nothing yet to
+      // fit the diagram to.
+      lightbox.hidden = false;
+      stage.appendChild(diagram);
+      // Measure the diagram's own SVG at its natural (untransformed) size --
+      // read it before appending the transform, since getBoundingClientRect()
+      // on an already-scaled element would report the scaled size, not the
+      // natural one fitScale needs to be computed from.
+      var svg = diagram.querySelector("svg");
+      var stageRect = stage.getBoundingClientRect();
+      if (svg) {
+        var natural = svg.getBoundingClientRect();
+        var margin = 0.9; // leave breathing room around the diagram's edges
+        fitScale = Math.min(
+          (stageRect.width * margin) / natural.width,
+          (stageRect.height * margin) / natural.height
+        );
+        if (!isFinite(fitScale) || fitScale <= 0) { fitScale = 1; }
+      } else {
+        fitScale = 1;
+      }
+      reset();
+      closeBtn.focus();
+      document.body.style.overflow = "hidden";
+    }
+
+    function close() {
+      if (!current) { return; }
+      if (homeNext) {
+        homeParent.insertBefore(current, homeNext);
+      } else {
+        homeParent.appendChild(current);
+      }
+      current.style.transform = "";
+      current = null;
+      lightbox.hidden = true;
+      document.body.style.overflow = "";
+    }
+
+    document.querySelectorAll(".content .mermaid").forEach(function (diagram) {
+      diagram.setAttribute("tabindex", "0");
+      diagram.setAttribute("role", "button");
+      diagram.setAttribute("aria-label", "Open diagram, enlarged");
+      diagram.addEventListener("click", function () { open(diagram); });
+      diagram.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open(diagram);
+        }
+      });
+    });
+
+    // print.css hides .diagram-lightbox outright; without this, printing while a
+    // diagram is open would print a page missing that one diagram entirely,
+    // since it currently lives inside the (now display:none) lightbox rather
+    // than back in .content's normal flow.
+    window.addEventListener("beforeprint", close);
+
+    // Multiplicative, not a fixed +/-0.4 step: fitScale (and so the useful scale
+    // range) varies a lot by diagram size, so a fixed absolute step is either
+    // imperceptible on a diagram that opened at scale 4 or too coarse on one
+    // that opened at scale 0.3.
+    if (zoomIn) { zoomIn.addEventListener("click", function () { setScale(scale * 1.3); }); }
+    if (zoomOut) { zoomOut.addEventListener("click", function () { setScale(scale / 1.3); }); }
+    if (zoomReset) { zoomReset.addEventListener("click", reset); }
+    if (closeBtn) { closeBtn.addEventListener("click", close); }
+    lightbox.addEventListener("click", function (event) {
+      if (event.target === lightbox) { close(); }
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !lightbox.hidden) { close(); }
+    });
+
+    stage.addEventListener("wheel", function (event) {
+      if (!current) { return; }
+      event.preventDefault();
+      var factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+      setScale(scale * factor, event.clientX, event.clientY);
+    }, { passive: false });
+
+    // Pointer-based drag-to-pan and pinch-to-zoom, unified: Pointer Events cover
+    // mouse, touch, and pen through one API, tracked by pointerId so a second
+    // finger landing mid-drag is recognized as the start of a pinch rather than
+    // a jump in the first pointer's drag delta.
+    var pointers = {};
+    var dragId = null;
+    var dragStartX = 0, dragStartY = 0, dragOriginX = 0, dragOriginY = 0;
+    var pinchStartDist = 0, pinchStartScale = 1;
+
+    function pointerArray() {
+      return Object.keys(pointers).map(function (id) { return pointers[id]; });
+    }
+
+    function pinchDistance() {
+      var pts = pointerArray();
+      if (pts.length < 2) { return 0; }
+      return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    }
+
+    function pinchMidpoint() {
+      var pts = pointerArray();
+      return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+    }
+
+    stage.addEventListener("pointerdown", function (event) {
+      if (!current) { return; }
+      pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
+      if (pointerArray().length === 2) {
+        dragId = null;
+        pinchStartDist = pinchDistance();
+        pinchStartScale = scale;
+      } else if (pointerArray().length === 1) {
+        dragId = event.pointerId;
+        dragStartX = event.clientX; dragStartY = event.clientY;
+        dragOriginX = x; dragOriginY = y;
+        stage.setAttribute("data-panning", "true");
+        stage.setPointerCapture(event.pointerId);
+      }
+    });
+
+    stage.addEventListener("pointermove", function (event) {
+      if (!pointers[event.pointerId]) { return; }
+      pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
+      var pts = pointerArray();
+      if (pts.length === 2 && pinchStartDist > 0) {
+        var mid = pinchMidpoint();
+        setScale(pinchStartScale * (pinchDistance() / pinchStartDist), mid.x, mid.y);
+      } else if (dragId === event.pointerId) {
+        x = dragOriginX + (event.clientX - dragStartX);
+        y = dragOriginY + (event.clientY - dragStartY);
+        apply();
+      }
+    });
+
+    function endPointer(event) {
+      delete pointers[event.pointerId];
+      if (dragId === event.pointerId) {
+        dragId = null;
+        stage.removeAttribute("data-panning");
+      }
+      if (pointerArray().length < 2) { pinchStartDist = 0; }
+    }
+    stage.addEventListener("pointerup", endPointer);
+    stage.addEventListener("pointercancel", endPointer);
+  }
+
   /* --- animate blocks: JSON timeline data driven through anime.js -------- */
   function wireAnimations() {
     if (!window.anime) { return; }
@@ -307,6 +515,7 @@
     wireToc();
     wireChrome();
     renderDiagrams();
+    wireDiagramZoom();
     wireAnimations();
   }
 

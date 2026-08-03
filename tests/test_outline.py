@@ -23,6 +23,7 @@ REPO = Path(__file__).resolve().parents[1]
 def outline(**overrides):
     base = {
         "title": "Operating Systems",
+        "slug": "operating-systems",
         "subject_domain": "systems",
         "language": {"name": "English", "code": "en"},
         "source_decks": ["week1.pdf"],

@@ -16,7 +16,7 @@ from p2c.imagery import ImageryError, extract_page_png
 from p2c.mdrender import Rendered, render_course
 from p2c.outline import iter_topics, load_outline
 from p2c.sources import sources_html_by_topic
-from p2c.text import slugify_transliterated
+from p2c.text import slugify
 from p2c.theme import Theme, is_rtl, load_theme, theme_for
 from p2c.validate import Finding, blocking, findings_to_json, validate_course
 
@@ -63,16 +63,16 @@ def _resolve_figures(html_text: str, out_dir: Path) -> str:
     return resolved
 
 
-def course_basename(title: str) -> str:
-    """The shared stem for course.md/course.html/course.pdf: the course's own
-    title, transliterated to ASCII before slugifying -- so a non-Latin title
-    (Hebrew, Arabic, ...) still yields a filename a person recognizes, not the
-    literal "section" plain slugify() falls back to. This is the deliverable's
-    own filename, unlike module_filename()'s internal .p2c/modules/ working
-    files, which stay on plain slugify() since nothing outside the build reads
-    their names.
+def course_basename(slug: str) -> str:
+    """The shared stem for course.md/course.html/course.pdf: outline.json's own
+    'slug' field (an English identifier the summarizer writes deliberately, the
+    same way module/topic 'id's are always ASCII regardless of their 'title') --
+    re-slugified only to normalize whitespace/casing, never derived from the
+    (possibly non-Latin) course 'title'. Transliterating 'title' instead would
+    produce a phonetic ASCII string, not an English name -- unreadable to a
+    reader who doesn't sound out the source language.
     """
-    return slugify_transliterated(title)
+    return slugify(slug)
 
 
 @dataclass
@@ -129,7 +129,7 @@ def build(
 ) -> BuildResult:
     outline = load_outline(Path(outline_path))
     course_md_text = assemble(outline, Path(modules_dir))
-    basename = course_basename(outline["title"])
+    basename = course_basename(outline["slug"])
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

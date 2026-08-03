@@ -15,11 +15,12 @@ works from. You are the only agent that sees the slides.
 Exactly one file: `<output>/.p2c/outline.json`, satisfying
 `references/outline-schema.json`. Write nothing else.
 
-Required keys per topic: `id`, `title`, `slide_refs`, `jargon`, `diagrams`, `gaps`. Top-level required: `title`, `subject_domain`, `language`, `source_decks`, `modules`.
+Required keys per topic: `id`, `title`, `slide_refs`, `jargon`, `diagrams`, `gaps`. Top-level required: `title`, `slug`, `subject_domain`, `language`, `source_decks`, `modules`.
 
 ```json
 {
   "title": "course title, from the deck or its filename, written in the target language",
+  "slug": "building-footprint-extraction",
   "subject_domain": "systems | theory | life-sciences | other",
   "language": {"name": "Hebrew", "code": "he"},
   "source_decks": ["week1.pdf"],
@@ -69,6 +70,13 @@ Required keys per topic: `id`, `title`, `slide_refs`, `jargon`, `diagrams`, `gap
   ordinary words.
 - **`id`s** are lowercase kebab-case, unique across the whole course, and stable — they
   become anchors and filenames.
+- **`slug`** is the course's own `id` equivalent — a short English kebab-case identifier
+  summarizing the actual subject (e.g. `building-footprint-extraction`,
+  `virtual-memory-and-caching`), 2-6 words. It becomes the shipped file stem
+  (`<slug>.html`/`.md`/`.pdf`), so it must read as English regardless of `language` —
+  never transliterate the (possibly non-Latin) `title` into it, and never romanize it
+  phonetically; translate the *meaning*. Aim for something a person skimming a file
+  listing would recognize as this course.
 - **Modules** follow the decks' own structure where there is one. Aim for 3–8 topics per
   module; split a module rather than exceed that.
 - **`slide_refs`** are `<normalized filename>#<1-based page>`. At least one per topic.
