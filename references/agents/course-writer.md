@@ -136,10 +136,14 @@ pipeline you'd want to see in full for reference); `animate` is for one thing ch
 *over time*, where watching intermediate states appear one at a time is itself the point,
 not just decoration. Concretely, prefer `animate` when the topic is:
 
-- An ordered sequence of named steps with no useful branching (`step-reveal`) — a
-  request/value moving through a fixed pipeline, a protocol handshake, a lookup
-  procedure. If you'd draw it in mermaid it would be a straight line of boxes with no
-  fan-out — that shape is a `step-reveal` candidate, not a flowchart.
+- A linear sequence of named states with a real transition/action between each
+  consecutive pair (`state-machine`) — a request moving through a fixed pipeline, a
+  protocol handshake, a lookup procedure, a lifecycle. If you'd draw it in mermaid it
+  would be a straight line of boxes with no fan-out — that shape is a `state-machine`
+  candidate, not a flowchart. `state-machine` allows exactly one exception to "straight
+  line": an optional final transition from the last state back to an earlier one, for a
+  genuinely cyclic process (e.g. a retry loop) — write it as the last line under
+  `transitions:`.
 - A single entity's before/after contrast (`state-toggle`) — one object, one state
   change, no third state and no other actors worth drawing.
 - One pass of an array/list transformation you can express as compare/swap/highlight
@@ -148,11 +152,14 @@ not just decoration. Concretely, prefer `animate` when the topic is:
   value sliding along a curve — where you can supply literal `(x, y)` coordinates.
 
 ```animate
-pattern: step-reveal
-steps:
+pattern: state-machine
+states:
   - Request arrives at the TLB
   - TLB miss triggers a page-table walk
   - Page table entry is cached back into the TLB
+transitions:
+  - Request arrives at the TLB -> TLB miss triggers a page-table walk: miss
+  - TLB miss triggers a page-table walk -> Page table entry is cached back into the TLB: walk completes
 ```
 
 ```animate
@@ -161,16 +168,20 @@ before: Cache line marked Shared
 after: Cache line marked Modified after a local write
 ```
 
-`step-reveal` needs at least 2 steps; `state-toggle` needs both `before:` and
-`after:`. See `references/quiz-format.md` for the full grammar, including `array-ops`
-and `path-trace`.
+`state-machine` needs at least 2 states and at least 1 transition, and every transition
+must connect consecutive states in the order you listed them under `states:` — except one
+optional final transition from the last state back to an earlier one. `state-toggle` needs
+both `before:` and `after:`. See `references/quiz-format.md` for the full grammar,
+including `array-ops` and `path-trace`.
 
 Stay with `mermaid` when the topic is a structure with more than one relationship to
 show at once (a branching flow, several components connected to each other, a
-lifecycle with more than a linear path) — forcing that into `step-reveal` would lose the
-branching a diagram shows for free. Pick the diagram type that matches the idea:
+lifecycle with more than a linear path) — forcing that into `state-machine` would lose the
+branching a diagram shows for free (a state with two or more possible next states is a
+mermaid `stateDiagram-v2` candidate, not `state-machine`, which only ever shows the one
+linear path you describe). Pick the diagram type that matches the idea:
 `flowchart` for a process, `sequenceDiagram` for an interaction between parties,
-`stateDiagram-v2` for a lifecycle, `erDiagram`/`architecture-beta` for structure. Inline
+`stateDiagram-v2` for a lifecycle with branching, `erDiagram`/`architecture-beta` for structure. Inline
 `<svg>` is for a static structure a flow/sequence/state diagram cannot express (a memory
 layout, a data structure).
 

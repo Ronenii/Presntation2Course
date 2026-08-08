@@ -77,11 +77,14 @@ topic and the source.
 
 ````
 ```animate
-pattern: step-reveal
-steps:
+pattern: state-machine
+states:
   - Request arrives at the TLB
   - TLB miss triggers a page-table walk
   - Page table entry is cached back into the TLB
+transitions:
+  - Request arrives at the TLB -> TLB miss triggers a page-table walk: miss
+  - TLB miss triggers a page-table walk -> Page table entry is cached back into the TLB: walk completes
 ```
 ````
 
@@ -92,6 +95,14 @@ before: Cache line marked Shared
 after: Cache line marked Modified after a local write
 ```
 ````
+
+`state-machine` needs at least 2 `states:` entries and at least 1
+`transitions:` line, each written as `<from> -> <to>: <action>`. Every
+transition must connect two *consecutive* entries in `states:` (in the order
+you listed them) — except one optional final transition, listed last, from
+the last state back to any earlier one, for a genuinely cyclic process. No
+branching: a state may have only one outgoing transition (aside from that
+one permitted trailing back-edge case).
 
 `array-ops` visualizes an array operation sequence (e.g. one pass of a sort):
 
@@ -131,7 +142,7 @@ caption: Gradient descent converging toward the minimum
 `points:` needs at least 2 `x, y` pairs (plain numbers, not a function
 expression). `caption:` is required.
 
-Four patterns exist: `step-reveal`, `state-toggle`, `array-ops`, `path-trace` — no
+Four patterns exist: `state-machine`, `state-toggle`, `array-ops`, `path-trace` — no
 others. This is a deliberately bounded set, not a general animation authoring tool.
 
 All patterns respect `prefers-reduced-motion` and render fully static (every

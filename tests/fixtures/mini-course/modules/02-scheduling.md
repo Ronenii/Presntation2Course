@@ -15,11 +15,15 @@ switching between processes. A long quantum reduces that overhead and makes inte
 programs feel sluggish.
 
 ```animate
-pattern: step-reveal
-steps:
-  - A process becomes ready to run
-  - The scheduler picks it from the ready queue
-  - It runs until it blocks, yields, or is preempted
+pattern: state-machine
+states:
+  - Ready
+  - Running
+  - Waiting
+transitions:
+  - Ready -> Running: scheduler picks it
+  - Running -> Waiting: blocks on I/O
+  - Waiting -> Ready: I/O completes
 ```
 
 ```animate
