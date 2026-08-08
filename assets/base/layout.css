@@ -139,6 +139,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   z-index: var(--z-popover);
   margin-block-start: var(--space-2);
   padding: var(--space-3);
+  min-inline-size: min(16rem, calc(100vw - 2 * var(--space-4)));
   max-inline-size: min(24rem, calc(100vw - 2 * var(--space-4)));
   border: 1px solid var(--color-border); border-inline-start: 3px solid var(--color-accent);
   border-radius: var(--radius); background: var(--color-surface);

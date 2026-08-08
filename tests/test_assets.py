@@ -198,6 +198,16 @@ def test_the_lightbox_restores_the_diagram_to_its_original_parent_on_close():
     assert "homeParent.appendChild(current)" in js
 
 
+def test_term_def_popup_has_a_minimum_width():
+    """Bug: .term__def is absolutely positioned with only max-inline-size set, no
+    minimum -- a short definition (a few words) shrinks the popup to fit its own
+    content, wrapping nearly every word onto its own line. A sensible floor fixes
+    this without changing the existing max-width ceiling or the mobile override.
+    """
+    css = (ASSETS / "base" / "layout.css").read_text()
+    assert "min-inline-size: min(16rem, calc(100vw - 2 * var(--space-4)))" in css
+
+
 def test_the_lightbox_closes_before_print():
     """print.css hides .diagram-lightbox outright; without closing first, a
     diagram open at print time would be missing from the printed page entirely
