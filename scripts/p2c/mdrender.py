@@ -98,6 +98,7 @@ _ANIMATE_STEP = re.compile(r"^\s*-\s*(?P<text>.+)$")
 _ARRAY_OP = re.compile(
     r"^(?P<verb>compare|swap|highlight)\s+(?P<a>\d+)(?:\s+(?P<b>\d+))?$"
 )
+_TRANSITION = re.compile(r"^(?P<from>.+?)\s*->\s*(?P<to>.+?):\s*(?P<action>.+)$")
 
 
 class AnimateError(ValueError):
@@ -107,30 +108,38 @@ class AnimateError(ValueError):
 @dataclass
 class Animate:
     pattern: str
-    steps: list[str] = field(default_factory=list)
     before: str = ""
     after: str = ""
     array: list[int] = field(default_factory=list)
     ops: list[tuple[str, int, int | None]] = field(default_factory=list)
     points: list[tuple[float, float]] = field(default_factory=list)
     caption: str = ""
+    states: list[str] = field(default_factory=list)
+    transitions: list[tuple[str, str, str]] = field(default_factory=list)
 
 
-_LIST_HEADERS = {"steps:": "steps", "array:": "array", "ops:": "ops", "points:": "points"}
+_LIST_HEADERS = {
+    "array:": "array", "ops:": "ops", "points:": "points",
+    "states:": "states", "transitions:": "transitions",
+}
 
 
 def parse_animate(body: str) -> Animate:
     pattern: str | None = None
-    steps: list[str] = []
     before: str | None = None
     after: str | None = None
     array_raw: list[str] = []
     ops_raw: list[str] = []
     points_raw: list[str] = []
+    states_raw: list[str] = []
+    transitions_raw: list[str] = []
     caption: str | None = None
     section: str | None = None
 
-    lists = {"steps": steps, "array": array_raw, "ops": ops_raw, "points": points_raw}
+    lists = {
+        "array": array_raw, "ops": ops_raw, "points": points_raw,
+        "states": states_raw, "transitions": transitions_raw,
+    }
 
     for raw in body.split("\n"):
         line = raw.rstrip()
@@ -160,24 +169,64 @@ def parse_animate(body: str) -> Animate:
             continue
         raise AnimateError(f"unrecognised line in animate block: {line.strip()!r}")
 
-    if pattern not in ("step-reveal", "state-toggle", "array-ops", "path-trace"):
+    if pattern not in ("state-machine", "state-toggle", "array-ops", "path-trace"):
         raise AnimateError(
-            "animate pattern must be 'step-reveal', 'state-toggle', 'array-ops', "
+            "animate pattern must be 'state-machine', 'state-toggle', 'array-ops', "
             f"or 'path-trace', got {pattern!r}"
         )
 
-    if pattern == "step-reveal":
-        if len(steps) < 2:
-            raise AnimateError("step-reveal needs at least 2 steps")
+    if pattern == "state-machine":
         if before or after or array_raw or ops_raw or points_raw or caption:
-            raise AnimateError("step-reveal does not use 'before:'/'after:'")
+            raise AnimateError(
+                "state-machine does not use 'before:'/'after:'/'array:'/'ops:'/"
+                "'points:'/'caption:'"
+            )
+        states = states_raw
+        if len(states) < 2:
+            raise AnimateError("state-machine needs at least 2 states")
+        if not transitions_raw:
+            raise AnimateError("state-machine needs at least 1 transition")
+        transitions: list[tuple[str, str, str]] = []
+        for line in transitions_raw:
+            match = _TRANSITION.match(line)
+            if not match:
+                raise AnimateError(f"invalid state-machine transition: {line!r}")
+            from_state = match.group("from").strip()
+            to_state = match.group("to").strip()
+            action = match.group("action").strip()
+            if from_state not in states:
+                raise AnimateError(f"state-machine transition names unknown state {from_state!r}")
+            if to_state not in states:
+                raise AnimateError(f"state-machine transition names unknown state {to_state!r}")
+            from_index = states.index(from_state)
+            to_index = states.index(to_state)
+            is_consecutive_forward = to_index == from_index + 1
+            # The one permitted exception: a transition FROM the last state back
+            # to any earlier state, but only as the LAST authored transition --
+            # checked by position (len(transitions) == len(transitions_raw) - 1,
+            # i.e. this is the final line) combined with from_index being the
+            # last state's index. A back-edge appearing anywhere else (including
+            # a second outgoing edge from a non-final state, i.e. branching) is
+            # rejected by the same "must connect consecutive states" message.
+            is_final_line = line == transitions_raw[-1]
+            is_permitted_back_edge = (
+                is_final_line and from_index == len(states) - 1 and to_index < from_index
+            )
+            if not is_consecutive_forward and not is_permitted_back_edge:
+                raise AnimateError(
+                    f"state-machine transition {line!r} must connect consecutive "
+                    "states (or be a single trailing transition from the last "
+                    "state back to an earlier one)"
+                )
+            transitions.append((from_state, to_state, action))
+        return Animate(pattern=pattern, states=states, transitions=transitions)
     elif pattern == "state-toggle":
         if not before or not after:
             raise AnimateError("state-toggle needs both 'before:' and 'after:'")
-        if steps or array_raw or ops_raw or points_raw or caption:
-            raise AnimateError("state-toggle does not use 'steps:'")
+        if states_raw or transitions_raw or array_raw or ops_raw or points_raw or caption:
+            raise AnimateError("state-toggle does not use 'states:'/'transitions:'")
     elif pattern == "array-ops":
-        if before or after or steps or points_raw or caption:
+        if before or after or states_raw or transitions_raw or points_raw or caption:
             raise AnimateError("array-ops does not use 'before:'/'after:'")
         if len(array_raw) < 2:
             raise AnimateError("array-ops needs at least 2 array values")
@@ -211,7 +260,7 @@ def parse_animate(body: str) -> Animate:
             ops.append((verb, a, b_val))
         return Animate(pattern=pattern, array=array, ops=ops)
     else:  # path-trace
-        if before or after or steps or array_raw or ops_raw:
+        if before or after or states_raw or transitions_raw or array_raw or ops_raw:
             raise AnimateError("path-trace does not use 'before:'/'after:'")
         if len(points_raw) < 2:
             raise AnimateError("path-trace needs at least 2 points")
@@ -225,7 +274,7 @@ def parse_animate(body: str) -> Animate:
             raise AnimateError("path-trace needs 'caption:'")
         return Animate(pattern=pattern, points=points, caption=caption)
 
-    return Animate(pattern=pattern, steps=steps, before=before or "", after=after or "")
+    return Animate(pattern=pattern, before=before or "", after=after or "")
 
 
 _BAR_WIDTH = 36

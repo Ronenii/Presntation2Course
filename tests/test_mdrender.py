@@ -432,13 +432,44 @@ def test_a_broken_figure_block_becomes_an_error_not_a_crash():
     assert any("figure" in e for e in rendered.errors)
 
 
-def test_parse_animate_step_reveal():
+def test_parse_animate_state_machine_linear_chain():
     anim = parse_animate(
-        "pattern: step-reveal\nsteps:\n  - Request arrives\n  - TLB miss\n  - Entry cached"
+        "pattern: state-machine\n"
+        "states:\n"
+        "  - Ready\n"
+        "  - Running\n"
+        "  - Terminated\n"
+        "transitions:\n"
+        "  - Ready -> Running: scheduled\n"
+        "  - Running -> Terminated: exits\n"
     )
     assert anim == Animate(
-        pattern="step-reveal",
-        steps=["Request arrives", "TLB miss", "Entry cached"],
+        pattern="state-machine",
+        states=["Ready", "Running", "Terminated"],
+        transitions=[("Ready", "Running", "scheduled"), ("Running", "Terminated", "exits")],
+    )
+
+
+def test_parse_animate_state_machine_with_a_trailing_back_edge():
+    anim = parse_animate(
+        "pattern: state-machine\n"
+        "states:\n"
+        "  - Idle\n"
+        "  - Requesting\n"
+        "  - Granted\n"
+        "transitions:\n"
+        "  - Idle -> Requesting: request\n"
+        "  - Requesting -> Granted: grant\n"
+        "  - Granted -> Idle: release\n"
+    )
+    assert anim == Animate(
+        pattern="state-machine",
+        states=["Idle", "Requesting", "Granted"],
+        transitions=[
+            ("Idle", "Requesting", "request"),
+            ("Requesting", "Granted", "grant"),
+            ("Granted", "Idle", "release"),
+        ],
     )
 
 
@@ -451,12 +482,73 @@ def test_parse_animate_state_toggle():
 
 def test_parse_animate_rejects_an_unknown_pattern():
     with pytest.raises(AnimateError, match="animate pattern must be"):
-        parse_animate("pattern: spin\nsteps:\n  - a\n  - b")
+        parse_animate("pattern: spin\nstates:\n  - a\n  - b")
 
 
-def test_parse_animate_rejects_a_step_reveal_with_one_step():
-    with pytest.raises(AnimateError, match="at least 2 steps"):
-        parse_animate("pattern: step-reveal\nsteps:\n  - only one")
+def test_parse_animate_rejects_a_state_machine_with_one_state():
+    with pytest.raises(AnimateError, match="at least 2 states"):
+        parse_animate("pattern: state-machine\nstates:\n  - only one\ntransitions:")
+
+
+def test_parse_animate_rejects_a_state_machine_with_no_transitions():
+    with pytest.raises(AnimateError, match="at least 1 transition"):
+        parse_animate("pattern: state-machine\nstates:\n  - A\n  - B\ntransitions:")
+
+
+def test_parse_animate_state_machine_rejects_an_unknown_state_in_a_transition():
+    with pytest.raises(AnimateError, match="unknown state 'C'"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n"
+            "transitions:\n  - A -> C: go\n"
+        )
+
+
+def test_parse_animate_state_machine_rejects_a_non_adjacent_forward_transition():
+    with pytest.raises(AnimateError, match="must connect consecutive states"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+            "transitions:\n  - A -> C: skip\n"
+        )
+
+
+def test_parse_animate_state_machine_rejects_a_back_edge_that_is_not_last():
+    with pytest.raises(AnimateError, match="must connect consecutive states"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+            "transitions:\n  - B -> A: back\n  - B -> C: forward\n"
+        )
+
+
+def test_parse_animate_state_machine_rejects_branching():
+    """A state may have at most one outgoing transition (except the one permitted
+    trailing back-edge case, which is a property of the LAST state, not a second
+    outgoing edge from an earlier one) -- branching is out of scope, see the design
+    spec's rationale (a single continuous marker cannot meaningfully choose a branch).
+    """
+    with pytest.raises(AnimateError, match="must connect consecutive states"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+            "transitions:\n  - A -> B: one\n  - A -> C: two\n"
+        )
+
+
+def test_parse_animate_state_machine_rejects_a_malformed_transition_line():
+    with pytest.raises(AnimateError, match="invalid state-machine transition"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n"
+            "transitions:\n  - A to B without an arrow\n"
+        )
+
+
+def test_parse_animate_state_machine_rejects_array_and_points_fields():
+    with pytest.raises(
+        AnimateError,
+        match="state-machine does not use 'before:'/'after:'/'array:'/'ops:'/'points:'/'caption:'",
+    ):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n"
+            "transitions:\n  - A -> B: go\narray:\n  - 1\n"
+        )
 
 
 def test_parse_animate_rejects_a_state_toggle_missing_after():
@@ -531,9 +623,12 @@ def test_parse_animate_array_ops_rejects_before_after():
 @pytest.mark.parametrize(
     "block",
     [
-        # step-reveal is deliberately absent: its steps are sequential by design
-        # (see test_step_reveal_steps_play_sequentially_not_all_at_once), so it
-        # emits no "<" position for this test to check the escaping of.
+        # step-reveal is retired (see docs/superpowers/specs/2026-08-06-v1.3.0-bugfixes-design.md).
+        # state-machine is deliberately absent too: like the old step-reveal, its
+        # transitions play sequentially by design (see
+        # test_state_machine_transitions_play_sequentially_not_all_at_once in
+        # this file), so it emits no "<" position for THIS test to check the
+        # escaping of -- its "<" coverage comes from array-ops below instead.
         'pattern: state-toggle\nbefore: Shared\nafter: Modified',
         'pattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\nops:\n  - compare 0 1\n  - swap 0 1',
     ],
