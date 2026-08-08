@@ -75,6 +75,7 @@ class TermInjector:
     terms: dict[str, str]
     ids: dict[str, str]
     replacements: dict[str, str] = field(default_factory=dict)
+    _occurrence_ids: AnchorAllocator = field(default_factory=AnchorAllocator)
 
     def _patterns(self) -> list[tuple[str, re.Pattern[str]]]:
         # Longest first so "page table walk" wins over "page table".
@@ -86,7 +87,18 @@ class TermInjector:
 
     def _control(self, shown: str, term: str) -> str:
         token = TERM_TOKEN.format(len(self.replacements))
-        def_id = self.ids[term.lower()]
+        # ids[] holds the term's single CANONICAL id (used by the appendix,
+        # glossary_html, untouched). Each individual inline occurrence -- one
+        # per inject() call, i.e. one per topic -- needs its OWN unique id for
+        # its reveal control, or every topic's control ends up pointing at the
+        # same DOM element (document.getElementById always resolves to the
+        # first one), silently breaking every occurrence after the first.
+        # AnchorAllocator is seeded from the canonical id itself, so the first
+        # occurrence keeps the clean "def-tlb" and later ones get "def-tlb-2",
+        # "def-tlb-3", ... -- the same collision-suffixing scheme heading
+        # anchors already use.
+        canonical_id = self.ids[term.lower()]
+        def_id = self._occurrence_ids.take(canonical_id)
         definition = html.escape(self.terms[term])
         self.replacements[token] = (
             '<span class="term-wrap">'

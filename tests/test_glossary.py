@@ -122,3 +122,38 @@ def test_each_call_gets_a_fresh_first_occurrence_but_unique_tokens():
     second = inj.inject("The TLB is small.")
     assert first != second
     assert len(inj.replacements) == 2
+
+
+def test_repeat_occurrences_across_topics_get_distinct_reveal_ids():
+    """The bug this guards: term_ids() hands out ONE id per term for the whole
+    course, but TermInjector.inject() is called once per topic. Before this fix,
+    every topic's occurrence of "TLB" reused the same id="def-tlb" on its
+    definition <span>, so document.getElementById("def-tlb") in the browser
+    always resolved to the FIRST topic's (possibly off-screen) span -- clicking
+    a later occurrence's button silently toggled the wrong, invisible element.
+    """
+    inj = TermInjector(TERMS, IDS)
+    first_topic = restore(inj.inject("The TLB is fast."), inj.replacements)
+    second_topic = restore(inj.inject("The TLB is still fast."), inj.replacements)
+    assert 'aria-controls="def-tlb"' in first_topic
+    assert 'id="def-tlb"' in first_topic
+    # The second topic's control must NOT reuse "def-tlb" -- it needs its own
+    # unique id, or the browser's getElementById will resolve to the first one.
+    assert 'aria-controls="def-tlb"' not in second_topic
+    assert 'id="def-tlb"' not in second_topic
+    # But it must still be recognizably a repeat of the same term/definition.
+    assert 'aria-controls="def-tlb-2"' in second_topic
+    assert 'id="def-tlb-2"' in second_topic
+    assert ">TLB</button>" in second_topic
+
+
+def test_appendix_id_is_unaffected_by_repeat_inline_occurrences():
+    """The appendix glossary entry (glossary_html) must keep using the plain
+    canonical id from term_ids(), regardless of how many times inject() runs --
+    #glossary anchors and any inline link to it must stay stable.
+    """
+    inj = TermInjector(TERMS, IDS)
+    inj.inject("The TLB is fast.")
+    inj.inject("The TLB is still fast.")
+    out = glossary_html(TERMS, IDS)
+    assert '<dt id="def-tlb">TLB</dt>' in out
