@@ -251,17 +251,38 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .figure figcaption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
 
 .anim { margin: var(--space-6) 0; }
-.anim__steps {
-  list-style: decimal; padding-inline-start: var(--space-6); margin: 0;
-  display: grid; gap: var(--space-2);
+.anim--state-machine { text-align: center; }
+.anim__state-machine {
+  width: 100%; height: auto;
+  --anim-state-idle: var(--color-surface);
+  --anim-state-current: var(--color-accent);
 }
-.anim__step {
-  /* Idle/at-rest look before JS runs, and the permanent look under
-     prefers-reduced-motion (wireAnimations() never touches the element in that
-     case) or print. wireAnimations()'s timeline animates opacity/font-weight
-     directly on top of this once JS runs. */
-  opacity: 0.65; font-weight: 400;
+.anim__state-box rect {
+  fill: var(--anim-state-idle); stroke: var(--color-border); stroke-width: 1.5;
 }
+.anim__state-box text {
+  fill: var(--color-fg); font-size: 13px; text-anchor: middle; dominant-baseline: middle;
+}
+.anim__state-arrow {
+  stroke: var(--color-border); stroke-width: 1.5; fill: none;
+}
+.anim__state-arrow--back { stroke-dasharray: 4, 3; }
+.anim__state-arrowhead { fill: var(--color-border); }
+/* Named distinctly from .anim__state-label (state-toggle's existing
+   "Before"/"After" chrome label, defined earlier in this file) to avoid a
+   same-name collision between two unrelated rules -- this one is the
+   transition's action text inside the new state-machine SVG, invisible at
+   rest and faded in only during its own transition's step (see
+   _state_machine_html's timeline). */
+.anim__state-transition-label {
+  fill: var(--color-accent); font-size: 12px; font-weight: 600;
+  text-anchor: middle; opacity: 0;
+}
+.anim__state-marker { fill: var(--color-accent); }
+/* Hidden during normal animated playback; shown only under the static
+   print/reduced-motion presentation below, same toggle-pair pattern as
+   .anim__array-steps-static/.anim__path-steps-static. */
+.anim__state-steps-static { display: none; }
 /* display: grid + a shared grid-area (rather than position: absolute) sizes the
    container to the tallest state's content, so realistic caption-length text that
    wraps to 2-3 lines doesn't overflow into whatever follows -- an absolutely
@@ -281,13 +302,14 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .anim__step { opacity: 1; font-weight: 400; }
   .anim__state { opacity: 1; }
   /* Both states are shown at once (no animation to convey them over time), so lay
      them out labeled side-by-side instead of stacked on top of each other. */
   .anim--state-toggle { grid-template-columns: 1fr 1fr; gap: var(--space-4); }
   .anim__state { grid-area: auto; }
   .anim__state-label { display: block; font-weight: 600; margin-block-end: var(--space-1); }
+  .anim__state-machine { display: none; }
+  .anim__state-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
 }
 
 .anim--array-ops { text-align: center; }

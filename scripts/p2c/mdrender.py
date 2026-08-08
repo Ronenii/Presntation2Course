@@ -294,6 +294,13 @@ _PATH_MIN_SEGMENT_MS = 300
 
 _ARRAY_VERB_LABEL = {"compare": "comparing", "swap": "swapping", "highlight": "highlighting"}
 
+_STATE_BOX_WIDTH = 130
+_STATE_BOX_HEIGHT = 56
+_STATE_GAP = 70  # horizontal gap between box edges, wide enough for an arrow + label
+_STATE_ROW_Y = 40  # top y-coordinate of every state box
+_STATE_LABEL_Y_OFFSET = -14  # transition label sits above the connecting arrow
+_STATE_MARKER_RADIUS = 9
+
 
 def _timeline_island_json(timeline: dict) -> str:
     """Serialize a timeline for embedding in <script type="application/json">.
@@ -314,8 +321,8 @@ def _timeline_island_json(timeline: dict) -> str:
 
 
 def _animate_html(anim: Animate, token: str) -> str:
-    if anim.pattern == "step-reveal":
-        return _step_reveal_html(anim, token)
+    if anim.pattern == "state-machine":
+        return _state_machine_html(anim, token)
     if anim.pattern == "state-toggle":
         return _state_toggle_html(anim, token)
     if anim.pattern == "array-ops":
@@ -324,40 +331,192 @@ def _animate_html(anim: Animate, token: str) -> str:
     return _path_trace_html(anim, token)
 
 
-def _step_reveal_html(anim: Animate, token: str) -> str:
+def _state_machine_html(anim: Animate, token: str) -> str:
+    """A marker travels between labeled state boxes as each transition fires,
+    reusing path-trace's proven "path-segment" step-kind mechanism (a tweened
+    {x, y} state object mirrored onto the marker's cx/cy via onUpdate -- see
+    _path_trace_html's docstring for why this indirection exists). Each
+    transition's action label is invisible at rest and fades in/out only for
+    that transition's own step, via a parallel "position": "<" step -- the
+    same "pair a second property change with the main tween" pattern
+    _array_ops_html already uses for its scale-pulse-alongside-a-fill-change.
+
+    Only AUTHORED transitions are ever drawn or animated. If the chain has no
+    authored back-edge (parse_animate guarantees at most one, and only from
+    the last state), the loop-restart is an invisible "kind": "set" snap of
+    the marker back to the first box and every label/box back to idle -- never
+    a drawn or animated arrow -- so a reader never mistakes the animation's
+    replay-for-engagement loop for a transition that was never authored.
+    """
     # See _array_ops_html's token_seed comment: the token's literal text must
     # never appear in this function's return value (blocks.restore() does an
     # unconditional second substitution pass keyed on the token), so only the
     # token's ordinal digits are used to build element ids.
     token_seed = re.sub(r"\D", "", token) or "0"
-    items = "".join(
-        f'<li class="anim__step" id="anim-step-{token_seed}-{i}">{html.escape(step)}</li>'
-        for i, step in enumerate(anim.steps)
+    box_ids = [f"anim-state-box-{token_seed}-{i}" for i in range(len(anim.states))]
+    label_ids = [f"anim-state-label-{token_seed}-{i}" for i in range(len(anim.transitions))]
+    marker_id = f"anim-state-marker-{token_seed}"
+
+    def box_x(i: int) -> int:
+        return _STATE_GAP + i * (_STATE_BOX_WIDTH + _STATE_GAP)
+
+    def box_center(i: int) -> tuple[float, float]:
+        return box_x(i) + _STATE_BOX_WIDTH / 2, _STATE_ROW_Y + _STATE_BOX_HEIGHT / 2
+
+    total_width = len(anim.states) * (_STATE_BOX_WIDTH + _STATE_GAP) + _STATE_GAP
+    total_height = _STATE_ROW_Y + _STATE_BOX_HEIGHT + 40
+
+    boxes_html = []
+    for i, label in enumerate(anim.states):
+        x = box_x(i)
+        boxes_html.append(
+            f'<g class="anim__state-box" id="{box_ids[i]}">'
+            f'<rect x="{x}" y="{_STATE_ROW_Y}" width="{_STATE_BOX_WIDTH}" '
+            f'height="{_STATE_BOX_HEIGHT}" rx="8"></rect>'
+            f'<text x="{x + _STATE_BOX_WIDTH / 2:g}" '
+            f'y="{_STATE_ROW_Y + _STATE_BOX_HEIGHT / 2 + 5:g}">'
+            f"{html.escape(label)}</text>"
+            "</g>"
+        )
+
+    # Static arrows: one per FORWARD-adjacent pair of states, always visible --
+    # this is the diagram's permanent structure. A trailing authored back-edge
+    # (from the last state to an earlier one) gets its own curved arrow below
+    # the row instead, visually distinct from the forward chain.
+    arrows_html = []
+    forward_pairs = list(zip(anim.states[:-1], anim.states[1:]))
+    for i in range(len(forward_pairs)):
+        x1 = box_x(i) + _STATE_BOX_WIDTH
+        x2 = box_x(i + 1)
+        y = _STATE_ROW_Y + _STATE_BOX_HEIGHT / 2
+        arrows_html.append(
+            f'<line class="anim__state-arrow" x1="{x1}" y1="{y:g}" '
+            f'x2="{x2}" y2="{y:g}" marker-end="url(#anim-arrowhead-{token_seed})">'
+            "</line>"
+        )
+
+    back_edge = None
+    last_index = len(anim.states) - 1
+    last_transition = anim.transitions[-1]
+    if anim.states.index(last_transition[1]) < last_index and anim.states.index(last_transition[0]) == last_index:
+        back_target_index = anim.states.index(last_transition[1])
+        x_from = box_x(last_index) + _STATE_BOX_WIDTH / 2
+        x_to = box_x(back_target_index) + _STATE_BOX_WIDTH / 2
+        y_top = _STATE_ROW_Y
+        arc_y = _STATE_ROW_Y - 30
+        back_edge = (
+            f'<path class="anim__state-arrow anim__state-arrow--back" '
+            f'd="M {x_from:g} {y_top} C {x_from:g} {arc_y:g}, {x_to:g} {arc_y:g}, '
+            f'{x_to:g} {y_top}" marker-end="url(#anim-arrowhead-{token_seed})"></path>'
+        )
+        total_height += 30
+
+    labels_html = []
+    for i, (from_state, to_state, action) in enumerate(anim.transitions):
+        from_i = anim.states.index(from_state)
+        to_i = anim.states.index(to_state)
+        lx = (box_center(from_i)[0] + box_center(to_i)[0]) / 2
+        ly = _STATE_ROW_Y + _STATE_LABEL_Y_OFFSET if to_i > from_i else _STATE_ROW_Y - 34
+        labels_html.append(
+            f'<text class="anim__state-transition-label" id="{label_ids[i]}" '
+            f'x="{lx:g}" y="{ly:g}">{html.escape(action)}</text>'
+        )
+
+    marker_x0, marker_y0 = box_center(0)
+    marker_html = (
+        f'<circle class="anim__state-marker" id="{marker_id}" '
+        f'cx="{marker_x0:g}" cy="{marker_y0:g}" r="{_STATE_MARKER_RADIUS}"></circle>'
     )
-    n = len(anim.steps)
-    steps_json = []
-    for i in range(n):
+
+    defs = (
+        f'<defs><marker id="anim-arrowhead-{token_seed}" markerWidth="8" markerHeight="8" '
+        f'refX="6" refY="4" orient="auto"><path class="anim__state-arrowhead" '
+        f'd="M0,0 L8,4 L0,8 Z"></path></marker></defs>'
+    )
+
+    steps_json: list[dict] = []
+    for i, (from_state, to_state, action) in enumerate(anim.transitions):
+        from_i = anim.states.index(from_state)
+        to_i = anim.states.index(to_state)
+        fx, fy = box_center(from_i)
+        tx, ty = box_center(to_i)
         steps_json.append({
-            "targets": [f"#anim-step-{token_seed}-{i}"],
-            "props": {"opacity": [0.65, 1, 0.65], "fontWeight": [400, 600, 400]},
-            # Each item gets its own full STEP_SECONDS-long reveal-hold-recede
-            # beat, NOT a 1/n slice of one shared cycle, so adding steps makes
-            # the loop longer rather than making every beat faster.
-            "duration": STEP_SECONDS * 1000,
-            "ease": "linear",
-            # No "<" anywhere: "<" would start this step alongside the previous
-            # one, so every item would pulse in unison. Leaving position unset
-            # takes anime.js's default timeline behaviour -- append after the
-            # previous step ends -- which is what "step-reveal" means: one item
-            # reveals after the one before it has receded.
+            "kind": "path-segment",
+            "marker": f"#{marker_id}",
+            "from": [fx, fy],
+            "to": [tx, ty],
+            "duration": 900,
+            "ease": "inOutQuad",
             "position": None,
         })
-    timeline = {"loop": True, "loopDelay": 0, "steps": steps_json}
+        # The label fades in alongside the marker's travel ("<" = start together)
+        # and back out once the marker arrives, via a second props keyframe on
+        # the same step -- opacity [0, 1, 0] over the travel's own duration
+        # mirrors array-ops's fill-flash-then-settle shape.
+        steps_json.append({
+            "targets": [f"#{label_ids[i]}"],
+            "props": {"opacity": [0, 1, 1, 0]},
+            "duration": 1400, "position": "<",
+        })
+        steps_json.append({
+            "targets": [f"#{box_ids[to_i]}"],
+            "props": {"fill": ["var(--anim-state-idle)", "var(--anim-state-current)"]},
+            "duration": 300, "position": "<",
+        })
+        if i > 0:
+            from_of_prev = anim.states.index(anim.transitions[i - 1][0])
+            steps_json.append({
+                "targets": [f"#{box_ids[anim.states.index(anim.transitions[i - 1][1])]}"],
+                "props": {"fill": ["var(--anim-state-current)", "var(--anim-state-idle)"]},
+                "duration": 300, "position": "<",
+            })
+
+    has_back_edge = back_edge is not None
+    if not has_back_edge:
+        # Hold on the final state briefly, then snap everything back to the
+        # start invisibly -- never a drawn/animated "final -> first" arrow.
+        steps_json.append({"targets": [f"#{marker_id}"], "props": {}, "duration": 900})
+        steps_json.append({
+            "kind": "set", "targets": [f"#{marker_id}"],
+            "props": {"cx": marker_x0, "cy": marker_y0},
+        })
+        steps_json.append({
+            "kind": "set", "targets": [f"#{b}" for b in box_ids],
+            "props": {"fill": "var(--anim-state-idle)"},
+        })
+        steps_json.append({
+            "kind": "set", "targets": [f"#{l}" for l in label_ids],
+            "props": {"opacity": 0},
+        })
+    else:
+        # The back-edge's own arrival-box highlight (added in the loop above)
+        # already returns the diagram toward state[0] visibly, but the box
+        # fill from that final arrival must still settle back to idle before
+        # the loop restarts, exactly like every other arrival does.
+        last_to_i = anim.states.index(anim.transitions[-1][1])
+        steps_json.append({
+            "kind": "set", "targets": [f"#{box_ids[last_to_i]}"],
+            "props": {"fill": "var(--anim-state-idle)"},
+        })
+
+    timeline = {"loop": True, "loopDelay": 800, "steps": steps_json}
     timeline_json = _timeline_island_json(timeline)
+
+    static_lines = "".join(
+        f"<li>{html.escape(f)} — {html.escape(a)} — {html.escape(t)}</li>"
+        for f, t, a in anim.transitions
+    )
+    static_fallback = f'<ol class="anim__state-steps-static">{static_lines}</ol>'
+
+    back_edge_svg = back_edge or ""
     return (
-        f'<div class="anim anim--step-reveal"><ol class="anim__steps">{items}</ol>'
+        '<div class="anim anim--state-machine">'
+        f'<svg class="anim__state-machine" dir="ltr" '
+        f'viewBox="0 0 {total_width} {total_height}">'
+        f"{defs}{''.join(arrows_html)}{back_edge_svg}{''.join(boxes_html)}"
+        f"{''.join(labels_html)}{marker_html}</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
-        "</div>"
+        f"{static_fallback}</div>"
     )
 
 

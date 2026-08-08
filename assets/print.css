@@ -56,4 +56,9 @@
     display: block !important; list-style: decimal !important;
     padding-inline-start: 1.5em !important; margin-block-start: 0.5em !important;
   }
+  .anim__state-machine { display: none !important; }
+  .anim__state-steps-static {
+    display: block !important; list-style: decimal !important;
+    padding-inline-start: 1.5em !important; margin: 0 !important;
+  }
 }

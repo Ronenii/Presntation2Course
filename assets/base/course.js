@@ -429,7 +429,7 @@
         // from a single animation.
         if (step.kind === "path-segment") {
           var marker = document.querySelector(step.marker);
-          var trail = document.querySelector(step.trail);
+          var trail = step.trail ? document.querySelector(step.trail) : null;
           var state = { x: step.from[0], y: step.from[1] };
           var stepCaption = step.caption;
           var fromX = step.from[0];

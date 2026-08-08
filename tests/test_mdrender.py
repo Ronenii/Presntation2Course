@@ -664,19 +664,29 @@ def test_timeline_island_position_tokens_are_not_html_escaped(block):
     assert "<" in positions, positions
 
 
-def test_step_reveal_renders_with_a_timeline_island():
+def test_state_machine_renders_boxes_arrows_and_a_timeline_island():
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: step-reveal\nsteps:\n  - First\n  - Second\n  - Third\n```\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - Ready\n  - Running\n  - Done\n'
+        'transitions:\n  - Ready -> Running: schedule\n  - Running -> Done: exit\n```\n\n'
         '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
         '```glossary\nTLB: definition\n```\n'
     )
     rendered = render_course(md)
     assert rendered.errors == []
-    assert '<li class="anim__step" id="anim-step-' in rendered.html_body
-    assert '">First</li>' in rendered.html_body
-    assert '">Second</li>' in rendered.html_body
-    assert '">Third</li>' in rendered.html_body
+    assert '<div class="anim anim--state-machine">' in rendered.html_body
+    # Three state boxes, each labeled with its state text.
+    assert '>Ready<' in rendered.html_body
+    assert '>Running<' in rendered.html_body
+    assert '>Done<' in rendered.html_body
+    # Two static arrows (one per transition) -- always visible, not hidden.
+    assert rendered.html_body.count('class="anim__state-arrow"') == 2
+    # Two transition-label texts, both initially hidden (opacity driven to 0 by
+    # CSS default, not inline -- see the CSS assertions below); their TEXT must
+    # already be present in the markup (for reduced-motion/print and for the
+    # timeline's onBegin/onComplete to just toggle opacity, not inject text).
+    assert '>schedule<' in rendered.html_body
+    assert '>exit<' in rendered.html_body
     match = re.search(
         r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
         rendered.html_body,
@@ -685,23 +695,20 @@ def test_step_reveal_renders_with_a_timeline_island():
     assert match, "no anim__timeline data island found"
     timeline = json.loads(match.group(1))
     assert timeline["loop"] is True
-    assert len(timeline["steps"]) == 3
-    first_step = timeline["steps"][0]
-    assert first_step["props"]["opacity"] == [0.65, 1, 0.65]
+    assert '<ol class="anim__state-steps-static">' in rendered.html_body
+    assert '<li>Ready — schedule — Running</li>' in rendered.html_body
+    assert '<li>Running — exit — Done</li>' in rendered.html_body
 
 
-def test_step_reveal_steps_play_sequentially_not_all_at_once():
-    """A step-reveal must reveal its items ONE AT A TIME. anime.js's "<" position
-    token means "start with the previous step", so using it for every item after
-    the first made all three pulse in unison -- a regression against both the
-    pattern's name and the pre-migration CSS, which staggered each item by its own
-    animation-delay. No position at all is what appends a step after the previous
-    one ends, and each item gets a full-length beat rather than a 1/n slice of one
-    shared cycle.
+def test_state_machine_transitions_play_sequentially_not_all_at_once():
+    """Mirrors the old step-reveal sequencing test: each transition must play
+    ONE AT A TIME (marker travels, THEN the next transition begins), never all
+    at once. No "<" position on the marker-travel steps themselves.
     """
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: step-reveal\nsteps:\n  - First\n  - Second\n  - Third\n```\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n  - C\n'
+        'transitions:\n  - A -> B: go1\n  - B -> C: go2\n```\n\n'
         '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
         '```glossary\nTLB: definition\n```\n'
     )
@@ -712,12 +719,75 @@ def test_step_reveal_steps_play_sequentially_not_all_at_once():
         rendered.html_body,
         re.DOTALL,
     )
-    assert match, "no anim__timeline data island found"
     steps = json.loads(match.group(1))["steps"]
-    assert [s.get("position") for s in steps] == [None, None, None]
-    # Every item gets its own equal, full-length beat -- not cycle/n each, which
-    # would shrink every reveal as the author adds steps.
-    assert [s["duration"] for s in steps] == [2000, 2000, 2000]
+    marker_travel_positions = [
+        s.get("position") for s in steps if s.get("kind") == "path-segment"
+    ]
+    # The first marker-travel step starts the timeline (position None, i.e.
+    # "append after the previous step ends" from an empty timeline); the second
+    # ALSO has no "<" -- it must wait for the first transition to finish, not
+    # start in parallel with it.
+    assert marker_travel_positions == [None, None]
+
+
+def test_state_machine_with_a_back_edge_animates_it_as_a_real_transition():
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n'
+        'transitions:\n  - A -> B: go\n  - B -> A: reset\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    steps = json.loads(match.group(1))["steps"]
+    marker_travels = [s for s in steps if s.get("kind") == "path-segment"]
+    # Both transitions (A->B and the authored B->A back-edge) are real,
+    # animated marker travels -- exactly 2, not 1 plus an invisible reset.
+    assert len(marker_travels) == 2
+    # No trailing invisible "kind": "set" reset of the marker's position back to
+    # state A's box -- that reset only happens when there is NO authored
+    # back-edge (see test_state_machine_without_a_back_edge_resets_invisibly).
+    trailing_kind_set_on_marker = [
+        s for s in steps
+        if s.get("kind") == "set" and "anim-state-marker" in " ".join(s.get("targets", []))
+    ]
+    assert trailing_kind_set_on_marker == []
+
+
+def test_state_machine_without_a_back_edge_resets_invisibly():
+    """A finite chain (no authored back-edge) must NOT visibly loop back to the
+    first state -- the restart is an invisible kind:"set" snap, never a drawn or
+    animated arrow, so a reader never mistakes the replay-for-engagement loop
+    for a real "final -> first" transition that was never authored.
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n  - C\n'
+        'transitions:\n  - A -> B: go1\n  - B -> C: go2\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    steps = json.loads(match.group(1))["steps"]
+    marker_travels = [s for s in steps if s.get("kind") == "path-segment"]
+    # Exactly 2 real transitions were authored -- no third, phantom "C -> A" travel.
+    assert len(marker_travels) == 2
+    trailing_kind_set_on_marker = [
+        s for s in steps
+        if s.get("kind") == "set" and "anim-state-marker" in " ".join(s.get("targets", []))
+    ]
+    assert len(trailing_kind_set_on_marker) == 1
 
 
 def test_state_toggle_renders_before_and_after_with_a_timeline_island():
