@@ -532,6 +532,23 @@ def test_parse_animate_state_machine_rejects_branching():
         )
 
 
+def test_parse_animate_state_machine_rejects_a_duplicated_back_edge_line():
+    """The "at most one back-edge" guard must be POSITIONAL, not value-based. Two
+    identical back-edge lines both compare equal to transitions_raw[-1], so a
+    value-equality check accepts BOTH -- producing two back-edges where the
+    renderer (and _state_machine_html's back-edge detection, which only inspects
+    transitions[-1]) assumes at most one. Only the line that is actually last by
+    POSITION may be the permitted back-edge; the earlier duplicate is just a
+    non-consecutive transition and is rejected like any other.
+    """
+    with pytest.raises(AnimateError, match="must connect consecutive states"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+            "transitions:\n  - A -> B: go\n  - B -> C: go2\n"
+            "  - C -> A: loop\n  - C -> A: loop\n"
+        )
+
+
 def test_parse_animate_state_machine_rejects_a_malformed_transition_line():
     with pytest.raises(AnimateError, match="invalid state-machine transition"):
         parse_animate(
@@ -788,6 +805,64 @@ def test_state_machine_without_a_back_edge_resets_invisibly():
         if s.get("kind") == "set" and "anim-state-marker" in " ".join(s.get("targets", []))
     ]
     assert len(trailing_kind_set_on_marker) == 1
+
+
+def test_state_machine_box_highlight_targets_the_rect_not_the_group():
+    """The only visible shape in a state box is its child <rect>; animating `fill`
+    on the wrapping <g> never reaches a rendered pixel (the rect carries its own
+    fill). Every fill-animating step -- arrival highlight, settle-back-to-idle,
+    and both trailing kind:"set" resets -- must therefore target the RECT ids
+    (anim-state-rect-*), never the group ids (anim-state-box-*). Mirrors
+    _array_ops_html, which already targets its rect_ids for exactly this reason.
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n  - C\n'
+        'transitions:\n  - A -> B: go1\n  - B -> C: go2\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    # The rect carries the idle fill as its own attribute (array-ops's convention),
+    # so it renders correctly before JS runs and under reduced-motion/print.
+    assert 'fill="var(--anim-state-idle)"' in rendered.html_body
+    assert 'id="anim-state-rect-' in rendered.html_body
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    steps = json.loads(match.group(1))["steps"]
+    fill_steps = [s for s in steps if "fill" in (s.get("props") or {})]
+    assert fill_steps, "no fill-animating steps found"
+    for step in fill_steps:
+        for target in step["targets"]:
+            assert target.startswith("#anim-state-rect-"), (
+                f"fill step targets {target!r}; animating fill on the <g> group is "
+                "overridden by the rect's own fill and never renders"
+            )
+
+
+def test_state_machine_draws_no_arrow_for_an_unauthored_state_pair():
+    """Only AUTHORED transitions are ever drawn as edges (design spec's standing
+    rule, and this renderer's own docstring). A chain of three states with only
+    ONE authored transition must draw exactly one arrow -- not one per adjacent
+    pair of states.
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n  - C\n'
+        'transitions:\n  - A -> B: go\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    # Three boxes are still drawn (states are structure), but only the one
+    # authored A -> B edge gets an arrow; B -> C was never authored.
+    assert rendered.html_body.count('class="anim__state-box"') == 3
+    assert rendered.html_body.count('class="anim__state-arrow"') == 1
 
 
 def test_state_toggle_renders_before_and_after_with_a_timeline_island():

@@ -257,8 +257,13 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   --anim-state-idle: var(--color-surface);
   --anim-state-current: var(--color-accent);
 }
+/* No `fill` here on purpose: the rect carries fill="var(--anim-state-idle)" as
+   its own attribute (see _state_machine_html, mirroring _array_ops_html's
+   rects). A stylesheet `fill` declaration would be an author declaration that
+   overrides the attribute, so the arrival-highlight animation's interpolated
+   fill would never reach a rendered pixel. */
 .anim__state-box rect {
-  fill: var(--anim-state-idle); stroke: var(--color-border); stroke-width: 1.5;
+  stroke: var(--color-border); stroke-width: 1.5;
 }
 .anim__state-box text {
   fill: var(--color-fg); font-size: 13px; text-anchor: middle; dominant-baseline: middle;

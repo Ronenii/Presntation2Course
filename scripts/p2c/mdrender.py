@@ -187,7 +187,7 @@ def parse_animate(body: str) -> Animate:
         if not transitions_raw:
             raise AnimateError("state-machine needs at least 1 transition")
         transitions: list[tuple[str, str, str]] = []
-        for line in transitions_raw:
+        for line_index, line in enumerate(transitions_raw):
             match = _TRANSITION.match(line)
             if not match:
                 raise AnimateError(f"invalid state-machine transition: {line!r}")
@@ -203,12 +203,19 @@ def parse_animate(body: str) -> Animate:
             is_consecutive_forward = to_index == from_index + 1
             # The one permitted exception: a transition FROM the last state back
             # to any earlier state, but only as the LAST authored transition --
-            # checked by position (len(transitions) == len(transitions_raw) - 1,
-            # i.e. this is the final line) combined with from_index being the
-            # last state's index. A back-edge appearing anywhere else (including
-            # a second outgoing edge from a non-final state, i.e. branching) is
-            # rejected by the same "must connect consecutive states" message.
-            is_final_line = line == transitions_raw[-1]
+            # checked by POSITION (this line's index is the final index) combined
+            # with from_index being the last state's index. A back-edge appearing
+            # anywhere else (including a second outgoing edge from a non-final
+            # state, i.e. branching) is rejected by the same "must connect
+            # consecutive states" message.
+            #
+            # The index comparison must stay positional, never `line ==
+            # transitions_raw[-1]`: two IDENTICAL back-edge lines both compare
+            # equal to the last line by value, so a value check would accept
+            # BOTH as "the permitted trailing back-edge" and produce two
+            # back-edges -- but _state_machine_html's back-edge detection only
+            # inspects transitions[-1] and assumes there is at most one.
+            is_final_line = line_index == len(transitions_raw) - 1
             is_permitted_back_edge = (
                 is_final_line and from_index == len(states) - 1 and to_index < from_index
             )
@@ -354,6 +361,15 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     # token's ordinal digits are used to build element ids.
     token_seed = re.sub(r"\D", "", token) or "0"
     box_ids = [f"anim-state-box-{token_seed}-{i}" for i in range(len(anim.states))]
+    # The <g> wrapper is never the fill-animation target: the only VISIBLE shape
+    # is its child <rect>, whose own fill wins over anything inherited from the
+    # group, so an animated fill on the <g> never reaches a rendered pixel.
+    # _array_ops_html tracks separate rect_ids for exactly this reason; this
+    # mirrors it, including the rect's inline fill="var(--anim-state-idle)"
+    # attribute (rather than a stylesheet rule) so nothing competes with the
+    # interpolated value while still rendering correctly before JS runs and
+    # under reduced-motion/print.
+    rect_ids = [f"anim-state-rect-{token_seed}-{i}" for i in range(len(anim.states))]
     label_ids = [f"anim-state-label-{token_seed}-{i}" for i in range(len(anim.transitions))]
     marker_id = f"anim-state-marker-{token_seed}"
 
@@ -371,21 +387,32 @@ def _state_machine_html(anim: Animate, token: str) -> str:
         x = box_x(i)
         boxes_html.append(
             f'<g class="anim__state-box" id="{box_ids[i]}">'
-            f'<rect x="{x}" y="{_STATE_ROW_Y}" width="{_STATE_BOX_WIDTH}" '
-            f'height="{_STATE_BOX_HEIGHT}" rx="8"></rect>'
+            f'<rect id="{rect_ids[i]}" x="{x}" y="{_STATE_ROW_Y}" '
+            f'width="{_STATE_BOX_WIDTH}" height="{_STATE_BOX_HEIGHT}" rx="8" '
+            f'fill="var(--anim-state-idle)"></rect>'
             f'<text x="{x + _STATE_BOX_WIDTH / 2:g}" '
             f'y="{_STATE_ROW_Y + _STATE_BOX_HEIGHT / 2 + 5:g}">'
             f"{html.escape(label)}</text>"
             "</g>"
         )
 
-    # Static arrows: one per FORWARD-adjacent pair of states, always visible --
-    # this is the diagram's permanent structure. A trailing authored back-edge
-    # (from the last state to an earlier one) gets its own curved arrow below
-    # the row instead, visually distinct from the forward chain.
+    # Static arrows: one per AUTHORED forward transition, always visible -- this
+    # is the diagram's permanent structure. Derived from anim.transitions, never
+    # from every adjacent pair in anim.states: the grammar only requires
+    # transitions to cover the consecutive pairs they actually name, so a chain
+    # may legitimately have a gap, and drawing an arrow across that gap would
+    # invent an edge the course-writer never authored (the standing rule is that
+    # only authored transitions are ever drawn or animated as edges). A trailing
+    # authored back-edge (from the last state to an earlier one) is excluded
+    # here -- it gets its own curved arrow below the row instead, visually
+    # distinct from the forward chain.
     arrows_html = []
-    forward_pairs = list(zip(anim.states[:-1], anim.states[1:]))
-    for i in range(len(forward_pairs)):
+    forward_transitions = [
+        t for t in anim.transitions
+        if anim.states.index(t[1]) == anim.states.index(t[0]) + 1
+    ]
+    for from_state, to_state, _action in forward_transitions:
+        i = anim.states.index(from_state)
         x1 = box_x(i) + _STATE_BOX_WIDTH
         x2 = box_x(i + 1)
         y = _STATE_ROW_Y + _STATE_BOX_HEIGHT / 2
@@ -459,14 +486,14 @@ def _state_machine_html(anim: Animate, token: str) -> str:
             "duration": 1400, "position": "<",
         })
         steps_json.append({
-            "targets": [f"#{box_ids[to_i]}"],
+            "targets": [f"#{rect_ids[to_i]}"],
             "props": {"fill": ["var(--anim-state-idle)", "var(--anim-state-current)"]},
             "duration": 300, "position": "<",
         })
         if i > 0:
             from_of_prev = anim.states.index(anim.transitions[i - 1][0])
             steps_json.append({
-                "targets": [f"#{box_ids[anim.states.index(anim.transitions[i - 1][1])]}"],
+                "targets": [f"#{rect_ids[anim.states.index(anim.transitions[i - 1][1])]}"],
                 "props": {"fill": ["var(--anim-state-current)", "var(--anim-state-idle)"]},
                 "duration": 300, "position": "<",
             })
@@ -481,7 +508,7 @@ def _state_machine_html(anim: Animate, token: str) -> str:
             "props": {"cx": marker_x0, "cy": marker_y0},
         })
         steps_json.append({
-            "kind": "set", "targets": [f"#{b}" for b in box_ids],
+            "kind": "set", "targets": [f"#{r}" for r in rect_ids],
             "props": {"fill": "var(--anim-state-idle)"},
         })
         steps_json.append({
@@ -495,7 +522,7 @@ def _state_machine_html(anim: Animate, token: str) -> str:
         # the loop restarts, exactly like every other arrival does.
         last_to_i = anim.states.index(anim.transitions[-1][1])
         steps_json.append({
-            "kind": "set", "targets": [f"#{box_ids[last_to_i]}"],
+            "kind": "set", "targets": [f"#{rect_ids[last_to_i]}"],
             "props": {"fill": "var(--anim-state-idle)"},
         })
 
