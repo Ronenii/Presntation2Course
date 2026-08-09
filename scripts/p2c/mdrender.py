@@ -581,12 +581,17 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     static_fallback = f'<ol class="anim__state-steps-static">{static_lines}</ol>'
 
     back_edge_svg = back_edge or ""
+    # Paint order matters here: the marker/labels come BEFORE the boxes, so the
+    # boxes (opaque, rounded rects) visually sit on top of the marker whenever
+    # its travel lane passes near/behind one -- the marker reads as moving
+    # "through" the diagram's structure, never as an object floating in front
+    # of it that could obscure a box's own text.
     return (
         '<div class="anim anim--state-machine">'
         f'<svg class="anim__state-machine" dir="ltr" '
         f'viewBox="0 0 {total_width} {total_height}">'
-        f"{defs}{''.join(arrows_html)}{back_edge_svg}{''.join(boxes_html)}"
-        f"{''.join(labels_html)}{marker_html}</svg>"
+        f"{defs}{''.join(arrows_html)}{back_edge_svg}"
+        f"{''.join(labels_html)}{marker_html}{''.join(boxes_html)}</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
         f"{static_fallback}</div>"
     )
