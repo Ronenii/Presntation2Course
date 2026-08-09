@@ -343,12 +343,16 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 /* Named distinctly from .anim__state-label (state-toggle's existing
    "Before"/"After" chrome label, defined earlier in this file) to avoid a
    same-name collision between two unrelated rules -- this one is the
-   transition's action text inside the new state-machine SVG, invisible at
-   rest and faded in only during its own transition's step (see
-   _state_machine_html's timeline). */
+   transition's action text inside the new state-machine SVG. The opacity
+   animation targets the GROUP (chip + text together, see
+   _state_machine_html), invisible at rest and faded in only during its own
+   transition's step, so the background chip never sits there empty when its
+   label isn't showing. */
+.anim__state-transition-label-group { opacity: 0; }
+.anim__state-transition-label-bg { fill: var(--color-surface); stroke: var(--color-border); stroke-width: 1; }
 .anim__state-transition-label {
   fill: var(--color-accent); font-size: 12px; font-weight: 600;
-  text-anchor: middle; opacity: 0;
+  text-anchor: middle;
 }
 .anim__state-marker { fill: var(--color-accent); }
 /* Hidden during normal animated playback; shown only under the static

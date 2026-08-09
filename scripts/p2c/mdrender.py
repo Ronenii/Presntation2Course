@@ -307,13 +307,17 @@ _STATE_GAP = 70  # horizontal gap between box edges, wide enough for an arrow + 
 _STATE_TOP_MARGIN = 20  # headroom above the row when there is no back-edge arc
 _STATE_BACK_EDGE_HEADROOM = 40  # extra top margin so the back-edge's arc and its
                                 # arrowhead never clip the SVG's own top edge
-_STATE_LANE_GAP = 24  # vertical gap between a box's bottom edge and the
-                      # arrow/marker/label lane below the row -- keeps the
-                      # traveling marker and every transition label off of the
-                      # boxes' own centered text, which sits at the box's
-                      # vertical center, not down in this lane
-_STATE_LABEL_LANE_OFFSET = 8  # a transition label sits this far above its own
-                              # arrow/marker lane, not stacked on top of it
+_STATE_LABEL_LANE_OFFSET = 22  # a transition label sits this far above the row,
+                               # clear of the box tops -- its own background
+                               # chip (see _STATE_LABEL_CHIP_*) keeps it legible
+                               # even where a long label overhangs a box edge
+_STATE_LABEL_CHIP_PAD_X = 8  # horizontal padding inside a label's background chip
+_STATE_LABEL_CHIP_PAD_Y = 3  # vertical padding inside a label's background chip
+_STATE_LABEL_CHAR_WIDTH = 7.2  # rough px-per-character at the label's 12px/600
+                               # weight font -- SVG cannot measure real text
+                               # width at render time, so the chip's size is
+                               # estimated from the authored string's length,
+                               # generous enough that real glyphs stay inside it
 _STATE_MARKER_RADIUS = 9
 
 
@@ -395,12 +399,13 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     ):
         has_back_edge_precheck = True
     row_y = _STATE_BACK_EDGE_HEADROOM if has_back_edge_precheck else _STATE_TOP_MARGIN
-    # The arrow/marker/label lane sits BELOW the row, clear of every box's own
-    # centered label text (which sits at the box's vertical center) -- the
-    # marker travels along this lane's y, never through a box's text, and each
-    # transition label sits just above the lane line, next to the arrow/marker
-    # it actually describes.
-    lane_y = row_y + _STATE_BOX_HEIGHT + _STATE_LANE_GAP
+    # Forward arrows and the traveling marker run at the boxes' own vertical
+    # center -- a real flowchart line entering/exiting each box at its edge --
+    # rather than a separate lane below. Never through a box's own text
+    # despite sharing its height: boxes paint LAST (see the return value's
+    # paint-order comment below), so each box's opaque rect covers the arrow's
+    # end and the marker's full extent whenever either is at/behind a box.
+    box_center_y = row_y + _STATE_BOX_HEIGHT / 2
 
     def box_x(i: int) -> int:
         return _STATE_GAP + i * (_STATE_BOX_WIDTH + _STATE_GAP)
@@ -409,7 +414,7 @@ def _state_machine_html(anim: Animate, token: str) -> str:
         return box_x(i) + _STATE_BOX_WIDTH / 2
 
     total_width = len(anim.states) * (_STATE_BOX_WIDTH + _STATE_GAP) + _STATE_GAP
-    total_height = lane_y + _STATE_LABEL_LANE_OFFSET + _STATE_MARKER_RADIUS + 12
+    total_height = row_y + _STATE_BOX_HEIGHT + _STATE_LABEL_LANE_OFFSET + 4
 
     boxes_html = []
     for i, label in enumerate(anim.states):
@@ -445,8 +450,8 @@ def _state_machine_html(anim: Animate, token: str) -> str:
         x1 = box_center_x(i)
         x2 = box_center_x(i + 1)
         arrows_html.append(
-            f'<line class="anim__state-arrow" x1="{x1:g}" y1="{lane_y:g}" '
-            f'x2="{x2:g}" y2="{lane_y:g}" marker-end="url(#anim-arrowhead-{token_seed})">'
+            f'<line class="anim__state-arrow" x1="{x1:g}" y1="{box_center_y:g}" '
+            f'x2="{x2:g}" y2="{box_center_y:g}" marker-end="url(#anim-arrowhead-{token_seed})">'
             "</line>"
         )
 
@@ -470,18 +475,39 @@ def _state_machine_html(anim: Animate, token: str) -> str:
         # this same drawn arc instead of cutting a straight line beneath it.
         back_edge_curve = (x_from, arc_y, x_to, arc_y)
 
+    # Each label gets a background chip behind its text (a rect sized from the
+    # authored action string's estimated width) so it stays legible even where
+    # it overhangs a box's edge -- both chip and text paint AFTER the boxes
+    # (see the return value's paint-order comment), the opposite of the
+    # arrow/marker, which paint BEFORE the boxes precisely so the boxes can
+    # cover them. A label is never meant to be partly hidden; an arrow/marker
+    # sliding behind a box is the intended "enters the box" look.
     labels_html = []
     for i, (from_state, to_state, action) in enumerate(anim.transitions):
         from_i = anim.states.index(from_state)
         to_i = anim.states.index(to_state)
         lx = (box_center_x(from_i) + box_center_x(to_i)) / 2
-        ly = lane_y - _STATE_LABEL_LANE_OFFSET
+        # The back-edge's label sits higher, above its own arc, clear of the
+        # forward labels' band right above the row -- same distinction the
+        # original (pre-lane) layout drew between the two cases.
+        is_this_the_back_edge = back_edge_curve is not None and i == len(anim.transitions) - 1
+        ly = (row_y - (_STATE_BACK_EDGE_HEADROOM - 6)) if is_this_the_back_edge else (row_y - _STATE_LABEL_LANE_OFFSET)
+        chip_width = len(action) * _STATE_LABEL_CHAR_WIDTH + 2 * _STATE_LABEL_CHIP_PAD_X
+        chip_height = 12 + 2 * _STATE_LABEL_CHIP_PAD_Y
+        # Grouped under one id so the timeline's single opacity animation (see
+        # below) fades the chip and its text together -- an empty chip left
+        # behind by an invisible label would otherwise read as a stray box.
         labels_html.append(
-            f'<text class="anim__state-transition-label" id="{label_ids[i]}" '
+            f'<g class="anim__state-transition-label-group" id="{label_ids[i]}">'
+            f'<rect class="anim__state-transition-label-bg" '
+            f'x="{lx - chip_width / 2:g}" y="{ly - chip_height + 4:g}" '
+            f'width="{chip_width:g}" height="{chip_height:g}" rx="4"></rect>'
+            f'<text class="anim__state-transition-label" '
             f'x="{lx:g}" y="{ly:g}">{html.escape(action)}</text>'
+            "</g>"
         )
 
-    marker_x0, marker_y0 = box_center_x(0), lane_y
+    marker_x0, marker_y0 = box_center_x(0), box_center_y
     marker_html = (
         f'<circle class="anim__state-marker" id="{marker_id}" '
         f'cx="{marker_x0:g}" cy="{marker_y0:g}" r="{_STATE_MARKER_RADIUS}"></circle>'
@@ -497,8 +523,8 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     for i, (from_state, to_state, action) in enumerate(anim.transitions):
         from_i = anim.states.index(from_state)
         to_i = anim.states.index(to_state)
-        fx, fy = box_center_x(from_i), lane_y
-        tx, ty = box_center_x(to_i), lane_y
+        fx, fy = box_center_x(from_i), box_center_y
+        tx, ty = box_center_x(to_i), box_center_y
         marker_step: dict = {
             "kind": "path-segment",
             "marker": f"#{marker_id}",
@@ -511,9 +537,9 @@ def _state_machine_html(anim: Animate, token: str) -> str:
         # The back-edge (always the LAST authored transition, per the grammar)
         # gets the same two cubic-Bezier control points as its own drawn arc
         # (see back_edge_curve above), so the marker visibly follows that curve
-        # instead of cutting a straight line through the lane -- its "from"/"to"
-        # are overridden to the arc's own endpoints (row_y, not lane_y) too,
-        # since the arc starts/ends at the boxes' top edge, not the lane below.
+        # instead of cutting a straight line beneath it -- its "from"/"to" are
+        # overridden to the arc's own endpoints (the box's TOP edge, row_y, not
+        # box_center_y), since the arc starts/ends there, arcing above the row.
         if back_edge_curve is not None and i == len(anim.transitions) - 1:
             via1_x, via1_y, via2_x, via2_y = back_edge_curve
             marker_step["from"] = [box_center_x(from_i), row_y]
@@ -581,17 +607,21 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     static_fallback = f'<ol class="anim__state-steps-static">{static_lines}</ol>'
 
     back_edge_svg = back_edge or ""
-    # Paint order matters here: the marker/labels come BEFORE the boxes, so the
-    # boxes (opaque, rounded rects) visually sit on top of the marker whenever
-    # its travel lane passes near/behind one -- the marker reads as moving
-    # "through" the diagram's structure, never as an object floating in front
-    # of it that could obscure a box's own text.
+    # Paint order matters here, in two opposite directions:
+    # - Arrows and the marker come BEFORE the boxes, so a box's opaque rect
+    #   covers the arrow's end and the marker's full extent whenever either is
+    #   at/behind it -- the marker reads as a token entering the box, and the
+    #   arrow reads as originating/terminating exactly at the box's edge,
+    #   never floating in front of the box or its text.
+    # - Labels (with their own background chip) come AFTER the boxes, on top
+    #   of everything -- a label is authored prose, not diagram structure, and
+    #   must stay fully legible even where it overhangs a box's edge.
     return (
         '<div class="anim anim--state-machine">'
         f'<svg class="anim__state-machine" dir="ltr" '
         f'viewBox="0 0 {total_width} {total_height}">'
         f"{defs}{''.join(arrows_html)}{back_edge_svg}"
-        f"{''.join(labels_html)}{marker_html}{''.join(boxes_html)}</svg>"
+        f"{marker_html}{''.join(boxes_html)}{''.join(labels_html)}</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
         f"{static_fallback}</div>"
     )
