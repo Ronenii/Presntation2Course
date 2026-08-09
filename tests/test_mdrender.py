@@ -4,7 +4,16 @@ import re
 
 import pytest
 
-from p2c.mdrender import Animate, AnimateError, FigureError, mermaid_problem, parse_animate, parse_figure, render_course
+from p2c.mdrender import (
+    _STATE_BOX_HEIGHT,
+    Animate,
+    AnimateError,
+    FigureError,
+    mermaid_problem,
+    parse_animate,
+    parse_figure,
+    render_course,
+)
 
 FM = """---
 title: Operating Systems
@@ -432,13 +441,44 @@ def test_a_broken_figure_block_becomes_an_error_not_a_crash():
     assert any("figure" in e for e in rendered.errors)
 
 
-def test_parse_animate_step_reveal():
+def test_parse_animate_state_machine_linear_chain():
     anim = parse_animate(
-        "pattern: step-reveal\nsteps:\n  - Request arrives\n  - TLB miss\n  - Entry cached"
+        "pattern: state-machine\n"
+        "states:\n"
+        "  - Ready\n"
+        "  - Running\n"
+        "  - Terminated\n"
+        "transitions:\n"
+        "  - Ready -> Running: scheduled\n"
+        "  - Running -> Terminated: exits\n"
     )
     assert anim == Animate(
-        pattern="step-reveal",
-        steps=["Request arrives", "TLB miss", "Entry cached"],
+        pattern="state-machine",
+        states=["Ready", "Running", "Terminated"],
+        transitions=[("Ready", "Running", "scheduled"), ("Running", "Terminated", "exits")],
+    )
+
+
+def test_parse_animate_state_machine_with_a_trailing_back_edge():
+    anim = parse_animate(
+        "pattern: state-machine\n"
+        "states:\n"
+        "  - Idle\n"
+        "  - Requesting\n"
+        "  - Granted\n"
+        "transitions:\n"
+        "  - Idle -> Requesting: request\n"
+        "  - Requesting -> Granted: grant\n"
+        "  - Granted -> Idle: release\n"
+    )
+    assert anim == Animate(
+        pattern="state-machine",
+        states=["Idle", "Requesting", "Granted"],
+        transitions=[
+            ("Idle", "Requesting", "request"),
+            ("Requesting", "Granted", "grant"),
+            ("Granted", "Idle", "release"),
+        ],
     )
 
 
@@ -451,12 +491,90 @@ def test_parse_animate_state_toggle():
 
 def test_parse_animate_rejects_an_unknown_pattern():
     with pytest.raises(AnimateError, match="animate pattern must be"):
-        parse_animate("pattern: spin\nsteps:\n  - a\n  - b")
+        parse_animate("pattern: spin\nstates:\n  - a\n  - b")
 
 
-def test_parse_animate_rejects_a_step_reveal_with_one_step():
-    with pytest.raises(AnimateError, match="at least 2 steps"):
-        parse_animate("pattern: step-reveal\nsteps:\n  - only one")
+def test_parse_animate_rejects_a_state_machine_with_one_state():
+    with pytest.raises(AnimateError, match="at least 2 states"):
+        parse_animate("pattern: state-machine\nstates:\n  - only one\ntransitions:")
+
+
+def test_parse_animate_rejects_a_state_machine_with_no_transitions():
+    with pytest.raises(AnimateError, match="at least 1 transition"):
+        parse_animate("pattern: state-machine\nstates:\n  - A\n  - B\ntransitions:")
+
+
+def test_parse_animate_state_machine_rejects_an_unknown_state_in_a_transition():
+    with pytest.raises(AnimateError, match="unknown state 'C'"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n"
+            "transitions:\n  - A -> C: go\n"
+        )
+
+
+def test_parse_animate_state_machine_rejects_a_non_adjacent_forward_transition():
+    with pytest.raises(AnimateError, match="must connect consecutive states"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+            "transitions:\n  - A -> C: skip\n"
+        )
+
+
+def test_parse_animate_state_machine_rejects_a_back_edge_that_is_not_last():
+    with pytest.raises(AnimateError, match="must connect consecutive states"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+            "transitions:\n  - B -> A: back\n  - B -> C: forward\n"
+        )
+
+
+def test_parse_animate_state_machine_rejects_branching():
+    """A state may have at most one outgoing transition (except the one permitted
+    trailing back-edge case, which is a property of the LAST state, not a second
+    outgoing edge from an earlier one) -- branching is out of scope, see the design
+    spec's rationale (a single continuous marker cannot meaningfully choose a branch).
+    """
+    with pytest.raises(AnimateError, match="must connect consecutive states"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+            "transitions:\n  - A -> B: one\n  - A -> C: two\n"
+        )
+
+
+def test_parse_animate_state_machine_rejects_a_duplicated_back_edge_line():
+    """The "at most one back-edge" guard must be POSITIONAL, not value-based. Two
+    identical back-edge lines both compare equal to transitions_raw[-1], so a
+    value-equality check accepts BOTH -- producing two back-edges where the
+    renderer (and _state_machine_html's back-edge detection, which only inspects
+    transitions[-1]) assumes at most one. Only the line that is actually last by
+    POSITION may be the permitted back-edge; the earlier duplicate is just a
+    non-consecutive transition and is rejected like any other.
+    """
+    with pytest.raises(AnimateError, match="must connect consecutive states"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+            "transitions:\n  - A -> B: go\n  - B -> C: go2\n"
+            "  - C -> A: loop\n  - C -> A: loop\n"
+        )
+
+
+def test_parse_animate_state_machine_rejects_a_malformed_transition_line():
+    with pytest.raises(AnimateError, match="invalid state-machine transition"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n"
+            "transitions:\n  - A to B without an arrow\n"
+        )
+
+
+def test_parse_animate_state_machine_rejects_array_and_points_fields():
+    with pytest.raises(
+        AnimateError,
+        match="state-machine does not use 'before:'/'after:'/'array:'/'ops:'/'points:'/'caption:'",
+    ):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n"
+            "transitions:\n  - A -> B: go\narray:\n  - 1\n"
+        )
 
 
 def test_parse_animate_rejects_a_state_toggle_missing_after():
@@ -531,9 +649,12 @@ def test_parse_animate_array_ops_rejects_before_after():
 @pytest.mark.parametrize(
     "block",
     [
-        # step-reveal is deliberately absent: its steps are sequential by design
-        # (see test_step_reveal_steps_play_sequentially_not_all_at_once), so it
-        # emits no "<" position for this test to check the escaping of.
+        # step-reveal is retired (see docs/superpowers/specs/2026-08-06-v1.3.0-bugfixes-design.md).
+        # state-machine is deliberately absent too: like the old step-reveal, its
+        # transitions play sequentially by design (see
+        # test_state_machine_transitions_play_sequentially_not_all_at_once in
+        # this file), so it emits no "<" position for THIS test to check the
+        # escaping of -- its "<" coverage comes from array-ops below instead.
         'pattern: state-toggle\nbefore: Shared\nafter: Modified',
         'pattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\nops:\n  - compare 0 1\n  - swap 0 1',
     ],
@@ -569,19 +690,29 @@ def test_timeline_island_position_tokens_are_not_html_escaped(block):
     assert "<" in positions, positions
 
 
-def test_step_reveal_renders_with_a_timeline_island():
+def test_state_machine_renders_boxes_arrows_and_a_timeline_island():
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: step-reveal\nsteps:\n  - First\n  - Second\n  - Third\n```\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - Ready\n  - Running\n  - Done\n'
+        'transitions:\n  - Ready -> Running: schedule\n  - Running -> Done: exit\n```\n\n'
         '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
         '```glossary\nTLB: definition\n```\n'
     )
     rendered = render_course(md)
     assert rendered.errors == []
-    assert '<li class="anim__step" id="anim-step-' in rendered.html_body
-    assert '">First</li>' in rendered.html_body
-    assert '">Second</li>' in rendered.html_body
-    assert '">Third</li>' in rendered.html_body
+    assert '<div class="anim anim--state-machine">' in rendered.html_body
+    # Three state boxes, each labeled with its state text.
+    assert '>Ready<' in rendered.html_body
+    assert '>Running<' in rendered.html_body
+    assert '>Done<' in rendered.html_body
+    # Two static arrows (one per transition) -- always visible, not hidden.
+    assert rendered.html_body.count('class="anim__state-arrow"') == 2
+    # Two transition-label texts, both initially hidden (opacity driven to 0 by
+    # CSS default, not inline -- see the CSS assertions below); their TEXT must
+    # already be present in the markup (for reduced-motion/print and for the
+    # timeline's onBegin/onComplete to just toggle opacity, not inject text).
+    assert '>schedule<' in rendered.html_body
+    assert '>exit<' in rendered.html_body
     match = re.search(
         r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
         rendered.html_body,
@@ -590,23 +721,20 @@ def test_step_reveal_renders_with_a_timeline_island():
     assert match, "no anim__timeline data island found"
     timeline = json.loads(match.group(1))
     assert timeline["loop"] is True
-    assert len(timeline["steps"]) == 3
-    first_step = timeline["steps"][0]
-    assert first_step["props"]["opacity"] == [0.65, 1, 0.65]
+    assert '<ol class="anim__state-steps-static">' in rendered.html_body
+    assert '<li>Ready — schedule — Running</li>' in rendered.html_body
+    assert '<li>Running — exit — Done</li>' in rendered.html_body
 
 
-def test_step_reveal_steps_play_sequentially_not_all_at_once():
-    """A step-reveal must reveal its items ONE AT A TIME. anime.js's "<" position
-    token means "start with the previous step", so using it for every item after
-    the first made all three pulse in unison -- a regression against both the
-    pattern's name and the pre-migration CSS, which staggered each item by its own
-    animation-delay. No position at all is what appends a step after the previous
-    one ends, and each item gets a full-length beat rather than a 1/n slice of one
-    shared cycle.
+def test_state_machine_transitions_play_sequentially_not_all_at_once():
+    """Mirrors the old step-reveal sequencing test: each transition must play
+    ONE AT A TIME (marker travels, THEN the next transition begins), never all
+    at once. No "<" position on the marker-travel steps themselves.
     """
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: step-reveal\nsteps:\n  - First\n  - Second\n  - Third\n```\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n  - C\n'
+        'transitions:\n  - A -> B: go1\n  - B -> C: go2\n```\n\n'
         '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
         '```glossary\nTLB: definition\n```\n'
     )
@@ -617,12 +745,242 @@ def test_step_reveal_steps_play_sequentially_not_all_at_once():
         rendered.html_body,
         re.DOTALL,
     )
-    assert match, "no anim__timeline data island found"
     steps = json.loads(match.group(1))["steps"]
-    assert [s.get("position") for s in steps] == [None, None, None]
-    # Every item gets its own equal, full-length beat -- not cycle/n each, which
-    # would shrink every reveal as the author adds steps.
-    assert [s["duration"] for s in steps] == [2000, 2000, 2000]
+    marker_travel_positions = [
+        s.get("position") for s in steps if s.get("kind") == "path-segment"
+    ]
+    # The first marker-travel step starts the timeline (position None, i.e.
+    # "append after the previous step ends" from an empty timeline); the second
+    # ALSO has no "<" -- it must wait for the first transition to finish, not
+    # start in parallel with it.
+    assert marker_travel_positions == [None, None]
+
+
+def test_state_machine_with_a_back_edge_animates_it_as_a_real_transition():
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n'
+        'transitions:\n  - A -> B: go\n  - B -> A: reset\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    steps = json.loads(match.group(1))["steps"]
+    marker_travels = [s for s in steps if s.get("kind") == "path-segment"]
+    # Both transitions (A->B and the authored B->A back-edge) are real,
+    # animated marker travels -- exactly 2, not 1 plus an invisible reset.
+    assert len(marker_travels) == 2
+    # No trailing invisible "kind": "set" reset of the marker's position back to
+    # state A's box -- that reset only happens when there is NO authored
+    # back-edge (see test_state_machine_without_a_back_edge_resets_invisibly).
+    trailing_kind_set_on_marker = [
+        s for s in steps
+        if s.get("kind") == "set" and "anim-state-marker" in " ".join(s.get("targets", []))
+    ]
+    assert trailing_kind_set_on_marker == []
+
+
+def test_state_machine_without_a_back_edge_resets_invisibly():
+    """A finite chain (no authored back-edge) must NOT visibly loop back to the
+    first state -- the restart is an invisible kind:"set" snap, never a drawn or
+    animated arrow, so a reader never mistakes the replay-for-engagement loop
+    for a real "final -> first" transition that was never authored.
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n  - C\n'
+        'transitions:\n  - A -> B: go1\n  - B -> C: go2\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    steps = json.loads(match.group(1))["steps"]
+    marker_travels = [s for s in steps if s.get("kind") == "path-segment"]
+    # Exactly 2 real transitions were authored -- no third, phantom "C -> A" travel.
+    assert len(marker_travels) == 2
+    trailing_kind_set_on_marker = [
+        s for s in steps
+        if s.get("kind") == "set" and "anim-state-marker" in " ".join(s.get("targets", []))
+    ]
+    assert len(trailing_kind_set_on_marker) == 1
+
+
+def test_state_machine_box_highlight_targets_the_rect_not_the_group():
+    """The only visible shape in a state box is its child <rect>; animating `fill`
+    on the wrapping <g> never reaches a rendered pixel (the rect carries its own
+    fill). Every fill-animating step -- arrival highlight, settle-back-to-idle,
+    and both trailing kind:"set" resets -- must therefore target the RECT ids
+    (anim-state-rect-*), never the group ids (anim-state-box-*). Mirrors
+    _array_ops_html, which already targets its rect_ids for exactly this reason.
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n  - C\n'
+        'transitions:\n  - A -> B: go1\n  - B -> C: go2\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    # The rect carries the idle fill as its own attribute (array-ops's convention),
+    # so it renders correctly before JS runs and under reduced-motion/print.
+    assert 'fill="var(--anim-state-idle)"' in rendered.html_body
+    assert 'id="anim-state-rect-' in rendered.html_body
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    steps = json.loads(match.group(1))["steps"]
+    fill_steps = [s for s in steps if "fill" in (s.get("props") or {})]
+    assert fill_steps, "no fill-animating steps found"
+    for step in fill_steps:
+        for target in step["targets"]:
+            assert target.startswith("#anim-state-rect-"), (
+                f"fill step targets {target!r}; animating fill on the <g> group is "
+                "overridden by the rect's own fill and never renders"
+            )
+
+
+def test_state_machine_draws_no_arrow_for_an_unauthored_state_pair():
+    """Only AUTHORED transitions are ever drawn as edges (design spec's standing
+    rule, and this renderer's own docstring). A chain of three states with only
+    ONE authored transition must draw exactly one arrow -- not one per adjacent
+    pair of states.
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n  - C\n'
+        'transitions:\n  - A -> B: go\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    # Three boxes are still drawn (states are structure), but only the one
+    # authored A -> B edge gets an arrow; B -> C was never authored.
+    assert rendered.html_body.count('class="anim__state-box"') == 3
+    assert rendered.html_body.count('class="anim__state-arrow"') == 1
+
+
+def test_state_machine_marker_and_arrow_paint_before_the_boxes():
+    """The traveling marker and every forward arrow sit at the boxes' own
+    vertical center (a real flowchart line entering/exiting each box at its
+    edge) -- but they must be emitted BEFORE the boxes in the SVG's document
+    order, so a box's opaque rect visually covers the marker/arrow-end
+    whenever either is at/behind it (SVG paints later elements on top). A
+    marker painted AFTER the boxes would float in front of the diagram's
+    structure and could obscure a box's own text.
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n'
+        'transitions:\n  - A -> B: go\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    body = rendered.html_body
+    marker_index = body.index('class="anim__state-marker"')
+    arrow_index = body.index('class="anim__state-arrow"')
+    first_box_index = body.index('class="anim__state-box"')
+    assert arrow_index < first_box_index
+    assert marker_index < first_box_index
+    # The marker and the arrow travel/sit at the SAME y as the box's own
+    # vertical center -- not a separate lane -- since the boxes painting on
+    # top is what keeps them from visually crossing the box's text.
+    box_match = re.search(r'<rect id="anim-state-rect-\S+" x="\S+" y="(\S+)"', body)
+    box_center_y = float(box_match.group(1)) + _STATE_BOX_HEIGHT / 2
+    marker_match = re.search(r'class="anim__state-marker"[^>]*cy="(\S+)"', body)
+    assert float(marker_match.group(1)) == box_center_y
+    arrow_match = re.search(r'class="anim__state-arrow"[^>]*y1="(\S+)"', body)
+    assert float(arrow_match.group(1)) == box_center_y
+
+
+def test_state_machine_labels_paint_after_the_boxes_with_a_background_chip():
+    """Unlike the marker/arrow, a transition's action label is authored prose,
+    not diagram structure -- it must stay fully legible even where it
+    overhangs a box's edge, so it (and its background chip) paint AFTER the
+    boxes, on top of everything, and carry their own background rect sized
+    from the label text so real glyphs never spill outside it.
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n'
+        'transitions:\n  - A -> B: a moderately long action description\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    body = rendered.html_body
+    last_box_index = body.rindex('class="anim__state-box"')
+    label_group_index = body.index('class="anim__state-transition-label-group"')
+    assert label_group_index > last_box_index
+    bg_match = re.search(
+        r'<rect class="anim__state-transition-label-bg" x="(\S+)" y="\S+" width="(\S+)"',
+        body,
+    )
+    assert bg_match, "no label background chip found"
+    chip_width = float(bg_match.group(2))
+    # The chip must be wide enough to plausibly contain the actual authored
+    # text -- a hard floor well below any reasonable per-character estimate,
+    # not a tight bound on the exact formula (which is free to tune).
+    assert chip_width > len("a moderately long action description") * 4
+
+
+def test_state_machine_back_edge_marker_follows_the_drawn_arc_not_a_straight_line():
+    """Bug: the back-edge's marker travel step used a plain straight-line tween
+    through the lane, ignoring the curved arc actually drawn for it -- the
+    marker cut straight across underneath the boxes instead of visibly
+    following the dashed arc above them. The back-edge's own path-segment step
+    must carry via1/via2 control points matching the drawn <path>'s own cubic
+    Bezier control points exactly, so the traveling marker traces that same
+    curve. No other path-segment step (a forward transition) has via1/via2.
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n'
+        'transitions:\n  - A -> B: go\n  - B -> A: reset\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    back_edge_match = re.search(
+        r'<path class="anim__state-arrow anim__state-arrow--back" '
+        r'd="M (\S+) (\S+) C (\S+) (\S+), (\S+) (\S+), (\S+) (\S+)"',
+        rendered.html_body,
+    )
+    assert back_edge_match, "no back-edge <path> found"
+    x_from, y_top, cx1, cy1, cx2, cy2, x_to, y_top2 = (float(g) for g in back_edge_match.groups())
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    steps = json.loads(match.group(1))["steps"]
+    marker_travels = [s for s in steps if s.get("kind") == "path-segment"]
+    assert len(marker_travels) == 2
+    forward_step, back_step = marker_travels
+    assert "via1" not in forward_step
+    assert "via2" not in forward_step
+    assert back_step["via1"] == [cx1, cy1]
+    assert back_step["via2"] == [cx2, cy2]
+    assert back_step["from"] == [x_from, y_top]
+    assert back_step["to"] == [x_to, y_top2]
 
 
 def test_state_toggle_renders_before_and_after_with_a_timeline_island():

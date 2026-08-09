@@ -98,6 +98,7 @@ _ANIMATE_STEP = re.compile(r"^\s*-\s*(?P<text>.+)$")
 _ARRAY_OP = re.compile(
     r"^(?P<verb>compare|swap|highlight)\s+(?P<a>\d+)(?:\s+(?P<b>\d+))?$"
 )
+_TRANSITION = re.compile(r"^(?P<from>.+?)\s*->\s*(?P<to>.+?):\s*(?P<action>.+)$")
 
 
 class AnimateError(ValueError):
@@ -107,30 +108,38 @@ class AnimateError(ValueError):
 @dataclass
 class Animate:
     pattern: str
-    steps: list[str] = field(default_factory=list)
     before: str = ""
     after: str = ""
     array: list[int] = field(default_factory=list)
     ops: list[tuple[str, int, int | None]] = field(default_factory=list)
     points: list[tuple[float, float]] = field(default_factory=list)
     caption: str = ""
+    states: list[str] = field(default_factory=list)
+    transitions: list[tuple[str, str, str]] = field(default_factory=list)
 
 
-_LIST_HEADERS = {"steps:": "steps", "array:": "array", "ops:": "ops", "points:": "points"}
+_LIST_HEADERS = {
+    "array:": "array", "ops:": "ops", "points:": "points",
+    "states:": "states", "transitions:": "transitions",
+}
 
 
 def parse_animate(body: str) -> Animate:
     pattern: str | None = None
-    steps: list[str] = []
     before: str | None = None
     after: str | None = None
     array_raw: list[str] = []
     ops_raw: list[str] = []
     points_raw: list[str] = []
+    states_raw: list[str] = []
+    transitions_raw: list[str] = []
     caption: str | None = None
     section: str | None = None
 
-    lists = {"steps": steps, "array": array_raw, "ops": ops_raw, "points": points_raw}
+    lists = {
+        "array": array_raw, "ops": ops_raw, "points": points_raw,
+        "states": states_raw, "transitions": transitions_raw,
+    }
 
     for raw in body.split("\n"):
         line = raw.rstrip()
@@ -160,24 +169,71 @@ def parse_animate(body: str) -> Animate:
             continue
         raise AnimateError(f"unrecognised line in animate block: {line.strip()!r}")
 
-    if pattern not in ("step-reveal", "state-toggle", "array-ops", "path-trace"):
+    if pattern not in ("state-machine", "state-toggle", "array-ops", "path-trace"):
         raise AnimateError(
-            "animate pattern must be 'step-reveal', 'state-toggle', 'array-ops', "
+            "animate pattern must be 'state-machine', 'state-toggle', 'array-ops', "
             f"or 'path-trace', got {pattern!r}"
         )
 
-    if pattern == "step-reveal":
-        if len(steps) < 2:
-            raise AnimateError("step-reveal needs at least 2 steps")
+    if pattern == "state-machine":
         if before or after or array_raw or ops_raw or points_raw or caption:
-            raise AnimateError("step-reveal does not use 'before:'/'after:'")
+            raise AnimateError(
+                "state-machine does not use 'before:'/'after:'/'array:'/'ops:'/"
+                "'points:'/'caption:'"
+            )
+        states = states_raw
+        if len(states) < 2:
+            raise AnimateError("state-machine needs at least 2 states")
+        if not transitions_raw:
+            raise AnimateError("state-machine needs at least 1 transition")
+        transitions: list[tuple[str, str, str]] = []
+        for line_index, line in enumerate(transitions_raw):
+            match = _TRANSITION.match(line)
+            if not match:
+                raise AnimateError(f"invalid state-machine transition: {line!r}")
+            from_state = match.group("from").strip()
+            to_state = match.group("to").strip()
+            action = match.group("action").strip()
+            if from_state not in states:
+                raise AnimateError(f"state-machine transition names unknown state {from_state!r}")
+            if to_state not in states:
+                raise AnimateError(f"state-machine transition names unknown state {to_state!r}")
+            from_index = states.index(from_state)
+            to_index = states.index(to_state)
+            is_consecutive_forward = to_index == from_index + 1
+            # The one permitted exception: a transition FROM the last state back
+            # to any earlier state, but only as the LAST authored transition --
+            # checked by POSITION (this line's index is the final index) combined
+            # with from_index being the last state's index. A back-edge appearing
+            # anywhere else (including a second outgoing edge from a non-final
+            # state, i.e. branching) is rejected by the same "must connect
+            # consecutive states" message.
+            #
+            # The index comparison must stay positional, never `line ==
+            # transitions_raw[-1]`: two IDENTICAL back-edge lines both compare
+            # equal to the last line by value, so a value check would accept
+            # BOTH as "the permitted trailing back-edge" and produce two
+            # back-edges -- but _state_machine_html's back-edge detection only
+            # inspects transitions[-1] and assumes there is at most one.
+            is_final_line = line_index == len(transitions_raw) - 1
+            is_permitted_back_edge = (
+                is_final_line and from_index == len(states) - 1 and to_index < from_index
+            )
+            if not is_consecutive_forward and not is_permitted_back_edge:
+                raise AnimateError(
+                    f"state-machine transition {line!r} must connect consecutive "
+                    "states (or be a single trailing transition from the last "
+                    "state back to an earlier one)"
+                )
+            transitions.append((from_state, to_state, action))
+        return Animate(pattern=pattern, states=states, transitions=transitions)
     elif pattern == "state-toggle":
         if not before or not after:
             raise AnimateError("state-toggle needs both 'before:' and 'after:'")
-        if steps or array_raw or ops_raw or points_raw or caption:
-            raise AnimateError("state-toggle does not use 'steps:'")
+        if states_raw or transitions_raw or array_raw or ops_raw or points_raw or caption:
+            raise AnimateError("state-toggle does not use 'states:'/'transitions:'")
     elif pattern == "array-ops":
-        if before or after or steps or points_raw or caption:
+        if before or after or states_raw or transitions_raw or points_raw or caption:
             raise AnimateError("array-ops does not use 'before:'/'after:'")
         if len(array_raw) < 2:
             raise AnimateError("array-ops needs at least 2 array values")
@@ -211,7 +267,7 @@ def parse_animate(body: str) -> Animate:
             ops.append((verb, a, b_val))
         return Animate(pattern=pattern, array=array, ops=ops)
     else:  # path-trace
-        if before or after or steps or array_raw or ops_raw:
+        if before or after or states_raw or transitions_raw or array_raw or ops_raw:
             raise AnimateError("path-trace does not use 'before:'/'after:'")
         if len(points_raw) < 2:
             raise AnimateError("path-trace needs at least 2 points")
@@ -225,7 +281,7 @@ def parse_animate(body: str) -> Animate:
             raise AnimateError("path-trace needs 'caption:'")
         return Animate(pattern=pattern, points=points, caption=caption)
 
-    return Animate(pattern=pattern, steps=steps, before=before or "", after=after or "")
+    return Animate(pattern=pattern, before=before or "", after=after or "")
 
 
 _BAR_WIDTH = 36
@@ -244,6 +300,25 @@ _PATH_MS_PER_UNIT = 90
 _PATH_MIN_SEGMENT_MS = 300
 
 _ARRAY_VERB_LABEL = {"compare": "comparing", "swap": "swapping", "highlight": "highlighting"}
+
+_STATE_BOX_WIDTH = 130
+_STATE_BOX_HEIGHT = 56
+_STATE_GAP = 70  # horizontal gap between box edges, wide enough for an arrow + label
+_STATE_TOP_MARGIN = 20  # headroom above the row when there is no back-edge arc
+_STATE_BACK_EDGE_HEADROOM = 40  # extra top margin so the back-edge's arc and its
+                                # arrowhead never clip the SVG's own top edge
+_STATE_LABEL_LANE_OFFSET = 22  # a transition label sits this far above the row,
+                               # clear of the box tops -- its own background
+                               # chip (see _STATE_LABEL_CHIP_*) keeps it legible
+                               # even where a long label overhangs a box edge
+_STATE_LABEL_CHIP_PAD_X = 8  # horizontal padding inside a label's background chip
+_STATE_LABEL_CHIP_PAD_Y = 3  # vertical padding inside a label's background chip
+_STATE_LABEL_CHAR_WIDTH = 7.2  # rough px-per-character at the label's 12px/600
+                               # weight font -- SVG cannot measure real text
+                               # width at render time, so the chip's size is
+                               # estimated from the authored string's length,
+                               # generous enough that real glyphs stay inside it
+_STATE_MARKER_RADIUS = 9
 
 
 def _timeline_island_json(timeline: dict) -> str:
@@ -265,8 +340,8 @@ def _timeline_island_json(timeline: dict) -> str:
 
 
 def _animate_html(anim: Animate, token: str) -> str:
-    if anim.pattern == "step-reveal":
-        return _step_reveal_html(anim, token)
+    if anim.pattern == "state-machine":
+        return _state_machine_html(anim, token)
     if anim.pattern == "state-toggle":
         return _state_toggle_html(anim, token)
     if anim.pattern == "array-ops":
@@ -275,40 +350,296 @@ def _animate_html(anim: Animate, token: str) -> str:
     return _path_trace_html(anim, token)
 
 
-def _step_reveal_html(anim: Animate, token: str) -> str:
+def _state_machine_html(anim: Animate, token: str) -> str:
+    """A marker travels between labeled state boxes as each transition fires,
+    reusing path-trace's proven "path-segment" step-kind mechanism (a tweened
+    {x, y} state object mirrored onto the marker's cx/cy via onUpdate -- see
+    _path_trace_html's docstring for why this indirection exists). Each
+    transition's action label is invisible at rest and fades in/out only for
+    that transition's own step, via a parallel "position": "<" step -- the
+    same "pair a second property change with the main tween" pattern
+    _array_ops_html already uses for its scale-pulse-alongside-a-fill-change.
+
+    Only AUTHORED transitions are ever drawn or animated. If the chain has no
+    authored back-edge (parse_animate guarantees at most one, and only from
+    the last state), the loop-restart is an invisible "kind": "set" snap of
+    the marker back to the first box and every label/box back to idle -- never
+    a drawn or animated arrow -- so a reader never mistakes the animation's
+    replay-for-engagement loop for a transition that was never authored.
+    """
     # See _array_ops_html's token_seed comment: the token's literal text must
     # never appear in this function's return value (blocks.restore() does an
     # unconditional second substitution pass keyed on the token), so only the
     # token's ordinal digits are used to build element ids.
     token_seed = re.sub(r"\D", "", token) or "0"
-    items = "".join(
-        f'<li class="anim__step" id="anim-step-{token_seed}-{i}">{html.escape(step)}</li>'
-        for i, step in enumerate(anim.steps)
+    box_ids = [f"anim-state-box-{token_seed}-{i}" for i in range(len(anim.states))]
+    # The <g> wrapper is never the fill-animation target: the only VISIBLE shape
+    # is its child <rect>, whose own fill wins over anything inherited from the
+    # group, so an animated fill on the <g> never reaches a rendered pixel.
+    # _array_ops_html tracks separate rect_ids for exactly this reason; this
+    # mirrors it, including the rect's inline fill="var(--anim-state-idle)"
+    # attribute (rather than a stylesheet rule) so nothing competes with the
+    # interpolated value while still rendering correctly before JS runs and
+    # under reduced-motion/print.
+    rect_ids = [f"anim-state-rect-{token_seed}-{i}" for i in range(len(anim.states))]
+    label_ids = [f"anim-state-label-{token_seed}-{i}" for i in range(len(anim.transitions))]
+    marker_id = f"anim-state-marker-{token_seed}"
+
+    # A back-edge's arc peaks above the row (see below), so the row itself is
+    # pushed down by _STATE_BACK_EDGE_HEADROOM whenever one exists -- otherwise
+    # the arc and its arrowhead have nowhere to go but past the SVG's own top
+    # edge (y=0), clipping. A chain with no back-edge keeps the smaller,
+    # plain _STATE_TOP_MARGIN.
+    has_back_edge_precheck = False
+    last_index_precheck = len(anim.states) - 1
+    last_transition_precheck = anim.transitions[-1]
+    if (
+        anim.states.index(last_transition_precheck[1]) < last_index_precheck
+        and anim.states.index(last_transition_precheck[0]) == last_index_precheck
+    ):
+        has_back_edge_precheck = True
+    row_y = _STATE_BACK_EDGE_HEADROOM if has_back_edge_precheck else _STATE_TOP_MARGIN
+    # Forward arrows and the traveling marker run at the boxes' own vertical
+    # center -- a real flowchart line entering/exiting each box at its edge --
+    # rather than a separate lane below. Never through a box's own text
+    # despite sharing its height: boxes paint LAST (see the return value's
+    # paint-order comment below), so each box's opaque rect covers the arrow's
+    # end and the marker's full extent whenever either is at/behind a box.
+    box_center_y = row_y + _STATE_BOX_HEIGHT / 2
+
+    def box_x(i: int) -> int:
+        return _STATE_GAP + i * (_STATE_BOX_WIDTH + _STATE_GAP)
+
+    def box_center_x(i: int) -> float:
+        return box_x(i) + _STATE_BOX_WIDTH / 2
+
+    total_width = len(anim.states) * (_STATE_BOX_WIDTH + _STATE_GAP) + _STATE_GAP
+    total_height = row_y + _STATE_BOX_HEIGHT + _STATE_LABEL_LANE_OFFSET + 4
+
+    boxes_html = []
+    for i, label in enumerate(anim.states):
+        x = box_x(i)
+        boxes_html.append(
+            f'<g class="anim__state-box" id="{box_ids[i]}">'
+            f'<rect id="{rect_ids[i]}" x="{x}" y="{row_y}" '
+            f'width="{_STATE_BOX_WIDTH}" height="{_STATE_BOX_HEIGHT}" rx="8" '
+            f'fill="var(--anim-state-idle)"></rect>'
+            f'<text x="{x + _STATE_BOX_WIDTH / 2:g}" '
+            f'y="{row_y + _STATE_BOX_HEIGHT / 2 + 5:g}">'
+            f"{html.escape(label)}</text>"
+            "</g>"
+        )
+
+    # Static arrows: one per AUTHORED forward transition, always visible -- this
+    # is the diagram's permanent structure. Derived from anim.transitions, never
+    # from every adjacent pair in anim.states: the grammar only requires
+    # transitions to cover the consecutive pairs they actually name, so a chain
+    # may legitimately have a gap, and drawing an arrow across that gap would
+    # invent an edge the course-writer never authored (the standing rule is that
+    # only authored transitions are ever drawn or animated as edges). A trailing
+    # authored back-edge (from the last state to an earlier one) is excluded
+    # here -- it gets its own curved arrow above the row instead, visually
+    # distinct from the forward chain.
+    arrows_html = []
+    forward_transitions = [
+        t for t in anim.transitions
+        if anim.states.index(t[1]) == anim.states.index(t[0]) + 1
+    ]
+    for from_state, to_state, _action in forward_transitions:
+        i = anim.states.index(from_state)
+        x1 = box_center_x(i)
+        x2 = box_center_x(i + 1)
+        arrows_html.append(
+            f'<line class="anim__state-arrow" x1="{x1:g}" y1="{box_center_y:g}" '
+            f'x2="{x2:g}" y2="{box_center_y:g}" marker-end="url(#anim-arrowhead-{token_seed})">'
+            "</line>"
+        )
+
+    back_edge = None
+    back_edge_curve: tuple[float, float, float, float] | None = None
+    last_index = len(anim.states) - 1
+    last_transition = anim.transitions[-1]
+    if anim.states.index(last_transition[1]) < last_index and anim.states.index(last_transition[0]) == last_index:
+        back_target_index = anim.states.index(last_transition[1])
+        x_from = box_center_x(last_index)
+        x_to = box_center_x(back_target_index)
+        y_top = row_y
+        arc_y = row_y - (_STATE_BACK_EDGE_HEADROOM - 10)
+        back_edge = (
+            f'<path class="anim__state-arrow anim__state-arrow--back" '
+            f'd="M {x_from:g} {y_top} C {x_from:g} {arc_y:g}, {x_to:g} {arc_y:g}, '
+            f'{x_to:g} {y_top}" marker-end="url(#anim-arrowhead-{token_seed})"></path>'
+        )
+        # The traveling marker's back-edge step reuses these exact two control
+        # points (see the timeline-building loop below) so it visibly follows
+        # this same drawn arc instead of cutting a straight line beneath it.
+        back_edge_curve = (x_from, arc_y, x_to, arc_y)
+
+    # Each label gets a background chip behind its text (a rect sized from the
+    # authored action string's estimated width) so it stays legible even where
+    # it overhangs a box's edge -- both chip and text paint AFTER the boxes
+    # (see the return value's paint-order comment), the opposite of the
+    # arrow/marker, which paint BEFORE the boxes precisely so the boxes can
+    # cover them. A label is never meant to be partly hidden; an arrow/marker
+    # sliding behind a box is the intended "enters the box" look.
+    labels_html = []
+    for i, (from_state, to_state, action) in enumerate(anim.transitions):
+        from_i = anim.states.index(from_state)
+        to_i = anim.states.index(to_state)
+        lx = (box_center_x(from_i) + box_center_x(to_i)) / 2
+        # The back-edge's label sits higher, above its own arc, clear of the
+        # forward labels' band right above the row -- same distinction the
+        # original (pre-lane) layout drew between the two cases.
+        is_this_the_back_edge = back_edge_curve is not None and i == len(anim.transitions) - 1
+        ly = (row_y - (_STATE_BACK_EDGE_HEADROOM - 6)) if is_this_the_back_edge else (row_y - _STATE_LABEL_LANE_OFFSET)
+        chip_width = len(action) * _STATE_LABEL_CHAR_WIDTH + 2 * _STATE_LABEL_CHIP_PAD_X
+        chip_height = 12 + 2 * _STATE_LABEL_CHIP_PAD_Y
+        # Grouped under one id so the timeline's single opacity animation (see
+        # below) fades the chip and its text together -- an empty chip left
+        # behind by an invisible label would otherwise read as a stray box.
+        labels_html.append(
+            f'<g class="anim__state-transition-label-group" id="{label_ids[i]}">'
+            f'<rect class="anim__state-transition-label-bg" '
+            f'x="{lx - chip_width / 2:g}" y="{ly - chip_height + 4:g}" '
+            f'width="{chip_width:g}" height="{chip_height:g}" rx="4"></rect>'
+            f'<text class="anim__state-transition-label" '
+            f'x="{lx:g}" y="{ly:g}">{html.escape(action)}</text>'
+            "</g>"
+        )
+
+    marker_x0, marker_y0 = box_center_x(0), box_center_y
+    marker_html = (
+        f'<circle class="anim__state-marker" id="{marker_id}" '
+        f'cx="{marker_x0:g}" cy="{marker_y0:g}" r="{_STATE_MARKER_RADIUS}"></circle>'
     )
-    n = len(anim.steps)
-    steps_json = []
-    for i in range(n):
-        steps_json.append({
-            "targets": [f"#anim-step-{token_seed}-{i}"],
-            "props": {"opacity": [0.65, 1, 0.65], "fontWeight": [400, 600, 400]},
-            # Each item gets its own full STEP_SECONDS-long reveal-hold-recede
-            # beat, NOT a 1/n slice of one shared cycle, so adding steps makes
-            # the loop longer rather than making every beat faster.
-            "duration": STEP_SECONDS * 1000,
-            "ease": "linear",
-            # No "<" anywhere: "<" would start this step alongside the previous
-            # one, so every item would pulse in unison. Leaving position unset
-            # takes anime.js's default timeline behaviour -- append after the
-            # previous step ends -- which is what "step-reveal" means: one item
-            # reveals after the one before it has receded.
+
+    defs = (
+        f'<defs><marker id="anim-arrowhead-{token_seed}" markerWidth="8" markerHeight="8" '
+        f'refX="6" refY="4" orient="auto"><path class="anim__state-arrowhead" '
+        f'd="M0,0 L8,4 L0,8 Z"></path></marker></defs>'
+    )
+
+    steps_json: list[dict] = []
+    for i, (from_state, to_state, action) in enumerate(anim.transitions):
+        from_i = anim.states.index(from_state)
+        to_i = anim.states.index(to_state)
+        fx, fy = box_center_x(from_i), box_center_y
+        tx, ty = box_center_x(to_i), box_center_y
+        marker_step: dict = {
+            "kind": "path-segment",
+            "marker": f"#{marker_id}",
+            "from": [fx, fy],
+            "to": [tx, ty],
+            "duration": 900,
+            "ease": "inOutQuad",
             "position": None,
+        }
+        # The back-edge (always the LAST authored transition, per the grammar)
+        # gets the same two cubic-Bezier control points as its own drawn arc
+        # (see back_edge_curve above), so the marker visibly follows that curve
+        # instead of cutting a straight line beneath it -- its "from"/"to" are
+        # overridden to the arc's own endpoints (the box's TOP edge, row_y, not
+        # box_center_y), since the arc starts/ends there, arcing above the row.
+        if back_edge_curve is not None and i == len(anim.transitions) - 1:
+            via1_x, via1_y, via2_x, via2_y = back_edge_curve
+            marker_step["from"] = [box_center_x(from_i), row_y]
+            marker_step["to"] = [box_center_x(to_i), row_y]
+            marker_step["via1"] = [via1_x, via1_y]
+            marker_step["via2"] = [via2_x, via2_y]
+        # The label must be fully visible BEFORE the marker starts moving and
+        # stay visible until AFTER it arrives, so it leads and trails the
+        # marker's own travel window rather than fading in lockstep with it.
+        # anime.js spaces a single tween's keyframes evenly across its one
+        # duration, so syncing both start times (as one opacity [0,1,1,0]
+        # step used to do) put the fade-in mid-travel instead of ahead of
+        # it. Three steps in strict sequence fix this: fade in first (its
+        # own 200ms), then the marker travels while the label sits at full
+        # opacity, then fade out (another 200ms) -- each step with no
+        # "position" override runs sequentially after the one before it, so
+        # this chain alone guarantees "label visible" fully brackets
+        # "marker moving" on both ends. The box-fill highlight below must
+        # still align with the marker's OWN start, so it is anchored via a
+        # negative offset from this chain's start rather than "<" (which
+        # would now resolve against the fade-in, not the marker).
+        steps_json.append({
+            "targets": [f"#{label_ids[i]}"],
+            "props": {"opacity": [0, 1]},
+            "duration": 200,
         })
-    timeline = {"loop": True, "loopDelay": 0, "steps": steps_json}
+        steps_json.append(marker_step)
+        steps_json.append({
+            "targets": [f"#{label_ids[i]}"],
+            "props": {"opacity": [1, 0]},
+            "duration": 200,
+        })
+        steps_json.append({
+            "targets": [f"#{rect_ids[to_i]}"],
+            "props": {"fill": ["var(--anim-state-idle)", "var(--anim-state-current)"]},
+            "duration": 300, "position": "-=1100",
+        })
+        if i > 0:
+            from_of_prev = anim.states.index(anim.transitions[i - 1][0])
+            steps_json.append({
+                "targets": [f"#{rect_ids[anim.states.index(anim.transitions[i - 1][1])]}"],
+                "props": {"fill": ["var(--anim-state-current)", "var(--anim-state-idle)"]},
+                "duration": 300, "position": "-=300",
+            })
+
+    has_back_edge = back_edge is not None
+    if not has_back_edge:
+        # Hold on the final state briefly, then snap everything back to the
+        # start invisibly -- never a drawn/animated "final -> first" arrow.
+        steps_json.append({"targets": [f"#{marker_id}"], "props": {}, "duration": 900})
+        steps_json.append({
+            "kind": "set", "targets": [f"#{marker_id}"],
+            "props": {"cx": marker_x0, "cy": marker_y0},
+        })
+        steps_json.append({
+            "kind": "set", "targets": [f"#{r}" for r in rect_ids],
+            "props": {"fill": "var(--anim-state-idle)"},
+        })
+        steps_json.append({
+            "kind": "set", "targets": [f"#{l}" for l in label_ids],
+            "props": {"opacity": 0},
+        })
+    else:
+        # The back-edge's own arrival-box highlight (added in the loop above)
+        # already returns the diagram toward state[0] visibly, but the box
+        # fill from that final arrival must still settle back to idle before
+        # the loop restarts, exactly like every other arrival does.
+        last_to_i = anim.states.index(anim.transitions[-1][1])
+        steps_json.append({
+            "kind": "set", "targets": [f"#{rect_ids[last_to_i]}"],
+            "props": {"fill": "var(--anim-state-idle)"},
+        })
+
+    timeline = {"loop": True, "loopDelay": 800, "steps": steps_json}
     timeline_json = _timeline_island_json(timeline)
+
+    static_lines = "".join(
+        f"<li>{html.escape(f)} — {html.escape(a)} — {html.escape(t)}</li>"
+        for f, t, a in anim.transitions
+    )
+    static_fallback = f'<ol class="anim__state-steps-static">{static_lines}</ol>'
+
+    back_edge_svg = back_edge or ""
+    # Paint order matters here, in two opposite directions:
+    # - Arrows and the marker come BEFORE the boxes, so a box's opaque rect
+    #   covers the arrow's end and the marker's full extent whenever either is
+    #   at/behind it -- the marker reads as a token entering the box, and the
+    #   arrow reads as originating/terminating exactly at the box's edge,
+    #   never floating in front of the box or its text.
+    # - Labels (with their own background chip) come AFTER the boxes, on top
+    #   of everything -- a label is authored prose, not diagram structure, and
+    #   must stay fully legible even where it overhangs a box's edge.
     return (
-        f'<div class="anim anim--step-reveal"><ol class="anim__steps">{items}</ol>'
+        '<div class="anim anim--state-machine">'
+        f'<svg class="anim__state-machine" dir="ltr" '
+        f'viewBox="0 0 {total_width} {total_height}">'
+        f"{defs}{''.join(arrows_html)}{back_edge_svg}"
+        f"{marker_html}{''.join(boxes_html)}{''.join(labels_html)}</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
-        "</div>"
+        f"{static_fallback}</div>"
     )
 
 
