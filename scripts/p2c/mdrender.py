@@ -546,27 +546,43 @@ def _state_machine_html(anim: Animate, token: str) -> str:
             marker_step["to"] = [box_center_x(to_i), row_y]
             marker_step["via1"] = [via1_x, via1_y]
             marker_step["via2"] = [via2_x, via2_y]
-        steps_json.append(marker_step)
-        # The label fades in alongside the marker's travel ("<" = start together)
-        # and back out once the marker arrives, via a second props keyframe on
-        # the same step -- opacity [0, 1, 0] over the travel's own duration
-        # mirrors array-ops's fill-flash-then-settle shape.
+        # The label must be fully visible BEFORE the marker starts moving and
+        # stay visible until AFTER it arrives, so it leads and trails the
+        # marker's own travel window rather than fading in lockstep with it.
+        # anime.js spaces a single tween's keyframes evenly across its one
+        # duration, so syncing both start times (as one opacity [0,1,1,0]
+        # step used to do) put the fade-in mid-travel instead of ahead of
+        # it. Three steps in strict sequence fix this: fade in first (its
+        # own 200ms), then the marker travels while the label sits at full
+        # opacity, then fade out (another 200ms) -- each step with no
+        # "position" override runs sequentially after the one before it, so
+        # this chain alone guarantees "label visible" fully brackets
+        # "marker moving" on both ends. The box-fill highlight below must
+        # still align with the marker's OWN start, so it is anchored via a
+        # negative offset from this chain's start rather than "<" (which
+        # would now resolve against the fade-in, not the marker).
         steps_json.append({
             "targets": [f"#{label_ids[i]}"],
-            "props": {"opacity": [0, 1, 1, 0]},
-            "duration": 1400, "position": "<",
+            "props": {"opacity": [0, 1]},
+            "duration": 200,
+        })
+        steps_json.append(marker_step)
+        steps_json.append({
+            "targets": [f"#{label_ids[i]}"],
+            "props": {"opacity": [1, 0]},
+            "duration": 200,
         })
         steps_json.append({
             "targets": [f"#{rect_ids[to_i]}"],
             "props": {"fill": ["var(--anim-state-idle)", "var(--anim-state-current)"]},
-            "duration": 300, "position": "<",
+            "duration": 300, "position": "-=1100",
         })
         if i > 0:
             from_of_prev = anim.states.index(anim.transitions[i - 1][0])
             steps_json.append({
                 "targets": [f"#{rect_ids[anim.states.index(anim.transitions[i - 1][1])]}"],
                 "props": {"fill": ["var(--anim-state-current)", "var(--anim-state-idle)"]},
-                "duration": 300, "position": "<",
+                "duration": 300, "position": "-=300",
             })
 
     has_back_edge = back_edge is not None
