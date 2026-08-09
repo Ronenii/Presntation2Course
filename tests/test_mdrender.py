@@ -4,7 +4,16 @@ import re
 
 import pytest
 
-from p2c.mdrender import Animate, AnimateError, FigureError, mermaid_problem, parse_animate, parse_figure, render_course
+from p2c.mdrender import (
+    _STATE_BOX_HEIGHT,
+    Animate,
+    AnimateError,
+    FigureError,
+    mermaid_problem,
+    parse_animate,
+    parse_figure,
+    render_course,
+)
 
 FM = """---
 title: Operating Systems
@@ -863,6 +872,76 @@ def test_state_machine_draws_no_arrow_for_an_unauthored_state_pair():
     # authored A -> B edge gets an arrow; B -> C was never authored.
     assert rendered.html_body.count('class="anim__state-box"') == 3
     assert rendered.html_body.count('class="anim__state-arrow"') == 1
+
+
+def test_state_machine_marker_and_labels_sit_below_the_box_row_not_on_its_text():
+    """Bug: the marker's resting/traveling y and each transition label's y used
+    to equal the box row's own vertical center -- the same line the box's
+    centered label text sits on -- so the marker visibly overlapped state text
+    and covered it while traveling. The marker and every transition label must
+    sit at a y strictly greater than the box row's bottom edge (i.e. in a lane
+    below the boxes, never crossing their text).
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n'
+        'transitions:\n  - A -> B: go\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    box_match = re.search(r'<rect id="anim-state-rect-\S+" x="\S+" y="(\S+)"', rendered.html_body)
+    box_y = float(box_match.group(1))
+    box_bottom = box_y + _STATE_BOX_HEIGHT
+    marker_match = re.search(r'class="anim__state-marker"[^>]*cy="(\S+)"', rendered.html_body)
+    assert float(marker_match.group(1)) > box_bottom
+    label_matches = re.findall(r'class="anim__state-transition-label"[^>]*y="(\S+)"', rendered.html_body)
+    assert label_matches
+    for y in label_matches:
+        assert float(y) > box_bottom
+
+
+def test_state_machine_back_edge_marker_follows_the_drawn_arc_not_a_straight_line():
+    """Bug: the back-edge's marker travel step used a plain straight-line tween
+    through the lane, ignoring the curved arc actually drawn for it -- the
+    marker cut straight across underneath the boxes instead of visibly
+    following the dashed arc above them. The back-edge's own path-segment step
+    must carry via1/via2 control points matching the drawn <path>'s own cubic
+    Bezier control points exactly, so the traveling marker traces that same
+    curve. No other path-segment step (a forward transition) has via1/via2.
+    """
+    md = course(
+        '<!-- topic: tlb -->\n### The TLB\n\n'
+        '```animate\npattern: state-machine\nstates:\n  - A\n  - B\n'
+        'transitions:\n  - A -> B: go\n  - B -> A: reset\n```\n\n'
+        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
+        '```glossary\nTLB: definition\n```\n'
+    )
+    rendered = render_course(md)
+    assert rendered.errors == []
+    back_edge_match = re.search(
+        r'<path class="anim__state-arrow anim__state-arrow--back" '
+        r'd="M (\S+) (\S+) C (\S+) (\S+), (\S+) (\S+), (\S+) (\S+)"',
+        rendered.html_body,
+    )
+    assert back_edge_match, "no back-edge <path> found"
+    x_from, y_top, cx1, cy1, cx2, cy2, x_to, y_top2 = (float(g) for g in back_edge_match.groups())
+    match = re.search(
+        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
+        rendered.html_body,
+        re.DOTALL,
+    )
+    steps = json.loads(match.group(1))["steps"]
+    marker_travels = [s for s in steps if s.get("kind") == "path-segment"]
+    assert len(marker_travels) == 2
+    forward_step, back_step = marker_travels
+    assert "via1" not in forward_step
+    assert "via2" not in forward_step
+    assert back_step["via1"] == [cx1, cy1]
+    assert back_step["via2"] == [cx2, cy2]
+    assert back_step["from"] == [x_from, y_top]
+    assert back_step["to"] == [x_to, y_top2]
 
 
 def test_state_toggle_renders_before_and_after_with_a_timeline_island():

@@ -304,8 +304,16 @@ _ARRAY_VERB_LABEL = {"compare": "comparing", "swap": "swapping", "highlight": "h
 _STATE_BOX_WIDTH = 130
 _STATE_BOX_HEIGHT = 56
 _STATE_GAP = 70  # horizontal gap between box edges, wide enough for an arrow + label
-_STATE_ROW_Y = 40  # top y-coordinate of every state box
-_STATE_LABEL_Y_OFFSET = -14  # transition label sits above the connecting arrow
+_STATE_TOP_MARGIN = 20  # headroom above the row when there is no back-edge arc
+_STATE_BACK_EDGE_HEADROOM = 40  # extra top margin so the back-edge's arc and its
+                                # arrowhead never clip the SVG's own top edge
+_STATE_LANE_GAP = 24  # vertical gap between a box's bottom edge and the
+                      # arrow/marker/label lane below the row -- keeps the
+                      # traveling marker and every transition label off of the
+                      # boxes' own centered text, which sits at the box's
+                      # vertical center, not down in this lane
+_STATE_LABEL_LANE_OFFSET = 8  # a transition label sits this far above its own
+                              # arrow/marker lane, not stacked on top of it
 _STATE_MARKER_RADIUS = 9
 
 
@@ -373,25 +381,46 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     label_ids = [f"anim-state-label-{token_seed}-{i}" for i in range(len(anim.transitions))]
     marker_id = f"anim-state-marker-{token_seed}"
 
+    # A back-edge's arc peaks above the row (see below), so the row itself is
+    # pushed down by _STATE_BACK_EDGE_HEADROOM whenever one exists -- otherwise
+    # the arc and its arrowhead have nowhere to go but past the SVG's own top
+    # edge (y=0), clipping. A chain with no back-edge keeps the smaller,
+    # plain _STATE_TOP_MARGIN.
+    has_back_edge_precheck = False
+    last_index_precheck = len(anim.states) - 1
+    last_transition_precheck = anim.transitions[-1]
+    if (
+        anim.states.index(last_transition_precheck[1]) < last_index_precheck
+        and anim.states.index(last_transition_precheck[0]) == last_index_precheck
+    ):
+        has_back_edge_precheck = True
+    row_y = _STATE_BACK_EDGE_HEADROOM if has_back_edge_precheck else _STATE_TOP_MARGIN
+    # The arrow/marker/label lane sits BELOW the row, clear of every box's own
+    # centered label text (which sits at the box's vertical center) -- the
+    # marker travels along this lane's y, never through a box's text, and each
+    # transition label sits just above the lane line, next to the arrow/marker
+    # it actually describes.
+    lane_y = row_y + _STATE_BOX_HEIGHT + _STATE_LANE_GAP
+
     def box_x(i: int) -> int:
         return _STATE_GAP + i * (_STATE_BOX_WIDTH + _STATE_GAP)
 
-    def box_center(i: int) -> tuple[float, float]:
-        return box_x(i) + _STATE_BOX_WIDTH / 2, _STATE_ROW_Y + _STATE_BOX_HEIGHT / 2
+    def box_center_x(i: int) -> float:
+        return box_x(i) + _STATE_BOX_WIDTH / 2
 
     total_width = len(anim.states) * (_STATE_BOX_WIDTH + _STATE_GAP) + _STATE_GAP
-    total_height = _STATE_ROW_Y + _STATE_BOX_HEIGHT + 40
+    total_height = lane_y + _STATE_LABEL_LANE_OFFSET + _STATE_MARKER_RADIUS + 12
 
     boxes_html = []
     for i, label in enumerate(anim.states):
         x = box_x(i)
         boxes_html.append(
             f'<g class="anim__state-box" id="{box_ids[i]}">'
-            f'<rect id="{rect_ids[i]}" x="{x}" y="{_STATE_ROW_Y}" '
+            f'<rect id="{rect_ids[i]}" x="{x}" y="{row_y}" '
             f'width="{_STATE_BOX_WIDTH}" height="{_STATE_BOX_HEIGHT}" rx="8" '
             f'fill="var(--anim-state-idle)"></rect>'
             f'<text x="{x + _STATE_BOX_WIDTH / 2:g}" '
-            f'y="{_STATE_ROW_Y + _STATE_BOX_HEIGHT / 2 + 5:g}">'
+            f'y="{row_y + _STATE_BOX_HEIGHT / 2 + 5:g}">'
             f"{html.escape(label)}</text>"
             "</g>"
         )
@@ -404,7 +433,7 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     # invent an edge the course-writer never authored (the standing rule is that
     # only authored transitions are ever drawn or animated as edges). A trailing
     # authored back-edge (from the last state to an earlier one) is excluded
-    # here -- it gets its own curved arrow below the row instead, visually
+    # here -- it gets its own curved arrow above the row instead, visually
     # distinct from the forward chain.
     arrows_html = []
     forward_transitions = [
@@ -413,43 +442,46 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     ]
     for from_state, to_state, _action in forward_transitions:
         i = anim.states.index(from_state)
-        x1 = box_x(i) + _STATE_BOX_WIDTH
-        x2 = box_x(i + 1)
-        y = _STATE_ROW_Y + _STATE_BOX_HEIGHT / 2
+        x1 = box_center_x(i)
+        x2 = box_center_x(i + 1)
         arrows_html.append(
-            f'<line class="anim__state-arrow" x1="{x1}" y1="{y:g}" '
-            f'x2="{x2}" y2="{y:g}" marker-end="url(#anim-arrowhead-{token_seed})">'
+            f'<line class="anim__state-arrow" x1="{x1:g}" y1="{lane_y:g}" '
+            f'x2="{x2:g}" y2="{lane_y:g}" marker-end="url(#anim-arrowhead-{token_seed})">'
             "</line>"
         )
 
     back_edge = None
+    back_edge_curve: tuple[float, float, float, float] | None = None
     last_index = len(anim.states) - 1
     last_transition = anim.transitions[-1]
     if anim.states.index(last_transition[1]) < last_index and anim.states.index(last_transition[0]) == last_index:
         back_target_index = anim.states.index(last_transition[1])
-        x_from = box_x(last_index) + _STATE_BOX_WIDTH / 2
-        x_to = box_x(back_target_index) + _STATE_BOX_WIDTH / 2
-        y_top = _STATE_ROW_Y
-        arc_y = _STATE_ROW_Y - 30
+        x_from = box_center_x(last_index)
+        x_to = box_center_x(back_target_index)
+        y_top = row_y
+        arc_y = row_y - (_STATE_BACK_EDGE_HEADROOM - 10)
         back_edge = (
             f'<path class="anim__state-arrow anim__state-arrow--back" '
             f'd="M {x_from:g} {y_top} C {x_from:g} {arc_y:g}, {x_to:g} {arc_y:g}, '
             f'{x_to:g} {y_top}" marker-end="url(#anim-arrowhead-{token_seed})"></path>'
         )
-        total_height += 30
+        # The traveling marker's back-edge step reuses these exact two control
+        # points (see the timeline-building loop below) so it visibly follows
+        # this same drawn arc instead of cutting a straight line beneath it.
+        back_edge_curve = (x_from, arc_y, x_to, arc_y)
 
     labels_html = []
     for i, (from_state, to_state, action) in enumerate(anim.transitions):
         from_i = anim.states.index(from_state)
         to_i = anim.states.index(to_state)
-        lx = (box_center(from_i)[0] + box_center(to_i)[0]) / 2
-        ly = _STATE_ROW_Y + _STATE_LABEL_Y_OFFSET if to_i > from_i else _STATE_ROW_Y - 34
+        lx = (box_center_x(from_i) + box_center_x(to_i)) / 2
+        ly = lane_y - _STATE_LABEL_LANE_OFFSET
         labels_html.append(
             f'<text class="anim__state-transition-label" id="{label_ids[i]}" '
             f'x="{lx:g}" y="{ly:g}">{html.escape(action)}</text>'
         )
 
-    marker_x0, marker_y0 = box_center(0)
+    marker_x0, marker_y0 = box_center_x(0), lane_y
     marker_html = (
         f'<circle class="anim__state-marker" id="{marker_id}" '
         f'cx="{marker_x0:g}" cy="{marker_y0:g}" r="{_STATE_MARKER_RADIUS}"></circle>'
@@ -465,9 +497,9 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     for i, (from_state, to_state, action) in enumerate(anim.transitions):
         from_i = anim.states.index(from_state)
         to_i = anim.states.index(to_state)
-        fx, fy = box_center(from_i)
-        tx, ty = box_center(to_i)
-        steps_json.append({
+        fx, fy = box_center_x(from_i), lane_y
+        tx, ty = box_center_x(to_i), lane_y
+        marker_step: dict = {
             "kind": "path-segment",
             "marker": f"#{marker_id}",
             "from": [fx, fy],
@@ -475,7 +507,20 @@ def _state_machine_html(anim: Animate, token: str) -> str:
             "duration": 900,
             "ease": "inOutQuad",
             "position": None,
-        })
+        }
+        # The back-edge (always the LAST authored transition, per the grammar)
+        # gets the same two cubic-Bezier control points as its own drawn arc
+        # (see back_edge_curve above), so the marker visibly follows that curve
+        # instead of cutting a straight line through the lane -- its "from"/"to"
+        # are overridden to the arc's own endpoints (row_y, not lane_y) too,
+        # since the arc starts/ends at the boxes' top edge, not the lane below.
+        if back_edge_curve is not None and i == len(anim.transitions) - 1:
+            via1_x, via1_y, via2_x, via2_y = back_edge_curve
+            marker_step["from"] = [box_center_x(from_i), row_y]
+            marker_step["to"] = [box_center_x(to_i), row_y]
+            marker_step["via1"] = [via1_x, via1_y]
+            marker_step["via2"] = [via2_x, via2_y]
+        steps_json.append(marker_step)
         # The label fades in alongside the marker's travel ("<" = start together)
         # and back out once the marker arrives, via a second props keyframe on
         # the same step -- opacity [0, 1, 0] over the travel's own duration

@@ -430,33 +430,71 @@
         if (step.kind === "path-segment") {
           var marker = document.querySelector(step.marker);
           var trail = step.trail ? document.querySelector(step.trail) : null;
-          var state = { x: step.from[0], y: step.from[1] };
           var stepCaption = step.caption;
           var fromX = step.from[0];
           var fromY = step.from[1];
+          var toX = step.to[0];
+          var toY = step.to[1];
+          // A curved segment (state-machine's back-edge, whose static arrow is a
+          // cubic Bezier arcing above the row) carries the SAME two control
+          // points its <path>'s "C x1 y1, x2 y2, x y" already uses, so the
+          // traveling marker visibly follows the drawn arc instead of cutting a
+          // straight line underneath it. Every other segment (path-trace, and
+          // state-machine's own forward transitions) has no "via" and keeps the
+          // original plain linear x/y tween -- unchanged from before curves
+          // existed, since a straight segment's Bezier-with-zero-curvature form
+          // would be equivalent but is needless extra math for the common case.
+          var via1 = step.via1;
+          var via2 = step.via2;
+          var state = via1 && via2 ? { t: 0 } : { x: fromX, y: fromY };
+          function cubicPoint(t) {
+            var mt = 1 - t;
+            var x = mt * mt * mt * fromX + 3 * mt * mt * t * via1[0] +
+              3 * mt * t * t * via2[0] + t * t * t * toX;
+            var y = mt * mt * mt * fromY + 3 * mt * mt * t * via1[1] +
+              3 * mt * t * t * via2[1] + t * t * t * toY;
+            return { x: x, y: y };
+          }
           var segment = {
             duration: step.duration,
             ease: step.ease,
             // Explicit [from, to] pairs rather than bare targets: the tween must
             // start from this segment's own origin on EVERY loop iteration, not
             // from wherever the shared state object was left by the previous lap.
-            x: [fromX, step.to[0]],
-            y: [fromY, step.to[1]],
             onBegin: function () {
-              state.x = fromX;
-              state.y = fromY;
+              if (via1 && via2) {
+                state.t = 0;
+              } else {
+                state.x = fromX;
+                state.y = fromY;
+              }
               if (stepCaption && caption) { caption.textContent = stepCaption; }
             },
             onUpdate: function () {
+              var x, y;
+              if (via1 && via2) {
+                var point = cubicPoint(state.t);
+                x = point.x;
+                y = point.y;
+              } else {
+                x = state.x;
+                y = state.y;
+              }
               if (marker) {
-                marker.setAttribute("cx", state.x);
-                marker.setAttribute("cy", state.y);
+                marker.setAttribute("cx", x);
+                marker.setAttribute("cy", y);
               }
               if (trail) {
-                trail.setAttribute("d", trail.getAttribute("d") + " L " + state.x + "," + state.y);
+                trail.setAttribute("d", trail.getAttribute("d") + " L " + x + "," + y);
               }
             },
           };
+          if (via1 && via2) {
+            segment.t = [0, 1];
+          } else {
+            segment.x = [fromX, toX];
+            segment.y = [fromY, toY];
+          }
           if (step.position) {
             tl.add(state, segment, step.position);
           } else {
