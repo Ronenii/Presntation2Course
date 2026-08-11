@@ -104,7 +104,16 @@ def test_concurrent_claims_for_the_same_url_exactly_one_wins(tmp_path):
 
     def attempt():
         barrier.wait()
-        results.append(claim(tmp_path, url, sleep=lambda s: None))
+        # A tiny stale_seconds keeps this test fast: with the real 240s
+        # default and no-op sleep, a losing thread spins in claim()'s poll
+        # loop on real wall-clock time (nothing shortens `now`), so 4
+        # cascading takeovers cost ~16 minutes. Scaling both stale_seconds
+        # and poll_seconds down preserves the exact same code path,
+        # mkdir()-atomicity race, and assertion -- only wall-clock cost
+        # changes.
+        results.append(
+            claim(tmp_path, url, stale_seconds=0.05, poll_seconds=0.01, sleep=time.sleep)
+        )
 
     threads = [threading.Thread(target=attempt) for _ in range(5)]
     for t in threads:
