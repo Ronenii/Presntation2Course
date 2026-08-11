@@ -72,6 +72,7 @@ independently testable:
     outline.json
     research/<topic-id>.md
     cache/<hash>/{outline.json, research/<topic-id>.md}
+    sources/<url-hash>.md          shared fetch cache (Feature D)
     modules/<nn>-<slug>.md
     review/pass-<n>.json
     review/pass-<n>-auditor.json
