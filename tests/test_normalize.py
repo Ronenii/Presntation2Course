@@ -9,6 +9,7 @@ import pytest
 from fixtures.make_fixtures import make_pdf, make_pptx
 from p2c.normalize import (
     BadDeck,
+    ChromiumMissing,
     NormalizeResult,
     SofficeMissing,
     collect_inputs,
@@ -47,15 +48,117 @@ def test_page_count_rejects_zero_pages_with_a_spoofed_trailing_count():
         pdf_page_count(spoofed)
 
 
+def test_find_chromium_is_available_from_normalize(monkeypatch, tmp_path):
+    # find_chromium moved here from p2c.exportpdf so normalize.py can use it
+    # without importing exportpdf.py (which itself imports from normalize.py
+    # -- importing the other way would be circular).
+    from p2c.normalize import find_chromium
+
+    fake = tmp_path / "fake-chromium"
+    fake.write_text("#!/bin/sh\necho fake\n")
+    fake.chmod(0o755)
+    assert find_chromium(str(fake)) == str(fake)
+
+
+def _fake_chromium_writing_pdf(tmp_path, pages=1):
+    """Same stand-in pattern as tests/test_export_pdf.py's fake_chromium --
+    writes a real minimal PDF to whatever --print-to-pdf= path it's given."""
+    script = tmp_path / "fake-chromium-normalize"
+    data = make_pdf([["rendered"]] * pages)
+    body = (
+        "import sys, pathlib\n"
+        "out = [a.split('=', 1)[1] for a in sys.argv if a.startswith('--print-to-pdf=')][0]\n"
+        f"pathlib.Path(out).write_bytes({data!r})\n"
+    )
+    script.write_text(f"#!{sys.executable}\n{body}")
+    script.chmod(0o755)
+    return str(script)
+
+
+def test_normalize_renders_markdown_to_pdf_via_chromium(tmp_path, monkeypatch):
+    monkeypatch.setenv("P2C_CHROMIUM", _fake_chromium_writing_pdf(tmp_path, pages=2))
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "essay.md").write_text("# Title\n\nSome prose.\n\n## Section 2\n\nMore.\n")
+    out = tmp_path / "out"
+    result = normalize([src_dir / "essay.md"], out, soffice=None)
+    assert [p.name for p in result.pdfs] == ["essay.pdf"]
+    assert [p.name for p in result.converted] == ["essay.pdf"]
+    assert result.pages == {"essay.pdf": 2}
+
+
+def test_normalize_renders_plain_text_to_pdf_via_chromium(tmp_path, monkeypatch):
+    monkeypatch.setenv("P2C_CHROMIUM", _fake_chromium_writing_pdf(tmp_path, pages=1))
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "notes.txt").write_text("Just plain text, no markdown syntax.\n")
+    out = tmp_path / "out"
+    result = normalize([src_dir / "notes.txt"], out, soffice=None)
+    assert [p.name for p in result.pdfs] == ["notes.pdf"]
+    assert result.pages == {"notes.pdf": 1}
+
+
+def test_normalize_rejects_a_non_utf8_text_source(tmp_path, monkeypatch):
+    # Chromium is mocked (same fake-Chromium-script pattern as the sibling
+    # tests above) so this test is deterministic regardless of whether the
+    # test environment happens to have a real Chromium installed -- the
+    # decode of src happens before Chromium is ever invoked, but pinning
+    # P2C_CHROMIUM to a working fake removes any doubt.
+    monkeypatch.setenv("P2C_CHROMIUM", _fake_chromium_writing_pdf(tmp_path, pages=1))
+    bad = tmp_path / "bad.txt"
+    bad.write_bytes(b"Caf\xe9 latin1 text\n")  # invalid UTF-8 (a lone 0xe9 byte)
+    with pytest.raises(BadDeck, match="not valid UTF-8"):
+        normalize([bad], tmp_path / "out", soffice=None)
+
+
+def test_normalize_hard_fails_on_markdown_without_chromium(tmp_path, monkeypatch):
+    monkeypatch.delenv("P2C_CHROMIUM", raising=False)
+    monkeypatch.setattr("p2c.normalize.find_chromium", lambda explicit=None: None)
+    (tmp_path / "essay.md").write_text("# Title\n")
+    with pytest.raises(ChromiumMissing):
+        normalize([tmp_path / "essay.md"], tmp_path / "out", soffice=None)
+
+
+def test_export_pdf_exit_6_is_unaffected_by_the_new_exit_7(tmp_path, monkeypatch):
+    # Regression guard: a .pdf/.pptx/.docx run must never raise ChromiumMissing
+    # even when Chromium is completely absent -- exit 7 is scoped to .txt/.md
+    # input only, and export-pdf's own separate exit-6 soft-skip is untouched.
+    monkeypatch.delenv("P2C_CHROMIUM", raising=False)
+    monkeypatch.setattr("p2c.normalize.find_chromium", lambda explicit=None: None)
+    result = normalize([FIXTURES / "terse.pdf"], tmp_path / "out", soffice=None)
+    assert result.pages == {"terse.pdf": 3}
+
+
+@pytest.mark.skipif(
+    all(shutil.which(name) is None for name in
+        ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable")),
+    reason="no Chromium installed",
+)
+def test_real_chromium_renders_markdown_to_a_readable_pdf(tmp_path):
+    # Mirrors tests/test_export_pdf.py's test_real_chromium_produces_a_pdf --
+    # same opt-in-when-available pattern, but exercised through normalize()'s
+    # .md path instead of exportpdf's course-HTML path.
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "essay.md").write_text(
+        "# A Real Heading\n\nSome real prose the vision-based summarizer must "
+        "be able to read as an actual page of text, not a blank page.\n"
+    )
+    result = normalize([src_dir / "essay.md"], tmp_path / "out", soffice=None)
+    assert result.pages == {"essay.pdf": 1}
+    produced_pdf = (tmp_path / "out" / "essay.pdf").read_bytes()
+    assert produced_pdf.startswith(b"%PDF-")
+
+
 def test_collect_inputs_expands_a_directory_sorted(tmp_path):
     (tmp_path / "b.pdf").write_bytes(make_pdf([["b"]]))
     (tmp_path / "a.pdf").write_bytes(make_pdf([["a"]]))
-    (tmp_path / "notes.txt").write_text("ignored")
+    (tmp_path / "notes.key").write_text("ignored")
     assert [p.name for p in collect_inputs([tmp_path])] == ["a.pdf", "b.pdf"]
 
 
 def test_collect_inputs_rejects_a_directory_with_no_decks(tmp_path):
-    with pytest.raises(BadDeck, match="no PDF or PPTX"):
+    with pytest.raises(BadDeck, match="no PDF, PPTX, DOCX, TXT, or MD"):
         collect_inputs([tmp_path])
 
 
@@ -157,11 +260,41 @@ def test_normalize_dedupes_colliding_pptx_stems_without_clobbering(tmp_path):
     assert pdf_page_count(second) == 1
 
 
+def test_normalize_converts_docx_via_soffice(tmp_path):
+    fake_soffice = tmp_path / "fake_soffice.py"
+    fake_soffice.write_text(_FAKE_SOFFICE)
+    fake_soffice.chmod(0o755)
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "essay.docx").write_bytes(b"not a real docx, soffice is faked")
+    out = tmp_path / "out"
+    result = normalize([src_dir / "essay.docx"], out, str(fake_soffice))
+    assert [p.name for p in result.pdfs] == ["essay.pdf"]
+    assert [p.name for p in result.converted] == ["essay.pdf"]
+    assert result.pages == {"essay.pdf": 1}
+
+
+def test_normalize_hard_fails_on_docx_without_soffice(tmp_path):
+    (tmp_path / "essay.docx").write_bytes(b"not a real docx")
+    with pytest.raises(SofficeMissing) as exc:
+        normalize([tmp_path / "essay.docx"], tmp_path / "out", soffice=None)
+    assert "libreoffice" in str(exc.value).lower()
+    assert "docx" in str(exc.value).lower()
+
+
+def test_collect_inputs_error_message_lists_all_supported_formats(tmp_path):
+    odd = tmp_path / "deck.key"
+    odd.write_text("nope")
+    with pytest.raises(BadDeck, match=r"PDF, PPTX, DOCX, TXT, or MD"):
+        collect_inputs([odd])
+
+
 def test_normalize_hard_fails_on_pptx_without_soffice(tmp_path):
     with pytest.raises(SofficeMissing) as exc:
         normalize([FIXTURES / "terse.pptx"], tmp_path / "out", soffice=None)
     assert exc.value.exit_code == 4
     assert "libreoffice" in str(exc.value).lower()
+    assert "pptx" in str(exc.value).lower()
 
 
 def test_normalize_rejects_a_corrupt_pdf(tmp_path):
@@ -203,6 +336,18 @@ def test_cli_exit_4_on_pptx_without_soffice(tmp_path, monkeypatch):
     )
     assert proc.returncode == 4
     assert "apt install libreoffice" in proc.stderr
+
+
+def test_cli_exit_7_on_markdown_without_chromium(tmp_path):
+    (tmp_path / "essay.md").write_text("# Title\n")
+    env = dict(**__import__("os").environ, P2C_CHROMIUM="definitely-not-a-browser")
+    proc = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "normalize"),
+         str(tmp_path / "essay.md"), "--out", str(tmp_path / "out")],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 7
+    assert "chromium" in proc.stderr.lower() or "Chromium" in proc.stderr
 
 
 def test_cli_exit_5_on_corrupt_deck(tmp_path):

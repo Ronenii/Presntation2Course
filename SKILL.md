@@ -1,6 +1,6 @@
 ---
 name: presentation2course
-description: Use when the user wants a lecture slide deck (PDF or PPTX), or a folder of decks, turned into a course they can actually study from — "turn this deck into a course", "make a course from these lectures", "I can't revise from these slides". Produces a self-contained <course-title>.html with analogies, diagrams, a glossary and per-topic quizzes, plus a matching <course-title>.pdf.
+description: Use when the user wants a lecture slide deck (PDF or PPTX), an article/essay/research paper (PDF, DOCX, TXT, or MD), or a folder of any of these, turned into a course they can actually study from — "turn this deck into a course", "make a course from these lectures", "turn this paper into a course", "I can't revise from these slides". Produces a self-contained <course-title>.html with analogies, diagrams, a glossary and per-topic quizzes, plus a matching <course-title>.pdf.
 ---
 
 # Presentation2Course
@@ -85,11 +85,16 @@ independently testable:
 
 Read the JSON on stdout for `pdfs`, `converted`, `pages`, `total_pages`.
 
-- **exit 4** — PPTX input with no LibreOffice. **Stop the run.** Print the install command
-  from stderr verbatim. Do not fall back to text extraction: it would silently discard
-  every diagram, and the diagram is usually the most valuable thing on the slide.
+- **exit 4** — PPTX or DOCX input with no LibreOffice. **Stop the run.** Print the install
+  command from stderr verbatim. Do not fall back to text extraction: it would silently
+  discard every diagram, and the diagram is usually the most valuable thing on the slide.
 - **exit 5** — an unreadable or zero-page deck. **Stop the run**, printing the offending
   file from stderr.
+- **exit 7** — TXT or MD input with no headless Chromium available. **Stop the run.** Print
+  the install command from stderr verbatim. Unlike PDF export's own Chromium dependency
+  (which skips softly, since the HTML course still has a working print button), there is no
+  fallback here: without Chromium there is no way to turn plain text into the page images
+  the summarizer reads.
 
 ## Phase 1 — summarizer (1 agent)
 
@@ -328,8 +333,9 @@ Agents run: <n>
 
 | Condition | Behaviour |
 |---|---|
-| `soffice` missing, PPTX input | Hard fail (`normalize` exit 4), print the install command |
-| Chromium missing | Skip `<basename>.pdf` (`export-pdf` exit 6), note it, HTML print button still works |
+| `soffice` missing, PPTX or DOCX input | Hard fail (`normalize` exit 4), print the install command |
+| Chromium missing, PDF export | Skip `<basename>.pdf` (`export-pdf` exit 6), note it, HTML print button still works |
+| Chromium missing, TXT/MD input | Hard fail (`normalize` exit 7), print the install command — no fallback exists for this input type |
 | No language stated, or unresolvable | Hard fail before Phase 0, print the offending wording |
 | Deck pages unreadable or blank | Hard fail (`normalize` exit 5, or the summarizer's report) with the page refs |
 | Research unsubstantiated | Mark the topic `unverified`, the writer hedges, never invents |
