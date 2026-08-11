@@ -79,6 +79,30 @@ def test_themes_use_system_font_stacks_only():
         assert "@font-face" not in css
 
 
+_MULTILINGUAL_FONT_TAIL = (
+    "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR",
+    "Noto Sans Devanagari", "Noto Naskh Arabic", "Noto Sans Hebrew",
+)
+
+
+@pytest.mark.parametrize("name", sorted(set(THEME_FOR_DOMAIN.values())))
+def test_theme_fonts_include_a_multilingual_fallback_tail(name):
+    """--font-mono stays Latin/ASCII-only (code is always English/symbols);
+    --font-body/--font-heading gain a common tail of named system fonts so an
+    unbounded target language (CJK, Devanagari, Arabic, Hebrew, ...) still
+    renders with a matching system font instead of falling through to the
+    browser's generic serif/sans-serif, which most OSes pair with a
+    Latin-only face."""
+    css = (ASSETS / "themes" / name / "theme.css").read_text()
+    body_line = next(line for line in css.splitlines() if "--font-body:" in line)
+    heading_line = next(line for line in css.splitlines() if "--font-heading:" in line)
+    mono_line = next(line for line in css.splitlines() if "--font-mono:" in line)
+    for font in _MULTILINGUAL_FONT_TAIL:
+        assert font in body_line, f"{font} missing from {name} --font-body"
+        assert font in heading_line, f"{font} missing from {name} --font-heading"
+        assert font not in mono_line, f"{font} unexpectedly in {name} --font-mono"
+
+
 def test_vendored_mermaid_matches_the_pin():
     data = (ASSETS / "vendor" / "mermaid.min.js").read_bytes()
     assert hashlib.sha256(data).hexdigest() == MERMAID_SHA256
