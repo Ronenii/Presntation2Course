@@ -7,24 +7,13 @@ Mermaid's render; course.js also sets data-mermaid-ready="true" when it finishes
 what a future CDP-based exporter would wait on.
 """
 
-import os
-import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from p2c.normalize import BadDeck, pdf_page_count
+from p2c.normalize import BadDeck, CHROMIUM_CANDIDATES, find_chromium, pdf_page_count
 
-CHROMIUM_CANDIDATES = (
-    "chromium",
-    "chromium-browser",
-    "google-chrome",
-    "google-chrome-stable",
-    "chrome",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-)
 SKIP_REASON = (
     "headless Chromium was not found, so the PDF was not written. "
     "Open the course HTML and use the Download PDF button instead."
@@ -42,22 +31,6 @@ class ExportResult:
     pages: int
     skipped: bool
     reason: str | None
-
-
-def find_chromium(explicit: str | None = None) -> str | None:
-    """An explicitly requested browser is honoured or refused, never substituted."""
-    requested = explicit or os.environ.get("P2C_CHROMIUM")
-    if requested:
-        if Path(requested).is_file() or shutil.which(requested):
-            return requested
-        return None
-    for candidate in CHROMIUM_CANDIDATES:
-        if Path(candidate).is_file():
-            return candidate
-        found = shutil.which(candidate)
-        if found:
-            return found
-    return None
 
 
 def pdf_command(

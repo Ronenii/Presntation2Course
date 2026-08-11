@@ -5,6 +5,7 @@ the most valuable thing on a slide, and extraction silently discards it.
 """
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -12,12 +13,46 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-SUPPORTED = {".pdf", ".pptx", ".docx"}
+import markdown
+
+SUPPORTED = {".pdf", ".pptx", ".docx", ".txt", ".md"}
 INSTALL_HINT = (
     "PPTX input requires LibreOffice. Install it and re-run:\n"
     "  sudo apt install libreoffice        # Debian/Ubuntu\n"
     "  brew install --cask libreoffice     # macOS"
 )
+CHROMIUM_INSTALL_HINT = (
+    "TXT/MD input requires headless Chromium to render page images. Install it "
+    "and re-run:\n"
+    "  sudo apt install chromium         # Debian/Ubuntu\n"
+    "  brew install --cask chromium      # macOS"
+)
+
+CHROMIUM_CANDIDATES = (
+    "chromium",
+    "chromium-browser",
+    "google-chrome",
+    "google-chrome-stable",
+    "chrome",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+)
+
+
+def find_chromium(explicit: str | None = None) -> str | None:
+    """An explicitly requested browser is honoured or refused, never substituted."""
+    requested = explicit or os.environ.get("P2C_CHROMIUM")
+    if requested:
+        if Path(requested).is_file() or shutil.which(requested):
+            return requested
+        return None
+    for candidate in CHROMIUM_CANDIDATES:
+        if Path(candidate).is_file():
+            return candidate
+        found = shutil.which(candidate)
+        if found:
+            return found
+    return None
 
 
 class NormalizeError(Exception):
@@ -30,6 +65,10 @@ class SofficeMissing(NormalizeError):
 
 class BadDeck(NormalizeError):
     exit_code = 5
+
+
+class ChromiumMissing(NormalizeError):
+    exit_code = 7
 
 
 @dataclass
@@ -89,11 +128,11 @@ def collect_inputs(paths: list[Path]) -> list[Path]:
                 p for p in path.rglob("*") if p.suffix.lower() in SUPPORTED and p.is_file()
             )
             if not decks:
-                raise BadDeck(f"{path}: no PDF, PPTX, or DOCX files found")
+                raise BadDeck(f"{path}: no PDF, PPTX, DOCX, TXT, or MD files found")
             found.extend(decks)
         elif path.is_file():
             if path.suffix.lower() not in SUPPORTED:
-                raise BadDeck(f"{path}: unsupported input (expected PDF, PPTX, or DOCX)")
+                raise BadDeck(f"{path}: unsupported input (expected PDF, PPTX, DOCX, TXT, or MD)")
             found.append(path)
         else:
             raise BadDeck(f"{path}: no such file or directory")
@@ -136,6 +175,64 @@ def _convert_office_doc(src: Path, out_dir: Path, soffice: str, target: Path) ->
     return target
 
 
+_TEXT_SOURCE_TEMPLATE = """<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  body {{ font-family: serif; font-size: 14px; line-height: 1.5;
+          max-width: 40rem; margin: 2rem auto; }}
+  h1, h2, h3 {{ font-family: sans-serif; }}
+</style>
+</head><body>
+{body}
+</body></html>
+"""
+
+# Plain "extra"/"sane_lists" only -- the same extension list p2c.mdrender._md()
+# uses, but this is never routed through mdrender._md() or
+# p2c.blocks.extract_fences() itself. Those two understand P2C's own
+# quiz/glossary/animate fence grammar; a generic external article is not
+# course-authored content and must not be interpreted through that lens.
+_TEXT_SOURCE_MD_EXTENSIONS = ["extra", "sane_lists"]
+
+
+def _render_text_source_to_pdf(src: Path, chromium: str, target: Path) -> Path:
+    """Render a .txt/.md file to a one-shot standalone HTML page, then print
+    that to PDF via headless Chromium -- the same print-to-pdf mechanism
+    p2c.exportpdf uses for course output, reused here via find_chromium
+    (see module-level docstring for why this lives in normalize.py, not
+    exportpdf.py)."""
+    text = src.read_text(encoding="utf-8")
+    if src.suffix.lower() == ".md":
+        body_html = markdown.Markdown(extensions=_TEXT_SOURCE_MD_EXTENSIONS).convert(text)
+    else:
+        import html as _html
+        body_html = f"<pre>{_html.escape(text)}</pre>"
+    page_html = _TEXT_SOURCE_TEMPLATE.format(body=body_html)
+
+    with tempfile.TemporaryDirectory() as scratch:
+        html_path = Path(scratch) / f"{src.stem}.html"
+        html_path.write_text(page_html, encoding="utf-8")
+        with tempfile.TemporaryDirectory() as profile:
+            command = [
+                chromium,
+                "--headless=new",
+                "--disable-gpu",
+                "--no-sandbox",
+                "--no-first-run",
+                "--no-pdf-header-footer",
+                f"--user-data-dir={profile}",
+                "--virtual-time-budget=20000",
+                f"--print-to-pdf={target}",
+                html_path.resolve().as_uri(),
+            ]
+            proc = subprocess.run(command, capture_output=True, text=True, timeout=180)
+        if proc.returncode != 0 or not target.exists():
+            raise BadDeck(
+                f"{src}: Chromium print-to-pdf failed\n{proc.stdout}\n{proc.stderr}"
+            )
+    return target
+
+
 def normalize(
     inputs: list[Path], out_dir: Path, soffice: str | None
 ) -> NormalizeResult:
@@ -144,6 +241,7 @@ def normalize(
         soffice is None or shutil.which(soffice) is None
     ):
         raise SofficeMissing(INSTALL_HINT)
+    chromium_bin = find_chromium()
 
     out_dir.mkdir(parents=True, exist_ok=True)
     result = NormalizeResult()
@@ -161,10 +259,14 @@ def normalize(
             produced = _convert_office_doc(deck, out_dir, soffice, target)  # type: ignore[arg-type]
             pages = pdf_page_count(produced.read_bytes())
             result.converted.append(produced)
+        elif deck.suffix.lower() in (".txt", ".md"):
+            if chromium_bin is None:
+                raise ChromiumMissing(CHROMIUM_INSTALL_HINT)
+            produced = _render_text_source_to_pdf(deck, chromium_bin, target)
+            pages = pdf_page_count(produced.read_bytes())
+            result.converted.append(produced)
         else:
-            # .txt/.md land here in Task 2 -- unreachable until then, since
-            # SUPPORTED doesn't include them yet.
-            raise BadDeck(f"{deck}: unsupported input (expected PDF, PPTX, or DOCX)")
+            raise BadDeck(f"{deck}: unsupported input (expected PDF, PPTX, or DOCX, TXT, or MD)")
         result.pdfs.append(target)
         result.pages[target.name] = pages
     return result
