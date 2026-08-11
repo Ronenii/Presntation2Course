@@ -62,3 +62,29 @@ architecture diagram cannot express it, say `kind: svg` and describe the drawing
   than with an admitted gap. An unsupported claim is a blocking review finding.
 - Do not write the course prose. No callouts, no quizzes, no student-facing voice.
 - Ask no questions.
+
+## Shared source cache
+
+Before any `WebFetch`, run:
+
+```bash
+"<SKILL>/scripts/sourcecache" claim --sources "<output>/.p2c/sources" <url>
+```
+
+- `{"hit": true, "content_path": "..."}` — read that file instead of
+  fetching. Someone else in this run (or an earlier one) already has it.
+- `{"hit": false}` — you now hold the claim. Fetch the URL normally, then
+  run:
+
+  ```bash
+  "<SKILL>/scripts/sourcecache" release --sources "<output>/.p2c/sources" <url> --content <path-to-the-fetched-content>
+  ```
+
+  so the next researcher who wants the same URL gets your result instead of
+  fetching it again.
+
+If `sourcecache` errors or is unavailable for any reason, fetch the URL
+directly, exactly as you would if this section didn't exist — the cache is
+an optimization layer only, never a precondition for doing your job.
+
+No change to how you use `WebSearch` — this only covers the fetch step.
