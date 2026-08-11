@@ -1,6 +1,6 @@
 :root {
-  --font-heading: ui-sans-serif, "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-body: ui-sans-serif, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-heading: ui-sans-serif, "Helvetica Neue", Helvetica, Arial, "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "Noto Sans Devanagari", "Noto Naskh Arabic", "Noto Sans Hebrew", sans-serif;
+  --font-body: ui-sans-serif, "Helvetica Neue", Helvetica, Arial, "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "Noto Sans Devanagari", "Noto Naskh Arabic", "Noto Sans Hebrew", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   --color-bg: #ffffff;
   --color-surface: #f4fafb;
