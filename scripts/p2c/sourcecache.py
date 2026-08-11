@@ -89,12 +89,14 @@ def release(sources_dir: Path, url: str, content: str) -> dict:
     lock_path = _lock_path(sources_dir, digest)
     try:
         content_path.write_text(content, encoding="utf-8")
-        try:
-            lock_path.rmdir()
-        except FileNotFoundError:
-            pass
     except OSError as exc:
         return {"stored": False, "error": str(exc)}
+    try:
+        lock_path.rmdir()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        pass  # content is already saved; a later claim() still finds it and hits.
     return {"stored": True}
 
 
@@ -119,7 +121,12 @@ def main(argv: list[str]) -> int:
     if args.command == "claim":
         result = claim(args.sources, args.url)
     else:
-        result = release(args.sources, args.url, args.content.read_text(encoding="utf-8"))
+        try:
+            content = args.content.read_text(encoding="utf-8")
+        except OSError as exc:
+            result = {"stored": False, "error": str(exc)}
+        else:
+            result = release(args.sources, args.url, content)
 
     print(json.dumps(result, indent=2))
     return 0

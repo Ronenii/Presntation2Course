@@ -81,7 +81,13 @@ Before any `WebFetch`, run:
   ```
 
   so the next researcher who wants the same URL gets your result instead of
-  fetching it again.
+  fetching it again. **Run `release` even if the fetch itself fails** (a
+  404, a timeout, a paywall) — write whatever you have (an empty file is
+  fine) as the content and move on to another source. Never abandon a URL
+  after `hit: false` without releasing it: every other researcher who wants
+  that same URL polls your claim and only gives up after several minutes,
+  so an unreleased claim on a common source can stall the whole run's other
+  researchers far longer than the fetch itself would have cost.
 
 If `sourcecache` errors or is unavailable for any reason, fetch the URL
 directly, exactly as you would if this section didn't exist — the cache is

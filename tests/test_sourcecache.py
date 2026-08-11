@@ -97,6 +97,35 @@ def test_claim_never_raises_on_unexpected_filesystem_error(tmp_path, monkeypatch
     assert result == {"hit": False}
 
 
+def test_release_reports_stored_true_even_if_lock_removal_fails(tmp_path, monkeypatch):
+    url = "https://example.com/x"
+    claim(tmp_path, url)
+
+    def _boom(*a, **k):
+        raise OSError("directory not empty")
+
+    monkeypatch.setattr("pathlib.Path.rmdir", _boom)
+    result = release(tmp_path, url, "the fetched content")
+    # The content is genuinely saved -- a failed lock teardown must not be
+    # misreported as a failed store; a later claim() still finds the file.
+    assert result == {"stored": True}
+    h = hash_url(url)
+    assert (tmp_path / f"{h}.md").read_text() == "the fetched content"
+
+
+def test_cli_release_reports_failure_as_json_on_missing_content_file_never_raises(tmp_path):
+    proc = subprocess.run(
+        [sys.executable, str(SOURCECACHE_PY), "release",
+         "--sources", str(tmp_path), "https://example.com/x",
+         "--content", str(tmp_path / "does-not-exist.md")],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 0
+    payload = json.loads(proc.stdout)
+    assert payload["stored"] is False
+    assert "error" in payload
+
+
 def test_concurrent_claims_for_the_same_url_exactly_one_wins(tmp_path):
     url = "https://example.com/concurrent"
     results = []
