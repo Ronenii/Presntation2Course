@@ -322,6 +322,18 @@ def test_cli_exit_4_on_pptx_without_soffice(tmp_path, monkeypatch):
     assert "apt install libreoffice" in proc.stderr
 
 
+def test_cli_exit_7_on_markdown_without_chromium(tmp_path):
+    (tmp_path / "essay.md").write_text("# Title\n")
+    env = dict(**__import__("os").environ, P2C_CHROMIUM="definitely-not-a-browser")
+    proc = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "normalize"),
+         str(tmp_path / "essay.md"), "--out", str(tmp_path / "out")],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 7
+    assert "chromium" in proc.stderr.lower() or "Chromium" in proc.stderr
+
+
 def test_cli_exit_5_on_corrupt_deck(tmp_path):
     bad = tmp_path / "broken.pdf"
     bad.write_bytes(b"garbage")
