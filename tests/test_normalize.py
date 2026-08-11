@@ -98,6 +98,19 @@ def test_normalize_renders_plain_text_to_pdf_via_chromium(tmp_path, monkeypatch)
     assert result.pages == {"notes.pdf": 1}
 
 
+def test_normalize_rejects_a_non_utf8_text_source(tmp_path, monkeypatch):
+    # Chromium is mocked (same fake-Chromium-script pattern as the sibling
+    # tests above) so this test is deterministic regardless of whether the
+    # test environment happens to have a real Chromium installed -- the
+    # decode of src happens before Chromium is ever invoked, but pinning
+    # P2C_CHROMIUM to a working fake removes any doubt.
+    monkeypatch.setenv("P2C_CHROMIUM", _fake_chromium_writing_pdf(tmp_path, pages=1))
+    bad = tmp_path / "bad.txt"
+    bad.write_bytes(b"Caf\xe9 latin1 text\n")  # invalid UTF-8 (a lone 0xe9 byte)
+    with pytest.raises(BadDeck, match="not valid UTF-8"):
+        normalize([bad], tmp_path / "out", soffice=None)
+
+
 def test_normalize_hard_fails_on_markdown_without_chromium(tmp_path, monkeypatch):
     monkeypatch.delenv("P2C_CHROMIUM", raising=False)
     monkeypatch.setattr("p2c.normalize.find_chromium", lambda explicit=None: None)
@@ -263,8 +276,10 @@ def test_normalize_converts_docx_via_soffice(tmp_path):
 
 def test_normalize_hard_fails_on_docx_without_soffice(tmp_path):
     (tmp_path / "essay.docx").write_bytes(b"not a real docx")
-    with pytest.raises(SofficeMissing):
+    with pytest.raises(SofficeMissing) as exc:
         normalize([tmp_path / "essay.docx"], tmp_path / "out", soffice=None)
+    assert "libreoffice" in str(exc.value).lower()
+    assert "docx" in str(exc.value).lower()
 
 
 def test_collect_inputs_error_message_lists_all_supported_formats(tmp_path):
@@ -279,6 +294,7 @@ def test_normalize_hard_fails_on_pptx_without_soffice(tmp_path):
         normalize([FIXTURES / "terse.pptx"], tmp_path / "out", soffice=None)
     assert exc.value.exit_code == 4
     assert "libreoffice" in str(exc.value).lower()
+    assert "pptx" in str(exc.value).lower()
 
 
 def test_normalize_rejects_a_corrupt_pdf(tmp_path):

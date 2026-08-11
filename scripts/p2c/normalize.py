@@ -17,7 +17,7 @@ import markdown
 
 SUPPORTED = {".pdf", ".pptx", ".docx", ".txt", ".md"}
 INSTALL_HINT = (
-    "PPTX input requires LibreOffice. Install it and re-run:\n"
+    "PPTX or DOCX input requires LibreOffice. Install it and re-run:\n"
     "  sudo apt install libreoffice        # Debian/Ubuntu\n"
     "  brew install --cask libreoffice     # macOS"
 )
@@ -201,7 +201,10 @@ def _render_text_source_to_pdf(src: Path, chromium: str, target: Path) -> Path:
     p2c.exportpdf uses for course output, reused here via find_chromium
     (see module-level docstring for why this lives in normalize.py, not
     exportpdf.py)."""
-    text = src.read_text(encoding="utf-8")
+    try:
+        text = src.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise BadDeck(f"{src}: not valid UTF-8 text ({exc})") from exc
     if src.suffix.lower() == ".md":
         body_html = markdown.Markdown(extensions=_TEXT_SOURCE_MD_EXTENSIONS).convert(text)
     else:
