@@ -232,6 +232,22 @@ def test_term_def_popup_has_a_minimum_width():
     assert "min-inline-size: min(16rem, calc(100vw - 2 * var(--space-4)))" in css
 
 
+def test_fixed_width_containers_wrap_cjk_text_safely():
+    """CJK scripts have no inter-word spaces, so default line-breaking can
+    let a long unbroken run of characters overflow a fixed-width container
+    instead of wrapping. overflow-wrap: anywhere wraps at word boundaries
+    when they exist (Latin text is unaffected) and falls back to breaking
+    anywhere when they don't (CJK), so these four containers -- the
+    glossary popup, quiz options, sidebar title, and TOC topic entries --
+    stay inside their bounds regardless of script."""
+    css = (ASSETS / "base" / "layout.css").read_text()
+    for selector in (".term__def", ".quiz__option", ".sidebar__title", ".toc__topics"):
+        start = css.index(f"{selector} {{")
+        end = css.index("}", start)
+        block = css[start:end]
+        assert "overflow-wrap: anywhere" in block, selector
+
+
 def test_the_lightbox_closes_before_print():
     """print.css hides .diagram-lightbox outright; without closing first, a
     diagram open at print time would be missing from the printed page entirely
