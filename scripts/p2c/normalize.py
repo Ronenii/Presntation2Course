@@ -12,7 +12,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-SUPPORTED = {".pdf", ".pptx"}
+SUPPORTED = {".pdf", ".pptx", ".docx"}
 INSTALL_HINT = (
     "PPTX input requires LibreOffice. Install it and re-run:\n"
     "  sudo apt install libreoffice        # Debian/Ubuntu\n"
@@ -89,11 +89,11 @@ def collect_inputs(paths: list[Path]) -> list[Path]:
                 p for p in path.rglob("*") if p.suffix.lower() in SUPPORTED and p.is_file()
             )
             if not decks:
-                raise BadDeck(f"{path}: no PDF or PPTX files found")
+                raise BadDeck(f"{path}: no PDF, PPTX, or DOCX files found")
             found.extend(decks)
         elif path.is_file():
             if path.suffix.lower() not in SUPPORTED:
-                raise BadDeck(f"{path}: unsupported input (expected .pdf or .pptx)")
+                raise BadDeck(f"{path}: unsupported input (expected PDF, PPTX, or DOCX)")
             found.append(path)
         else:
             raise BadDeck(f"{path}: no such file or directory")
@@ -111,12 +111,13 @@ def _unique(out_dir: Path, stem: str, taken: set[str]) -> Path:
     return out_dir / name
 
 
-def _convert_pptx(src: Path, out_dir: Path, soffice: str, target: Path) -> Path:
-    """Convert src to PDF in a private scratch dir, then place it at target.
+def _convert_office_doc(src: Path, out_dir: Path, soffice: str, target: Path) -> Path:
+    """Convert src (.pptx or .docx) to PDF in a private scratch dir, then place it
+    at target.
 
     LibreOffice always names its output "<stem>.pdf" and has no notion of
     normalize()'s stem-collision dedup. Converting straight into the shared
-    out_dir would let a second same-stemmed PPTX's conversion silently
+    out_dir would let a second same-stemmed source's conversion silently
     clobber the first's output on disk before it's ever moved to its
     (distinct) deduplicated target name. A private temp directory per
     conversion makes that collision impossible regardless of ordering.
@@ -139,7 +140,7 @@ def normalize(
     inputs: list[Path], out_dir: Path, soffice: str | None
 ) -> NormalizeResult:
     decks = collect_inputs([Path(p) for p in inputs])
-    if any(d.suffix.lower() == ".pptx" for d in decks) and (
+    if any(d.suffix.lower() in (".pptx", ".docx") for d in decks) and (
         soffice is None or shutil.which(soffice) is None
     ):
         raise SofficeMissing(INSTALL_HINT)
@@ -156,10 +157,14 @@ def normalize(
             except BadDeck as exc:
                 raise BadDeck(f"{deck}: {exc}") from exc
             target.write_bytes(data)
-        else:
-            produced = _convert_pptx(deck, out_dir, soffice, target)  # type: ignore[arg-type]
+        elif deck.suffix.lower() in (".pptx", ".docx"):
+            produced = _convert_office_doc(deck, out_dir, soffice, target)  # type: ignore[arg-type]
             pages = pdf_page_count(produced.read_bytes())
             result.converted.append(produced)
+        else:
+            # .txt/.md land here in Task 2 -- unreachable until then, since
+            # SUPPORTED doesn't include them yet.
+            raise BadDeck(f"{deck}: unsupported input (expected PDF, PPTX, or DOCX)")
         result.pdfs.append(target)
         result.pages[target.name] = pages
     return result

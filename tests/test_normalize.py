@@ -55,7 +55,7 @@ def test_collect_inputs_expands_a_directory_sorted(tmp_path):
 
 
 def test_collect_inputs_rejects_a_directory_with_no_decks(tmp_path):
-    with pytest.raises(BadDeck, match="no PDF or PPTX"):
+    with pytest.raises(BadDeck, match="no PDF, PPTX, or DOCX"):
         collect_inputs([tmp_path])
 
 
@@ -155,6 +155,33 @@ def test_normalize_dedupes_colliding_pptx_stems_without_clobbering(tmp_path):
     assert first != second
     assert pdf_page_count(first) == 1
     assert pdf_page_count(second) == 1
+
+
+def test_normalize_converts_docx_via_soffice(tmp_path):
+    fake_soffice = tmp_path / "fake_soffice.py"
+    fake_soffice.write_text(_FAKE_SOFFICE)
+    fake_soffice.chmod(0o755)
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "essay.docx").write_bytes(b"not a real docx, soffice is faked")
+    out = tmp_path / "out"
+    result = normalize([src_dir / "essay.docx"], out, str(fake_soffice))
+    assert [p.name for p in result.pdfs] == ["essay.pdf"]
+    assert [p.name for p in result.converted] == ["essay.pdf"]
+    assert result.pages == {"essay.pdf": 1}
+
+
+def test_normalize_hard_fails_on_docx_without_soffice(tmp_path):
+    (tmp_path / "essay.docx").write_bytes(b"not a real docx")
+    with pytest.raises(SofficeMissing):
+        normalize([tmp_path / "essay.docx"], tmp_path / "out", soffice=None)
+
+
+def test_collect_inputs_error_message_lists_all_supported_formats(tmp_path):
+    odd = tmp_path / "deck.key"
+    odd.write_text("nope")
+    with pytest.raises(BadDeck, match=r"PDF, PPTX, or DOCX"):
+        collect_inputs([odd])
 
 
 def test_normalize_hard_fails_on_pptx_without_soffice(tmp_path):
