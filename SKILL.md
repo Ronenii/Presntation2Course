@@ -71,6 +71,8 @@ independently testable:
     normalized/*.pdf
     outline.json
     research/<topic-id>.md
+    cache/<hash>/{outline.json, research/<topic-id>.md}
+    sources/<url-hash>.md          shared fetch cache (Feature D)
     modules/<nn>-<slug>.md
     review/pass-<n>.json
     review/pass-<n>-auditor.json
@@ -95,6 +97,30 @@ Read the JSON on stdout for `pdfs`, `converted`, `pages`, `total_pages`.
   (which skips softly, since the HTML course still has a working print button), there is no
   fallback here: without Chromium there is no way to turn plain text into the page images
   the summarizer reads.
+
+On a clean exit, check the cross-run cache before spending Phase 1/2:
+
+```bash
+"<SKILL>/scripts/cache" check --normalized "<output>/.p2c/normalized" --cache-root "<output>/.p2c/cache"
+```
+
+- **hit** — copy `outline` to `<output>/.p2c/outline.json` and every file
+  under `research_dir` to `<output>/.p2c/research/`, then run the same
+  `planned_agent_count` report the summarizer's phase would print on a real
+  run (the user should still see the fan-out that's about to happen in the
+  course-writer's phase, even though the summarizer/researcher phases were
+  skipped) and go straight to the course-writer's phase below.
+- **miss** — continue to the summarizer's phase below as normal. After the
+  researcher's phase completes (all research files written), before the
+  course-writer's phase begins, run:
+
+  ```bash
+  "<SKILL>/scripts/cache" store --normalized "<output>/.p2c/normalized" --cache-root "<output>/.p2c/cache" --outline "<output>/.p2c/outline.json" --research "<output>/.p2c/research"
+  ```
+
+  A cache write is an optimization only — its outcome does not change how
+  the run proceeds. Continue to the course-writer's phase regardless of
+  whether `stored` is `true` or `false`.
 
 ## Phase 1 — summarizer (1 agent)
 
