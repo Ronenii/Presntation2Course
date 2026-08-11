@@ -237,15 +237,38 @@ def test_fixed_width_containers_wrap_cjk_text_safely():
     let a long unbroken run of characters overflow a fixed-width container
     instead of wrapping. overflow-wrap: anywhere wraps at word boundaries
     when they exist (Latin text is unaffected) and falls back to breaking
-    anywhere when they don't (CJK), so these four containers -- the
-    glossary popup, quiz options, sidebar title, and TOC topic entries --
-    stay inside their bounds regardless of script."""
+    anywhere when they don't (CJK), so these containers -- the glossary
+    popup, quiz options, sidebar title, and the TOC's list and topic
+    entries -- stay inside their bounds regardless of script."""
     css = (ASSETS / "base" / "layout.css").read_text()
-    for selector in (".term__def", ".quiz__option", ".sidebar__title", ".toc__topics"):
-        start = css.index(f"{selector} {{")
-        end = css.index("}", start)
-        block = css[start:end]
-        assert "overflow-wrap: anywhere" in block, selector
+    for exact_declaration in (
+        '.term__def {\n'
+        '  display: block;\n'
+        '  position: absolute;\n'
+        '  top: 100%;\n'
+        '  inset-inline-start: 0;\n'
+        '  z-index: var(--z-popover);\n'
+        '  margin-block-start: var(--space-2);\n'
+        '  padding: var(--space-3);\n'
+        '  min-inline-size: min(16rem, calc(100vw - 2 * var(--space-4)));\n'
+        '  max-inline-size: min(24rem, calc(100vw - 2 * var(--space-4)));\n'
+        '  border: 1px solid var(--color-border); border-inline-start: 3px solid var(--color-accent);\n'
+        '  border-radius: var(--radius); background: var(--color-surface);\n'
+        '  font-size: 0.92rem; color: var(--color-fg);\n'
+        '  overflow-wrap: anywhere;\n'
+        '}',
+        '.quiz__option {\n'
+        '  font: inherit; text-align: start; width: 100%; cursor: pointer;\n'
+        '  padding: var(--space-3) var(--space-4);\n'
+        '  background: var(--color-bg); color: var(--color-fg);\n'
+        '  border: 1px solid var(--color-border); border-radius: var(--radius);\n'
+        '  overflow-wrap: anywhere;\n'
+        '}',
+        '.sidebar__title { margin: var(--space-1) 0 var(--space-4); font-family: var(--font-heading); font-weight: 600; overflow-wrap: anywhere; }',
+        '.toc__list, .toc__topics { list-style: none; margin: 0; padding: 0; overflow-wrap: anywhere; }',
+        '.toc__topics { margin-block: var(--space-1) var(--space-4); margin-inline: var(--space-3) 0; overflow-wrap: anywhere; }',
+    ):
+        assert exact_declaration in css, exact_declaration
 
 
 def test_the_lightbox_closes_before_print():
