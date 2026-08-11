@@ -1,6 +1,6 @@
 :root {
-  --font-heading: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
-  --font-body: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  --font-heading: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "Noto Sans Devanagari", "Noto Naskh Arabic", "Noto Sans Hebrew", serif;
+  --font-body: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "Noto Sans Devanagari", "Noto Naskh Arabic", "Noto Sans Hebrew", serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   --color-bg: #faf6ef;
   --color-surface: #fffdf8;

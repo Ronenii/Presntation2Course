@@ -6,8 +6,8 @@
 <meta name="generator" content="Presentation2Course">
 <title>יסודות מערכות הפעלה</title>
 <style>:root {
-  --font-heading: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-body: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-heading: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "Noto Sans Devanagari", "Noto Naskh Arabic", "Noto Sans Hebrew", sans-serif;
+  --font-body: ui-sans-serif, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR", "Noto Sans Devanagari", "Noto Naskh Arabic", "Noto Sans Hebrew", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   --color-bg: #f7f8fa;
   --color-surface: #ffffff;
@@ -146,7 +146,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   margin: 0; text-transform: uppercase; letter-spacing: 0.08em;
   font-size: 0.7rem; color: var(--color-muted);
 }
-.sidebar__title { margin: var(--space-1) 0 var(--space-4); font-family: var(--font-heading); font-weight: 600; }
+.sidebar__title { margin: var(--space-1) 0 var(--space-4); font-family: var(--font-heading); font-weight: 600; overflow-wrap: anywhere; }
 .sidebar__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-6); }
 .btn {
   font: inherit; font-size: 0.85rem; cursor: pointer;
@@ -157,8 +157,8 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .btn:hover { border-color: var(--color-accent); }
 .btn--accent { background: var(--color-accent); color: var(--color-accent-contrast); border-color: transparent; }
 
-.toc__list, .toc__topics { list-style: none; margin: 0; padding: 0; }
-.toc__topics { margin-block: var(--space-1) var(--space-4); margin-inline: var(--space-3) 0; }
+.toc__list, .toc__topics { list-style: none; margin: 0; padding: 0; overflow-wrap: anywhere; }
+.toc__topics { margin-block: var(--space-1) var(--space-4); margin-inline: var(--space-3) 0; overflow-wrap: anywhere; }
 .toc a {
   display: block; padding: var(--space-1) var(--space-2);
   text-decoration: none; color: var(--color-muted);
@@ -211,6 +211,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   border: 1px solid var(--color-border); border-inline-start: 3px solid var(--color-accent);
   border-radius: var(--radius); background: var(--color-surface);
   font-size: 0.92rem; color: var(--color-fg);
+  overflow-wrap: anywhere;
 }
 .term__def[hidden] { display: none; }
 
@@ -226,6 +227,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   padding: var(--space-3) var(--space-4);
   background: var(--color-bg); color: var(--color-fg);
   border: 1px solid var(--color-border); border-radius: var(--radius);
+  overflow-wrap: anywhere;
 }
 .quiz__option:hover { border-color: var(--color-accent); }
 .quiz__option[data-state="correct"] { border-color: var(--color-correct); border-inline-start: 3px solid var(--color-correct); }

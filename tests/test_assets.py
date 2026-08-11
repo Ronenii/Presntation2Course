@@ -79,6 +79,30 @@ def test_themes_use_system_font_stacks_only():
         assert "@font-face" not in css
 
 
+_MULTILINGUAL_FONT_TAIL = (
+    "Noto Sans SC", "Noto Sans TC", "Noto Sans JP", "Noto Sans KR",
+    "Noto Sans Devanagari", "Noto Naskh Arabic", "Noto Sans Hebrew",
+)
+
+
+@pytest.mark.parametrize("name", sorted(set(THEME_FOR_DOMAIN.values())))
+def test_theme_fonts_include_a_multilingual_fallback_tail(name):
+    """--font-mono stays Latin/ASCII-only (code is always English/symbols);
+    --font-body/--font-heading gain a common tail of named system fonts so an
+    unbounded target language (CJK, Devanagari, Arabic, Hebrew, ...) still
+    renders with a matching system font instead of falling through to the
+    browser's generic serif/sans-serif, which most OSes pair with a
+    Latin-only face."""
+    css = (ASSETS / "themes" / name / "theme.css").read_text()
+    body_line = next(line for line in css.splitlines() if "--font-body:" in line)
+    heading_line = next(line for line in css.splitlines() if "--font-heading:" in line)
+    mono_line = next(line for line in css.splitlines() if "--font-mono:" in line)
+    for font in _MULTILINGUAL_FONT_TAIL:
+        assert font in body_line, f"{font} missing from {name} --font-body"
+        assert font in heading_line, f"{font} missing from {name} --font-heading"
+        assert font not in mono_line, f"{font} unexpectedly in {name} --font-mono"
+
+
 def test_vendored_mermaid_matches_the_pin():
     data = (ASSETS / "vendor" / "mermaid.min.js").read_bytes()
     assert hashlib.sha256(data).hexdigest() == MERMAID_SHA256
@@ -206,6 +230,45 @@ def test_term_def_popup_has_a_minimum_width():
     """
     css = (ASSETS / "base" / "layout.css").read_text()
     assert "min-inline-size: min(16rem, calc(100vw - 2 * var(--space-4)))" in css
+
+
+def test_fixed_width_containers_wrap_cjk_text_safely():
+    """CJK scripts have no inter-word spaces, so default line-breaking can
+    let a long unbroken run of characters overflow a fixed-width container
+    instead of wrapping. overflow-wrap: anywhere wraps at word boundaries
+    when they exist (Latin text is unaffected) and falls back to breaking
+    anywhere when they don't (CJK), so these containers -- the glossary
+    popup, quiz options, sidebar title, and the TOC's list and topic
+    entries -- stay inside their bounds regardless of script."""
+    css = (ASSETS / "base" / "layout.css").read_text()
+    for exact_declaration in (
+        '.term__def {\n'
+        '  display: block;\n'
+        '  position: absolute;\n'
+        '  top: 100%;\n'
+        '  inset-inline-start: 0;\n'
+        '  z-index: var(--z-popover);\n'
+        '  margin-block-start: var(--space-2);\n'
+        '  padding: var(--space-3);\n'
+        '  min-inline-size: min(16rem, calc(100vw - 2 * var(--space-4)));\n'
+        '  max-inline-size: min(24rem, calc(100vw - 2 * var(--space-4)));\n'
+        '  border: 1px solid var(--color-border); border-inline-start: 3px solid var(--color-accent);\n'
+        '  border-radius: var(--radius); background: var(--color-surface);\n'
+        '  font-size: 0.92rem; color: var(--color-fg);\n'
+        '  overflow-wrap: anywhere;\n'
+        '}',
+        '.quiz__option {\n'
+        '  font: inherit; text-align: start; width: 100%; cursor: pointer;\n'
+        '  padding: var(--space-3) var(--space-4);\n'
+        '  background: var(--color-bg); color: var(--color-fg);\n'
+        '  border: 1px solid var(--color-border); border-radius: var(--radius);\n'
+        '  overflow-wrap: anywhere;\n'
+        '}',
+        '.sidebar__title { margin: var(--space-1) 0 var(--space-4); font-family: var(--font-heading); font-weight: 600; overflow-wrap: anywhere; }',
+        '.toc__list, .toc__topics { list-style: none; margin: 0; padding: 0; overflow-wrap: anywhere; }',
+        '.toc__topics { margin-block: var(--space-1) var(--space-4); margin-inline: var(--space-3) 0; overflow-wrap: anywhere; }',
+    ):
+        assert exact_declaration in css, exact_declaration
 
 
 def test_the_lightbox_closes_before_print():
