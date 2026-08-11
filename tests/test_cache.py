@@ -3,8 +3,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 from p2c.cache import cache_check, cache_store, hash_normalized_dir
 
 CACHE_PY = Path(__file__).resolve().parents[1] / "scripts" / "cache"

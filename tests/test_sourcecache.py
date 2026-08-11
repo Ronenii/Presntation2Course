@@ -6,8 +6,6 @@ import threading
 import time
 from pathlib import Path
 
-import pytest
-
 from p2c.sourcecache import claim, hash_url, release
 
 SOURCECACHE_PY = Path(__file__).resolve().parents[1] / "scripts" / "sourcecache"
@@ -118,6 +116,21 @@ def test_cli_release_reports_failure_as_json_on_missing_content_file_never_raise
         [sys.executable, str(SOURCECACHE_PY), "release",
          "--sources", str(tmp_path), "https://example.com/x",
          "--content", str(tmp_path / "does-not-exist.md")],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 0
+    payload = json.loads(proc.stdout)
+    assert payload["stored"] is False
+    assert "error" in payload
+
+
+def test_cli_release_reports_failure_as_json_on_non_utf8_content_file_never_raises(tmp_path):
+    content_file = tmp_path / "binary.md"
+    content_file.write_bytes(b"\xff\xfe\x00\x01")
+    proc = subprocess.run(
+        [sys.executable, str(SOURCECACHE_PY), "release",
+         "--sources", str(tmp_path), "https://example.com/x",
+         "--content", str(content_file)],
         capture_output=True, text=True,
     )
     assert proc.returncode == 0

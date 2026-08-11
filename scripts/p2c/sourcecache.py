@@ -123,7 +123,7 @@ def main(argv: list[str]) -> int:
     else:
         try:
             content = args.content.read_text(encoding="utf-8")
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
             result = {"stored": False, "error": str(exc)}
         else:
             result = release(args.sources, args.url, content)
