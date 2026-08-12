@@ -308,10 +308,13 @@ def parse_animate(body: str) -> Animate:
             stages.append((match.group("name").strip(), match.group("change").strip()))
         return Animate(pattern=pattern, stages=stages, caption=caption or "")
     elif pattern == "layer-stack":
-        if before or after or states_raw or transitions_raw or array_raw or ops_raw or points_raw or stages_raw:
+        if (
+            before or after or states_raw or transitions_raw or array_raw or ops_raw
+            or points_raw or stages_raw or from_value or to_value
+        ):
             raise AnimateError(
                 "layer-stack does not use 'before:'/'after:'/'states:'/'transitions:'/"
-                "'array:'/'ops:'/'points:'/'stages:'"
+                "'array:'/'ops:'/'points:'/'stages:'/'from:'/'to:'"
             )
         if direction is not None and direction not in ("up", "down"):
             raise AnimateError(

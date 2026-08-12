@@ -799,6 +799,14 @@ def test_layer_stack_rejects_bad_layer_counts():
         parse_animate(body)
 
 
+def test_layer_stack_rejects_a_stray_from_line():
+    with pytest.raises(AnimateError, match="does not use"):
+        parse_animate(
+            "pattern: layer-stack\nfrom: 0, 0\n"
+            "layers:\n  - A: does a\n  - B: does b\n"
+        )
+
+
 def test_layer_stack_html_is_ltr_and_static_lists_every_layer():
     anim = parse_animate(
         "pattern: layer-stack\n"
