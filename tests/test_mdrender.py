@@ -1625,3 +1625,16 @@ def test_a_path_trace_block_also_counts_as_a_visual():
     )
     rendered = render_course(md)
     assert rendered.topics_missing_visual == []
+
+
+def test_animations_per_topic_counts_blocks_and_backfills_zeros():
+    md = course(
+        '<!-- topic: topic-a -->\n### Topic A\n\n'
+        '```animate\npattern: pipeline\nstages:\n  - Raw: unprocessed\n  - Done: processed\n```\n\n'
+        '<!-- topic: topic-b -->\n### Topic B\n\n'
+        'Prose only.\n'
+    )
+    rendered = render_course(md)
+    assert rendered.animations_per_topic["topic-a"] == 1
+    # Backfilled, not absent: the floor check divides over every topic.
+    assert rendered.animations_per_topic["topic-b"] == 0

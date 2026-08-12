@@ -1482,6 +1482,7 @@ class Rendered:
     sections: list[Section] = field(default_factory=list)
     glossary: dict[str, str] = field(default_factory=dict)
     quizzes_per_topic: dict[str, int] = field(default_factory=dict)
+    animations_per_topic: dict[str, int] = field(default_factory=dict)
     quiz_count: int = 0
     uses_mermaid: bool = False
     uses_animate: bool = False
@@ -1612,6 +1613,7 @@ def render_course(course_md: str) -> Rendered:
 
     replacements: dict[str, str] = {}
     quizzes_per_topic: dict[str, int] = {}
+    animations_per_topic: dict[str, int] = {}
     quiz_numbers: dict[str, int] = {}
     quiz_count = 0
     uses_mermaid = False
@@ -1667,6 +1669,8 @@ def render_course(course_md: str) -> Rendered:
                 replacements[fence.token] = ""
                 continue
             uses_animate = True
+            if topic_id:
+                animations_per_topic[topic_id] = animations_per_topic.get(topic_id, 0) + 1
             replacements[fence.token] = _animate_html(anim, fence.token)
         else:
             replacements[fence.token] = _callout_html(fence.kind, fence.body)
@@ -1677,6 +1681,9 @@ def render_course(course_md: str) -> Rendered:
 
     for topic_id in (s.topic_id for s in sections if s.topic_id):
         quizzes_per_topic.setdefault(topic_id, 0)
+
+    for topic_id in (s.topic_id for s in sections if s.topic_id):
+        animations_per_topic.setdefault(topic_id, 0)
 
     topics_missing_visual = [
         tid for tid in dict.fromkeys(s.topic_id for s in sections if s.topic_id)
@@ -1696,6 +1703,7 @@ def render_course(course_md: str) -> Rendered:
         sections=sections,
         glossary=terms,
         quizzes_per_topic=quizzes_per_topic,
+        animations_per_topic=animations_per_topic,
         quiz_count=quiz_count,
         uses_mermaid=uses_mermaid,
         uses_animate=uses_animate,
