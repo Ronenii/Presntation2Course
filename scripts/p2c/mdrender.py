@@ -122,12 +122,15 @@ class Animate:
     stages: list[tuple[str, str]] = field(default_factory=list)
     layers: list[tuple[str, str]] = field(default_factory=list)
     direction: str = "up"
+    from_entity: str = ""
+    to_entity: str = ""
+    steps: list[str] = field(default_factory=list)
 
 
 _LIST_HEADERS = {
     "array:": "array", "ops:": "ops", "points:": "points",
     "states:": "states", "transitions:": "transitions",
-    "stages:": "stages", "layers:": "layers",
+    "stages:": "stages", "layers:": "layers", "steps:": "steps",
 }
 
 
@@ -142,6 +145,7 @@ def parse_animate(body: str) -> Animate:
     transitions_raw: list[str] = []
     stages_raw: list[str] = []
     layers_raw: list[str] = []
+    steps_raw: list[str] = []
     caption: str | None = None
     direction: str | None = None
     from_value: str | None = None
@@ -151,7 +155,7 @@ def parse_animate(body: str) -> Animate:
     lists = {
         "array": array_raw, "ops": ops_raw, "points": points_raw,
         "states": states_raw, "transitions": transitions_raw,
-        "stages": stages_raw, "layers": layers_raw,
+        "stages": stages_raw, "layers": layers_raw, "steps": steps_raw,
     }
 
     for raw in body.split("\n"):
@@ -190,11 +194,11 @@ def parse_animate(body: str) -> Animate:
 
     if pattern not in (
         "state-machine", "state-toggle", "array-ops", "path-trace", "pipeline",
-        "layer-stack",
+        "layer-stack", "transform",
     ):
         raise AnimateError(
             "animate pattern must be 'state-machine', 'state-toggle', 'array-ops', "
-            f"'path-trace', 'pipeline', or 'layer-stack', got {pattern!r}"
+            f"'path-trace', 'pipeline', 'layer-stack', or 'transform', got {pattern!r}"
         )
 
     if pattern == "state-machine":
@@ -336,6 +340,25 @@ def parse_animate(body: str) -> Animate:
             pattern=pattern, layers=layers, direction=direction or "up",
             caption=caption or "",
         )
+    elif pattern == "transform":
+        if (
+            before or after or direction or states_raw or transitions_raw
+            or array_raw or ops_raw or points_raw or stages_raw or layers_raw
+        ):
+            raise AnimateError(
+                "transform does not use 'before:'/'after:'/'direction:'/'states:'/"
+                "'transitions:'/'array:'/'ops:'/'points:'/'stages:'/'layers:'"
+            )
+        if not from_value or not to_value:
+            raise AnimateError("transform needs both 'from:' and 'to:'")
+        if not steps_raw:
+            raise AnimateError("transform needs at least 1 step")
+        if len(steps_raw) > 4:
+            raise AnimateError("transform takes at most 4 steps")
+        return Animate(
+            pattern=pattern, from_entity=from_value, to_entity=to_value,
+            steps=list(steps_raw), caption=caption or "",
+        )
     else:  # path-trace
         if before or after or states_raw or transitions_raw or array_raw or ops_raw:
             raise AnimateError("path-trace does not use 'before:'/'after:'")
@@ -380,6 +403,11 @@ _LAYER_WIDTH = 260
 _LAYER_HEIGHT = 44
 _LAYER_GAP = 12
 _LAYER_TOP_MARGIN = 20
+
+_XFORM_BOX_WIDTH = 180
+_XFORM_BOX_HEIGHT = 60
+_XFORM_GAP = 120  # room between the two endpoint boxes for the step labels
+_XFORM_TOP_MARGIN = 24
 
 _STATE_BOX_WIDTH = 130
 _STATE_BOX_HEIGHT = 56
@@ -430,6 +458,8 @@ def _animate_html(anim: Animate, token: str) -> str:
         return _pipeline_html(anim, token)
     if anim.pattern == "layer-stack":
         return _layer_stack_html(anim, token)
+    if anim.pattern == "transform":
+        return _transform_html(anim, token)
     # path-trace
     return _path_trace_html(anim, token)
 
@@ -944,6 +974,114 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
         f"{''.join(rows_html)}</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
         f'<ol class="anim__layer-static">{static_lines}</ol></div>'
+    )
+
+
+def _transform_html(anim: Animate, token: str) -> str:
+    """One entity becomes another; each step's label appears over the connector.
+
+    The two endpoint boxes are permanent structure. What animates is the
+    connector drawing itself and the step labels appearing in order over it,
+    with the destination box taking the accent only once the last step lands.
+    """
+    token_seed = re.sub(r"\D", "", token) or "0"
+    from_id = f"anim-xform-from-{token_seed}"
+    to_id = f"anim-xform-to-{token_seed}"
+    line_id = f"anim-xform-line-{token_seed}"
+    step_ids = [f"anim-xform-step-{token_seed}-{i}" for i in range(len(anim.steps))]
+
+    box_center_y = _XFORM_TOP_MARGIN + _XFORM_BOX_HEIGHT / 2
+    total_width = _XFORM_BOX_WIDTH * 2 + _XFORM_GAP
+    total_height = _XFORM_TOP_MARGIN * 2 + _XFORM_BOX_HEIGHT
+    line_x1 = _XFORM_BOX_WIDTH
+    line_x2 = _XFORM_BOX_WIDTH + _XFORM_GAP
+    label_center_x = line_x1 + _XFORM_GAP / 2
+
+    def endpoint(box_id: str, x: float, label: str) -> str:
+        return (
+            f'<g class="anim__xform-endpoint">'
+            f'<rect class="anim__xform-box" id="{box_id}" x="{x:g}" '
+            f'y="{_XFORM_TOP_MARGIN}" width="{_XFORM_BOX_WIDTH}" '
+            f'height="{_XFORM_BOX_HEIGHT}" rx="8" '
+            f'fill="var(--anim-xform-idle)"></rect>'
+            f'<text class="anim__xform-label" x="{x + _XFORM_BOX_WIDTH / 2:g}" '
+            f'y="{box_center_y + 4:g}" text-anchor="middle">{html.escape(label)}</text>'
+            f'</g>'
+        )
+
+    # Step labels sit ABOVE the connector with a visible gap (diagram-design
+    # rule 2: never let a label sit on its line), each over its own opaque mask
+    # rect so the connector cannot bleed through the text.
+    labels_html = []
+    for i, text in enumerate(anim.steps):
+        labels_html.append(
+            f'<g class="anim__xform-step" id="{step_ids[i]}" opacity="0">'
+            f'<rect class="anim__xform-step-bg" x="{label_center_x - 56:g}" '
+            f'y="{box_center_y - 26:g}" width="112" height="18" rx="2"></rect>'
+            f'<text class="anim__xform-step-text" x="{label_center_x:g}" '
+            f'y="{box_center_y - 13:g}" text-anchor="middle">'
+            f'{html.escape(text)}</text>'
+            f'</g>'
+        )
+
+    steps_json: list[dict] = [
+        {
+            "targets": [f"#{line_id}"],
+            "props": {"strokeDashoffset": [_XFORM_GAP, 0]},
+            "duration": STEP_SECONDS * 1000,
+            "ease": "inOutQuad",
+        }
+    ]
+    for i, step_id in enumerate(step_ids):
+        steps_json.append({
+            "targets": [f"#{step_id}"],
+            "props": {"opacity": [0, 1]},
+            "duration": 400,
+            "ease": "outQuad",
+        })
+        if i > 0:
+            steps_json.append({
+                "targets": [f"#{step_ids[i - 1]}"],
+                "props": {"opacity": 0},
+                "duration": 400,
+                "ease": "outQuad",
+                "position": "<",
+            })
+    steps_json.append({
+        "targets": [f"#{to_id}"],
+        "props": {"fill": "var(--anim-xform-active)"},
+        "duration": 500,
+        "ease": "outQuad",
+    })
+
+    steps_json.append({
+        "kind": "set", "targets": [f"#{s}" for s in step_ids], "props": {"opacity": 0},
+    })
+    steps_json.append({
+        "kind": "set", "targets": [f"#{line_id}"],
+        "props": {"strokeDashoffset": _XFORM_GAP},
+    })
+    steps_json.append({
+        "kind": "set", "targets": [f"#{to_id}"],
+        "props": {"fill": "var(--anim-xform-idle)"},
+    })
+
+    timeline_json = _timeline_island_json(
+        {"loop": True, "loopDelay": 900, "steps": steps_json}
+    )
+    static_steps = "".join(f"<li>{html.escape(s)}</li>" for s in anim.steps)
+    return (
+        '<div class="anim anim--transform">'
+        f'<svg class="anim__transform" dir="ltr" '
+        f'viewBox="0 0 {total_width:g} {total_height:g}">'
+        f'<line class="anim__xform-line" id="{line_id}" x1="{line_x1:g}" '
+        f'y1="{box_center_y:g}" x2="{line_x2:g}" y2="{box_center_y:g}" '
+        f'stroke-dasharray="{_XFORM_GAP}" stroke-dashoffset="{_XFORM_GAP}"></line>'
+        f'{endpoint(from_id, 0, anim.from_entity)}'
+        f'{endpoint(to_id, _XFORM_BOX_WIDTH + _XFORM_GAP, anim.to_entity)}'
+        f"{''.join(labels_html)}</svg>"
+        f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
+        f'<ol class="anim__xform-static">{static_steps}</ol></div>'
     )
 
 

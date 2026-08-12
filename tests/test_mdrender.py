@@ -14,11 +14,16 @@ from p2c.mdrender import (
     _PIPE_GAP,
     _PIPE_TOP_MARGIN,
     _STATE_BOX_HEIGHT,
+    _XFORM_BOX_HEIGHT,
+    _XFORM_BOX_WIDTH,
+    _XFORM_GAP,
+    _XFORM_TOP_MARGIN,
     Animate,
     AnimateError,
     FigureError,
     _layer_stack_html,
     _pipeline_html,
+    _transform_html,
     mermaid_problem,
     parse_animate,
     parse_figure,
@@ -841,6 +846,83 @@ def test_layer_stack_timeline_resets_animated_properties():
 
 def test_layer_stack_constants_are_divisible_by_four():
     for value in (_LAYER_WIDTH, _LAYER_HEIGHT, _LAYER_GAP, _LAYER_TOP_MARGIN):
+        assert value % 4 == 0
+
+
+def test_transform_parses_endpoints_and_steps():
+    anim = parse_animate(
+        "pattern: transform\n"
+        "from: Disparity map\n"
+        "to: Metric depth map\n"
+        "steps:\n"
+        "  - Invert each disparity value\n"
+        "  - Scale by the focal-length constant\n"
+    )
+    assert anim.from_entity == "Disparity map"
+    assert anim.to_entity == "Metric depth map"
+    assert anim.steps == [
+        "Invert each disparity value",
+        "Scale by the focal-length constant",
+    ]
+
+
+def test_transform_requires_both_endpoints():
+    with pytest.raises(AnimateError, match="needs both 'from:' and 'to:'"):
+        parse_animate("pattern: transform\nfrom: Only a start\nsteps:\n  - Does a thing\n")
+
+
+def test_transform_rejects_bad_step_counts():
+    with pytest.raises(AnimateError, match="at least 1 step"):
+        parse_animate("pattern: transform\nfrom: A\nto: B\n")
+    body = "pattern: transform\nfrom: A\nto: B\nsteps:\n" + "".join(
+        f"  - Step {i}\n" for i in range(5)
+    )
+    with pytest.raises(AnimateError, match="at most 4 steps"):
+        parse_animate(body)
+
+
+def test_transform_rejects_a_stray_direction_line():
+    with pytest.raises(AnimateError, match="does not use"):
+        parse_animate(
+            "pattern: transform\nfrom: A\nto: B\ndirection: up\n"
+            "steps:\n  - Does a thing\n"
+        )
+
+
+def test_transform_html_is_ltr_and_shows_both_endpoints_statically():
+    anim = parse_animate(
+        "pattern: transform\nfrom: Disparity map\nto: Metric depth map\n"
+        "steps:\n  - Invert each value\n"
+    )
+    out = _transform_html(anim, "ANIMTOKEN5")
+    assert 'dir="ltr"' in out
+    assert "Disparity map" in out and "Metric depth map" in out
+    assert "Invert each value" in out
+
+
+def test_transform_timeline_resets_animated_properties():
+    anim = parse_animate(
+        "pattern: transform\nfrom: A thing\nto: Another thing\n"
+        "steps:\n  - Change it\n  - Change it again\n"
+    )
+    out = _transform_html(anim, "ANIMTOKEN5")
+    data = json.loads(
+        re.search(
+            r'<script type="application/json" class="anim__timeline">(.*?)</script>',
+            out, re.S,
+        ).group(1)
+    )
+    animated = {
+        p for s in data["steps"] if s.get("kind") != "set" for p in (s.get("props") or {})
+    }
+    reset = {
+        p for s in data["steps"] if s.get("kind") == "set" for p in (s.get("props") or {})
+    }
+    assert animated <= reset
+
+
+def test_transform_constants_are_divisible_by_four():
+    for value in (_XFORM_BOX_WIDTH, _XFORM_BOX_HEIGHT, _XFORM_GAP, _XFORM_TOP_MARGIN):
         assert value % 4 == 0
 
 
