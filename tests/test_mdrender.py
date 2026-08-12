@@ -646,6 +646,46 @@ def test_parse_animate_array_ops_rejects_before_after():
         )
 
 
+def test_pipeline_parses_stages_into_name_change_pairs():
+    anim = parse_animate(
+        "pattern: pipeline\n"
+        "stages:\n"
+        "  - Raw image: single RGB frame\n"
+        "  - Encoder: compresses into a feature map\n"
+    )
+    assert anim.pattern == "pipeline"
+    assert anim.stages == [
+        ("Raw image", "single RGB frame"),
+        ("Encoder", "compresses into a feature map"),
+    ]
+
+
+def test_pipeline_rejects_fewer_than_two_stages():
+    with pytest.raises(AnimateError, match="at least 2 stages"):
+        parse_animate("pattern: pipeline\nstages:\n  - Only one: does nothing\n")
+
+
+def test_pipeline_rejects_more_than_six_stages():
+    body = "pattern: pipeline\nstages:\n" + "".join(
+        f"  - Stage {i}: does thing {i}\n" for i in range(7)
+    )
+    with pytest.raises(AnimateError, match="at most 6 stages"):
+        parse_animate(body)
+
+
+def test_pipeline_rejects_stage_without_a_change_description():
+    with pytest.raises(AnimateError, match="must be written as"):
+        parse_animate("pattern: pipeline\nstages:\n  - Encoder\n  - Decoder: expands\n")
+
+
+def test_pipeline_rejects_keys_from_other_patterns():
+    with pytest.raises(AnimateError, match="does not use"):
+        parse_animate(
+            "pattern: pipeline\nstages:\n  - A: does a\n  - B: does b\n"
+            "points:\n  - 0, 1\n"
+        )
+
+
 @pytest.mark.parametrize(
     "block",
     [

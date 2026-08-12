@@ -99,6 +99,7 @@ _ARRAY_OP = re.compile(
     r"^(?P<verb>compare|swap|highlight)\s+(?P<a>\d+)(?:\s+(?P<b>\d+))?$"
 )
 _TRANSITION = re.compile(r"^(?P<from>.+?)\s*->\s*(?P<to>.+?):\s*(?P<action>.+)$")
+_STAGE = re.compile(r"^(?P<name>.+?):\s*(?P<change>.+)$")
 
 
 class AnimateError(ValueError):
@@ -116,11 +117,13 @@ class Animate:
     caption: str = ""
     states: list[str] = field(default_factory=list)
     transitions: list[tuple[str, str, str]] = field(default_factory=list)
+    stages: list[tuple[str, str]] = field(default_factory=list)
 
 
 _LIST_HEADERS = {
     "array:": "array", "ops:": "ops", "points:": "points",
     "states:": "states", "transitions:": "transitions",
+    "stages:": "stages",
 }
 
 
@@ -133,12 +136,14 @@ def parse_animate(body: str) -> Animate:
     points_raw: list[str] = []
     states_raw: list[str] = []
     transitions_raw: list[str] = []
+    stages_raw: list[str] = []
     caption: str | None = None
     section: str | None = None
 
     lists = {
         "array": array_raw, "ops": ops_raw, "points": points_raw,
         "states": states_raw, "transitions": transitions_raw,
+        "stages": stages_raw,
     }
 
     for raw in body.split("\n"):
@@ -169,10 +174,12 @@ def parse_animate(body: str) -> Animate:
             continue
         raise AnimateError(f"unrecognised line in animate block: {line.strip()!r}")
 
-    if pattern not in ("state-machine", "state-toggle", "array-ops", "path-trace"):
+    if pattern not in (
+        "state-machine", "state-toggle", "array-ops", "path-trace", "pipeline",
+    ):
         raise AnimateError(
             "animate pattern must be 'state-machine', 'state-toggle', 'array-ops', "
-            f"or 'path-trace', got {pattern!r}"
+            f"'path-trace', or 'pipeline', got {pattern!r}"
         )
 
     if pattern == "state-machine":
@@ -266,6 +273,25 @@ def parse_animate(body: str) -> Animate:
                     )
             ops.append((verb, a, b_val))
         return Animate(pattern=pattern, array=array, ops=ops)
+    elif pattern == "pipeline":
+        if before or after or states_raw or transitions_raw or array_raw or ops_raw or points_raw:
+            raise AnimateError(
+                "pipeline does not use 'before:'/'after:'/'states:'/'transitions:'/"
+                "'array:'/'ops:'/'points:'"
+            )
+        if len(stages_raw) < 2:
+            raise AnimateError("pipeline needs at least 2 stages")
+        if len(stages_raw) > 6:
+            raise AnimateError("pipeline takes at most 6 stages")
+        stages: list[tuple[str, str]] = []
+        for line in stages_raw:
+            match = _STAGE.match(line)
+            if not match:
+                raise AnimateError(
+                    f"pipeline stage {line!r} must be written as '<name>: <what changes>'"
+                )
+            stages.append((match.group("name").strip(), match.group("change").strip()))
+        return Animate(pattern=pattern, stages=stages, caption=caption or "")
     else:  # path-trace
         if before or after or states_raw or transitions_raw or array_raw or ops_raw:
             raise AnimateError("path-trace does not use 'before:'/'after:'")
