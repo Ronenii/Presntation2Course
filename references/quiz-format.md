@@ -142,8 +142,62 @@ caption: Gradient descent converging toward the minimum
 `points:` needs at least 2 `x, y` pairs (plain numbers, not a function
 expression). `caption:` is required.
 
-Four patterns exist: `state-machine`, `state-toggle`, `array-ops`, `path-trace` — no
-others. This is a deliberately bounded set, not a general animation authoring tool.
+`pipeline` visualizes an input flowing through named stages, each transforming it:
+
+````
+```animate
+pattern: pipeline
+stages:
+  - Raw image: single RGB frame, no depth information
+  - Encoder: compresses the frame into a feature map
+  - Decoder: expands features back to per-pixel values
+  - Depth map: one distance estimate per pixel
+```
+````
+
+`stages:` needs 2–6 entries, each written `<name>: <what changes>`. Both halves are
+required — a stage with no transformation described is a static flowchart, not a
+sequence.
+
+`layer-stack` visualizes abstraction tiers building up, or a signal passing down:
+
+````
+```animate
+pattern: layer-stack
+direction: up
+layers:
+  - Pixels: raw sensor values
+  - Edges: local intensity changes
+  - Objects: assembled shapes
+```
+````
+
+`layers:` needs 2–6 entries listed **bottom-up**. `direction:` is optional
+(`up` or `down`, default `up`) and reverses only the reveal order, not the drawing.
+
+`transform` visualizes one entity becoming another through labeled steps:
+
+````
+```animate
+pattern: transform
+from: Disparity map
+to: Metric depth map
+steps:
+  - Invert each disparity value
+  - Scale by the focal-length/baseline constant
+```
+````
+
+`from:` and `to:` are both required; `steps:` needs 1–4 entries. Use this instead of
+`state-toggle` when the change has intermediate steps worth naming.
+
+`pipeline`, `layer-stack`, and `transform` also accept an optional `caption:`. Each
+pattern rejects the keys it does not use, so a typo'd block (e.g. `stages:` on a
+`transform`) fails loudly instead of being silently ignored.
+
+Seven patterns exist: `state-machine`, `state-toggle`, `array-ops`, `path-trace`,
+`pipeline`, `layer-stack`, `transform` — no others. This is a deliberately bounded
+set, not a general animation authoring tool.
 
 All patterns respect `prefers-reduced-motion` and render fully static (every
 step/state/frame shown at once, not a single frozen frame) in print.
