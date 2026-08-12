@@ -103,6 +103,39 @@ _ARRAY_OP = re.compile(
 _TRANSITION = re.compile(r"^(?P<from>.+?)\s*->\s*(?P<to>.+?):\s*(?P<action>.+)$")
 _STAGE = re.compile(r"^(?P<name>.+?):\s*(?P<change>.+)$")
 
+# Matches "A --> B", "A -->|label| B", "A --- B", "A -.-> B", "A ==> B",
+# with or without a node label: real course diagrams are written
+# `M["מצלמה"] -->|"depth"| A["roof"]`, so the optional bracket/paren/brace
+# label after the node id MUST be skipped -- otherwise the same node reads as
+# two different sources depending on whether that occurrence carried a label,
+# and a fan-out is silently scored as linear. Verified against
+# unit2_lecture_tutorial-course: 17 of 42 blocks are linear chains.
+_MERMAID_EDGE = re.compile(
+    r"(?P<from>[A-Za-z0-9_-]+)\s*"
+    r"(?:\[[^\]]*\]|\([^)]*\)|\{[^}]*\})?\s*"
+    r"(?:-{2,3}>|-{3}|-\.-+>|={2,}>)"
+    r"(?:\|[^|]*\|)?\s*"
+    r"(?P<to>[A-Za-z0-9_-]+)"
+)
+
+
+def is_linear_mermaid(body: str) -> bool:
+    """True when no node is the source of more than one edge.
+
+    That shape -- a straight line of boxes -- is what `references/agents/
+    course-writer.md` already calls a sequence rather than a flowchart. A
+    diagram with no edges at all is not a chain and returns False.
+    """
+    sources: dict[str, int] = {}
+    edges = 0
+    for match in _MERMAID_EDGE.finditer(body):
+        source = match.group("from")
+        sources[source] = sources.get(source, 0) + 1
+        edges += 1
+    if edges == 0:
+        return False
+    return max(sources.values()) == 1
+
 
 class AnimateError(ValueError):
     """An animate block that does not satisfy the grammar."""
@@ -1483,6 +1516,7 @@ class Rendered:
     glossary: dict[str, str] = field(default_factory=dict)
     quizzes_per_topic: dict[str, int] = field(default_factory=dict)
     animations_per_topic: dict[str, int] = field(default_factory=dict)
+    linear_mermaid_topics: list[str] = field(default_factory=list)
     quiz_count: int = 0
     uses_mermaid: bool = False
     uses_animate: bool = False
@@ -1618,6 +1652,7 @@ def render_course(course_md: str) -> Rendered:
     quiz_count = 0
     uses_mermaid = False
     uses_animate = False
+    mermaid_linearity: dict[str, list[bool]] = {}
 
     for fence in fences:
         anchor, topic_id = token_owner.get(fence.token, ("course", None))
@@ -1648,6 +1683,10 @@ def render_course(course_md: str) -> Rendered:
                 )
             else:
                 uses_mermaid = True
+                if topic_id:
+                    mermaid_linearity.setdefault(topic_id, []).append(
+                        is_linear_mermaid(fence.body)
+                    )
                 replacements[fence.token] = (
                     f'<div class="mermaid" dir="ltr">{html.escape(fence.body)}</div>'
                 )
@@ -1685,6 +1724,12 @@ def render_course(course_md: str) -> Rendered:
     for topic_id in (s.topic_id for s in sections if s.topic_id):
         animations_per_topic.setdefault(topic_id, 0)
 
+    # A topic qualifies only when EVERY mermaid block it has is linear: a topic
+    # that also carries a genuinely branching diagram is not a mis-classification.
+    linear_mermaid_topics = [
+        tid for tid, flags in mermaid_linearity.items() if flags and all(flags)
+    ]
+
     topics_missing_visual = [
         tid for tid in dict.fromkeys(s.topic_id for s in sections if s.topic_id)
         if topic_visual_status.get(tid) not in ("visual", "justified")
@@ -1704,6 +1749,7 @@ def render_course(course_md: str) -> Rendered:
         glossary=terms,
         quizzes_per_topic=quizzes_per_topic,
         animations_per_topic=animations_per_topic,
+        linear_mermaid_topics=linear_mermaid_topics,
         quiz_count=quiz_count,
         uses_mermaid=uses_mermaid,
         uses_animate=uses_animate,

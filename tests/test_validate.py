@@ -1,6 +1,6 @@
 import pytest
 
-from p2c.mdrender import render_course
+from p2c.mdrender import is_linear_mermaid, render_course
 from p2c.validate import (
     ROUTE_FOR_CODE,
     Finding,
@@ -252,3 +252,39 @@ def test_blocking_filters_and_json_round_trips():
         "code": "a", "message": "m", "blocking": True,
         "route": "writer", "module": "m1", "topic": "t1",
     }
+
+
+def test_linear_chain_is_detected():
+    assert is_linear_mermaid("flowchart LR\n  A --> B\n  B --> C\n")
+
+
+def test_branching_diagram_is_not_linear():
+    # A is the source of two edges: that fan-out is what mermaid draws well.
+    assert not is_linear_mermaid("flowchart LR\n  A --> B\n  A --> C\n")
+
+
+def test_single_edge_counts_as_linear():
+    assert is_linear_mermaid("flowchart LR\n  A --> B\n")
+
+
+def test_diagram_with_no_edges_is_not_linear():
+    assert not is_linear_mermaid("flowchart LR\n  A\n")
+
+
+def test_labelled_edges_are_still_linear():
+    assert is_linear_mermaid("flowchart LR\n  A -->|yes| B\n  B -->|next| C\n")
+
+
+def test_node_labels_do_not_break_source_identity():
+    # Regression: real diagrams write the label on first mention only, so `M["x"]`
+    # and a later bare `M` are the SAME source. A regex that folds the label into
+    # the id scores this fan-out as linear.
+    assert not is_linear_mermaid(
+        'flowchart LR\n  M["camera"] -->|"a"| A["roof"]\n  M -->|"b"| B["ground"]\n'
+    )
+
+
+def test_bracketed_nodes_on_a_straight_chain_are_linear():
+    assert is_linear_mermaid(
+        'flowchart LR\n  A["Start"] --> B["Middle"]\n  B --> C["End"]\n'
+    )
