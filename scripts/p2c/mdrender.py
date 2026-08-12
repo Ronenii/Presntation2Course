@@ -1521,6 +1521,7 @@ class Rendered:
     uses_mermaid: bool = False
     uses_animate: bool = False
     topics_missing_visual: list[str] = field(default_factory=list)
+    topics_visual_justified: list[str] = field(default_factory=list)
     topics_missing_quiz: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -1735,6 +1736,11 @@ def render_course(course_md: str) -> Rendered:
         if topic_visual_status.get(tid) not in ("visual", "justified")
     ]
 
+    topics_visual_justified = [
+        tid for tid in dict.fromkeys(s.topic_id for s in sections if s.topic_id)
+        if topic_visual_status.get(tid) == "justified"
+    ]
+
     topics_missing_quiz = [
         tid for tid in dict.fromkeys(s.topic_id for s in sections if s.topic_id)
         if quizzes_per_topic.get(tid, 0) == 0 and topic_quiz_status.get(tid) != "justified"
@@ -1754,6 +1760,7 @@ def render_course(course_md: str) -> Rendered:
         uses_mermaid=uses_mermaid,
         uses_animate=uses_animate,
         topics_missing_visual=topics_missing_visual,
+        topics_visual_justified=topics_visual_justified,
         topics_missing_quiz=topics_missing_quiz,
         errors=errors,
     )
