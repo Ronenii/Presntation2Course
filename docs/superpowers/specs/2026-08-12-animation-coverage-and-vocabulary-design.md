@@ -13,7 +13,7 @@ estimation, 55 topics) found **zero** `animate` blocks. The visual mix was:
 | `figure` | 2 |
 | `no-visual` justification | 10 |
 
-Of those 42 mermaid blocks, **20 are linear chains with no fan-out** — a straight line
+Of those 42 mermaid blocks, **17 are linear chains with no fan-out** — a straight line
 of boxes, where no node is the source of more than one edge. `references/agents/course-writer.md`
 already tells the writer that exactly this shape is a `state-machine` candidate and not
 a flowchart ("If you'd draw it in mermaid it would be a straight line of boxes with no
@@ -115,7 +115,7 @@ adding a validation branch, without disturbing the existing four.
 
 #### `pipeline`
 
-The highest-value shape — it covers most of unit 2's 20 misclassified linear chains.
+The highest-value shape — it covers most of unit 2's 17 misclassified linear chains.
 Input flowing through named stages, each transforming it.
 
 ````
@@ -247,7 +247,7 @@ more than one edge.* Topics whose only visual is such a chain are listed in the 
 the concrete conversion candidates, so the writer is told which diagrams are misclassified
 rather than merely that the count is short.
 
-This makes the floor achievable by genuine reclassification. Unit 2 had 20 such chains
+This makes the floor achievable by genuine reclassification. Unit 2 had 17 such chains
 against a floor of ~12 — the material to satisfy it honestly was already there.
 
 ## Components
