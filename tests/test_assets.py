@@ -322,6 +322,22 @@ def test_layout_css_styles_every_component_the_renderers_emit():
         assert selector in css, selector
 
 
+def test_new_animate_patterns_define_their_tokens_and_static_fallbacks():
+    css = (ASSETS / "base" / "layout.css").read_text(encoding="utf-8")
+    for token in (
+        "--anim-pipe-idle", "--anim-pipe-active",
+        "--anim-layer-idle", "--anim-layer-active",
+        "--anim-xform-idle", "--anim-xform-active",
+    ):
+        assert token in css, f"{token} is not defined"
+    # Reduced motion must reveal the markup the timeline would have animated.
+    reduced = css.split("@media (prefers-reduced-motion: reduce)")
+    assert len(reduced) > 1
+    tail = "".join(reduced[1:])
+    for selector in ("anim--pipeline", "anim--layer-stack", "anim--transform"):
+        assert selector in tail, f"{selector} has no reduced-motion fallback"
+
+
 def test_layout_css_only_uses_tokens_the_themes_define():
     css = (ASSETS / "base" / "layout.css").read_text()
     used = set(re.findall(r"var\((--[a-z0-9-]+)", css))
@@ -330,7 +346,8 @@ def test_layout_css_only_uses_tokens_the_themes_define():
         for t in used
         if t.startswith((
             "--space", "--radius", "--measure", "--z-", "--drawer-closed-x",
-            "--anim-array-", "--anim-state-",
+            "--anim-array-", "--anim-state-", "--anim-pipe-", "--anim-layer-",
+            "--anim-xform-",
         ))
     }
     assert used - layout_owned <= set(REQUIRED_TOKENS)

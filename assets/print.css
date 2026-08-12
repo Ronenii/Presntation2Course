@@ -61,4 +61,22 @@
     display: block !important; list-style: decimal !important;
     padding-inline-start: 1.5em !important; margin: 0 !important;
   }
+
+  /* Same reasoning as the reduced-motion rule in layout.css: the timeline never
+     runs on paper, so pipeline/layer-stack/transform's animated elements would
+     otherwise print blank -- inline opacity="0" and stroke-dashoffset override. */
+  .anim--pipeline .anim__pipe-line,
+  .anim--transform .anim__xform-line {
+    stroke-dashoffset: 0 !important;
+  }
+  .anim--layer-stack .anim__layer-box,
+  .anim--transform .anim__xform-step {
+    opacity: 1 !important;
+  }
+  .anim--pipeline .anim__pipeline-static,
+  .anim--layer-stack .anim__layer-static,
+  .anim--transform .anim__xform-static {
+    display: block !important; list-style: decimal !important;
+    padding-inline-start: 1.5em !important; margin: 0 !important;
+  }
 }
