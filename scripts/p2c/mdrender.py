@@ -327,6 +327,11 @@ _PATH_MIN_SEGMENT_MS = 300
 
 _ARRAY_VERB_LABEL = {"compare": "comparing", "swap": "swapping", "highlight": "highlighting"}
 
+_PIPE_BOX_WIDTH = 140
+_PIPE_BOX_HEIGHT = 64
+_PIPE_GAP = 56  # horizontal gap between stage boxes; also each connector's length
+_PIPE_TOP_MARGIN = 24
+
 _STATE_BOX_WIDTH = 130
 _STATE_BOX_HEIGHT = 56
 _STATE_GAP = 70  # horizontal gap between box edges, wide enough for an arrow + label
@@ -372,6 +377,8 @@ def _animate_html(anim: Animate, token: str) -> str:
         return _state_toggle_html(anim, token)
     if anim.pattern == "array-ops":
         return _array_ops_html(anim, token)
+    if anim.pattern == "pipeline":
+        return _pipeline_html(anim, token)
     # path-trace
     return _path_trace_html(anim, token)
 
@@ -706,6 +713,109 @@ def _state_toggle_html(anim: Animate, token: str) -> str:
         f'<span class="anim__state-label">After</span>{html.escape(anim.after)}</div>'
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
         "</div>"
+    )
+
+
+def _pipeline_html(anim: Animate, token: str) -> str:
+    """Stages light up left-to-right; each connector draws itself between them.
+
+    Only one stage carries the accent at a time (diagram-design's focal rule):
+    the arriving stage goes accent, and the previous one is returned to idle in
+    the same step, so the reader's eye always has exactly one target.
+    """
+    token_seed = re.sub(r"\D", "", token) or "0"
+    rect_ids = [f"anim-pipe-rect-{token_seed}-{i}" for i in range(len(anim.stages))]
+    line_ids = [f"anim-pipe-line-{token_seed}-{i}" for i in range(len(anim.stages) - 1)]
+
+    box_center_y = _PIPE_TOP_MARGIN + _PIPE_BOX_HEIGHT / 2
+    total_width = len(anim.stages) * _PIPE_BOX_WIDTH + (len(anim.stages) - 1) * _PIPE_GAP
+    total_height = _PIPE_TOP_MARGIN * 2 + _PIPE_BOX_HEIGHT
+
+    def box_x(i: int) -> float:
+        return i * (_PIPE_BOX_WIDTH + _PIPE_GAP)
+
+    # Connectors are emitted BEFORE the boxes so z-order puts lines behind nodes
+    # (diagram-design: "Draw arrows before boxes"), and each box's opaque rect
+    # then covers the connector's ends.
+    lines_html = []
+    for i in range(len(anim.stages) - 1):
+        x1 = box_x(i) + _PIPE_BOX_WIDTH
+        x2 = box_x(i + 1)
+        lines_html.append(
+            f'<line class="anim__pipe-line" id="{line_ids[i]}" '
+            f'x1="{x1:g}" y1="{box_center_y:g}" x2="{x2:g}" y2="{box_center_y:g}" '
+            # The connector starts fully "undrawn": a dash as long as the line
+            # itself, pushed entirely out of view. The timeline animates the
+            # offset to 0, which walks the stroke into existence.
+            f'stroke-dasharray="{_PIPE_GAP}" stroke-dashoffset="{_PIPE_GAP}"></line>'
+        )
+
+    boxes_html = []
+    for i, (name, change) in enumerate(anim.stages):
+        x = box_x(i)
+        center_x = x + _PIPE_BOX_WIDTH / 2
+        boxes_html.append(
+            f'<g class="anim__pipe-stage">'
+            f'<rect class="anim__pipe-box" id="{rect_ids[i]}" x="{x:g}" '
+            f'y="{_PIPE_TOP_MARGIN}" width="{_PIPE_BOX_WIDTH}" '
+            f'height="{_PIPE_BOX_HEIGHT}" rx="8" '
+            f'fill="var(--anim-pipe-idle)"></rect>'
+            f'<text class="anim__pipe-name" x="{center_x:g}" '
+            f'y="{box_center_y - 4:g}" text-anchor="middle">{html.escape(name)}</text>'
+            f'<text class="anim__pipe-change" x="{center_x:g}" '
+            f'y="{box_center_y + 14:g}" text-anchor="middle">'
+            f'{html.escape(change)}</text>'
+            f'</g>'
+        )
+
+    steps_json: list[dict] = []
+    for i in range(len(anim.stages)):
+        steps_json.append({
+            "targets": [f"#{rect_ids[i]}"],
+            "props": {"fill": "var(--anim-pipe-active)"},
+            "duration": 400,
+            "ease": "outQuad",
+        })
+        if i > 0:
+            steps_json.append({
+                "targets": [f"#{rect_ids[i - 1]}"],
+                "props": {"fill": "var(--anim-pipe-idle)"},
+                "duration": 400,
+                "ease": "outQuad",
+                "position": "<",
+            })
+        if i < len(anim.stages) - 1:
+            steps_json.append({
+                "targets": [f"#{line_ids[i]}"],
+                "props": {"strokeDashoffset": [_PIPE_GAP, 0]},
+                "duration": STEP_SECONDS * 1000 // 2,
+                "ease": "inOutQuad",
+            })
+
+    # Gotcha 2: snap every animated property back to baseline before the loop
+    # restarts, or lap two starts from lap one's end state.
+    steps_json.append({
+        "kind": "set", "targets": [f"#{r}" for r in rect_ids],
+        "props": {"fill": "var(--anim-pipe-idle)"},
+    })
+    steps_json.append({
+        "kind": "set", "targets": [f"#{l}" for l in line_ids],
+        "props": {"strokeDashoffset": _PIPE_GAP},
+    })
+
+    timeline_json = _timeline_island_json(
+        {"loop": True, "loopDelay": 800, "steps": steps_json}
+    )
+    static_lines = "".join(
+        f"<li>{html.escape(n)} — {html.escape(c)}</li>" for n, c in anim.stages
+    )
+    return (
+        '<div class="anim anim--pipeline">'
+        f'<svg class="anim__pipeline" dir="ltr" '
+        f'viewBox="0 0 {total_width:g} {total_height:g}">'
+        f"{''.join(lines_html)}{''.join(boxes_html)}</svg>"
+        f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
+        f'<ol class="anim__pipeline-static">{static_lines}</ol></div>'
     )
 
 

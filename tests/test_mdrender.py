@@ -5,10 +5,15 @@ import re
 import pytest
 
 from p2c.mdrender import (
+    _PIPE_BOX_HEIGHT,
+    _PIPE_BOX_WIDTH,
+    _PIPE_GAP,
+    _PIPE_TOP_MARGIN,
     _STATE_BOX_HEIGHT,
     Animate,
     AnimateError,
     FigureError,
+    _pipeline_html,
     mermaid_problem,
     parse_animate,
     parse_figure,
@@ -684,6 +689,70 @@ def test_pipeline_rejects_keys_from_other_patterns():
             "pattern: pipeline\nstages:\n  - A: does a\n  - B: does b\n"
             "points:\n  - 0, 1\n"
         )
+
+
+def _pipeline_anim():
+    return parse_animate(
+        "pattern: pipeline\n"
+        "stages:\n"
+        "  - Raw image: single RGB frame\n"
+        "  - Encoder: compresses into a feature map\n"
+        "  - Depth map: one distance per pixel\n"
+    )
+
+
+def test_pipeline_html_pins_ltr_and_lists_every_stage_statically():
+    out = _pipeline_html(_pipeline_anim(), "ANIMTOKEN3")
+    assert 'dir="ltr"' in out
+    assert 'class="anim anim--pipeline"' in out
+    # Static fallback carries every stage, so print/reduced-motion shows them all.
+    for name in ("Raw image", "Encoder", "Depth map"):
+        assert name in out
+    assert out.count("<li>") == 3
+
+
+def test_pipeline_html_draws_connectors_with_dashoffset():
+    out = _pipeline_html(_pipeline_anim(), "ANIMTOKEN3")
+    data = json.loads(
+        re.search(
+            r'<script type="application/json" class="anim__timeline">(.*?)</script>',
+            out, re.S,
+        ).group(1)
+    )
+    dash_steps = [
+        s for s in data["steps"]
+        if "strokeDashoffset" in (s.get("props") or {}) and s.get("kind") != "set"
+    ]
+    # One drawing animation per connector: N stages => N-1 connectors.
+    assert len(dash_steps) == 2
+
+
+def test_pipeline_timeline_resets_every_animated_property_for_the_loop():
+    out = _pipeline_html(_pipeline_anim(), "ANIMTOKEN3")
+    data = json.loads(
+        re.search(
+            r'<script type="application/json" class="anim__timeline">(.*?)</script>',
+            out, re.S,
+        ).group(1)
+    )
+    assert data["loop"] is True
+    animated = {
+        prop
+        for step in data["steps"] if step.get("kind") != "set"
+        for prop in (step.get("props") or {})
+    }
+    reset = {
+        prop
+        for step in data["steps"] if step.get("kind") == "set"
+        for prop in (step.get("props") or {})
+    }
+    # Gotcha 2: absolute values compound across laps unless every one is reset.
+    assert animated <= reset
+
+
+def test_pipeline_layout_constants_are_divisible_by_four():
+    for value in (_PIPE_BOX_WIDTH, _PIPE_BOX_HEIGHT, _PIPE_GAP, _PIPE_TOP_MARGIN):
+        assert value % 4 == 0
 
 
 @pytest.mark.parametrize(
