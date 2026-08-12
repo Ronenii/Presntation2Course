@@ -93,7 +93,9 @@ def _figure_html(source: str, caption: str, topic_id: str | None) -> str:
 
 STEP_SECONDS = 2
 
-_ANIMATE_KEY = re.compile(r"^(?P<key>pattern|before|after|caption):\s*(?P<value>.*)$")
+_ANIMATE_KEY = re.compile(
+    r"^(?P<key>pattern|before|after|caption|direction|from|to):\s*(?P<value>.*)$"
+)
 _ANIMATE_STEP = re.compile(r"^\s*-\s*(?P<text>.+)$")
 _ARRAY_OP = re.compile(
     r"^(?P<verb>compare|swap|highlight)\s+(?P<a>\d+)(?:\s+(?P<b>\d+))?$"
@@ -118,12 +120,14 @@ class Animate:
     states: list[str] = field(default_factory=list)
     transitions: list[tuple[str, str, str]] = field(default_factory=list)
     stages: list[tuple[str, str]] = field(default_factory=list)
+    layers: list[tuple[str, str]] = field(default_factory=list)
+    direction: str = "up"
 
 
 _LIST_HEADERS = {
     "array:": "array", "ops:": "ops", "points:": "points",
     "states:": "states", "transitions:": "transitions",
-    "stages:": "stages",
+    "stages:": "stages", "layers:": "layers",
 }
 
 
@@ -137,13 +141,17 @@ def parse_animate(body: str) -> Animate:
     states_raw: list[str] = []
     transitions_raw: list[str] = []
     stages_raw: list[str] = []
+    layers_raw: list[str] = []
     caption: str | None = None
+    direction: str | None = None
+    from_value: str | None = None
+    to_value: str | None = None
     section: str | None = None
 
     lists = {
         "array": array_raw, "ops": ops_raw, "points": points_raw,
         "states": states_raw, "transitions": transitions_raw,
-        "stages": stages_raw,
+        "stages": stages_raw, "layers": layers_raw,
     }
 
     for raw in body.split("\n"):
@@ -166,6 +174,12 @@ def parse_animate(body: str) -> Animate:
                 before = value
             elif name == "after":
                 after = value
+            elif name == "direction":
+                direction = value
+            elif name == "from":
+                from_value = value
+            elif name == "to":
+                to_value = value
             else:
                 caption = value
             continue
@@ -176,10 +190,11 @@ def parse_animate(body: str) -> Animate:
 
     if pattern not in (
         "state-machine", "state-toggle", "array-ops", "path-trace", "pipeline",
+        "layer-stack",
     ):
         raise AnimateError(
             "animate pattern must be 'state-machine', 'state-toggle', 'array-ops', "
-            f"'path-trace', or 'pipeline', got {pattern!r}"
+            f"'path-trace', 'pipeline', or 'layer-stack', got {pattern!r}"
         )
 
     if pattern == "state-machine":
@@ -292,6 +307,32 @@ def parse_animate(body: str) -> Animate:
                 )
             stages.append((match.group("name").strip(), match.group("change").strip()))
         return Animate(pattern=pattern, stages=stages, caption=caption or "")
+    elif pattern == "layer-stack":
+        if before or after or states_raw or transitions_raw or array_raw or ops_raw or points_raw or stages_raw:
+            raise AnimateError(
+                "layer-stack does not use 'before:'/'after:'/'states:'/'transitions:'/"
+                "'array:'/'ops:'/'points:'/'stages:'"
+            )
+        if direction is not None and direction not in ("up", "down"):
+            raise AnimateError(
+                f"layer-stack direction must be 'up' or 'down', got {direction!r}"
+            )
+        if len(layers_raw) < 2:
+            raise AnimateError("layer-stack needs at least 2 layers")
+        if len(layers_raw) > 6:
+            raise AnimateError("layer-stack takes at most 6 layers")
+        layers: list[tuple[str, str]] = []
+        for line in layers_raw:
+            match = _STAGE.match(line)
+            if not match:
+                raise AnimateError(
+                    f"layer-stack layer {line!r} must be written as '<name>: <what it adds>'"
+                )
+            layers.append((match.group("name").strip(), match.group("change").strip()))
+        return Animate(
+            pattern=pattern, layers=layers, direction=direction or "up",
+            caption=caption or "",
+        )
     else:  # path-trace
         if before or after or states_raw or transitions_raw or array_raw or ops_raw:
             raise AnimateError("path-trace does not use 'before:'/'after:'")
@@ -331,6 +372,11 @@ _PIPE_BOX_WIDTH = 140
 _PIPE_BOX_HEIGHT = 64
 _PIPE_GAP = 56  # horizontal gap between stage boxes; also each connector's length
 _PIPE_TOP_MARGIN = 24
+
+_LAYER_WIDTH = 260
+_LAYER_HEIGHT = 44
+_LAYER_GAP = 12
+_LAYER_TOP_MARGIN = 20
 
 _STATE_BOX_WIDTH = 130
 _STATE_BOX_HEIGHT = 56
@@ -379,6 +425,8 @@ def _animate_html(anim: Animate, token: str) -> str:
         return _array_ops_html(anim, token)
     if anim.pattern == "pipeline":
         return _pipeline_html(anim, token)
+    if anim.pattern == "layer-stack":
+        return _layer_stack_html(anim, token)
     # path-trace
     return _path_trace_html(anim, token)
 
@@ -816,6 +864,83 @@ def _pipeline_html(anim: Animate, token: str) -> str:
         f"{''.join(lines_html)}{''.join(boxes_html)}</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
         f'<ol class="anim__pipeline-static">{static_lines}</ol></div>'
+    )
+
+
+def _layer_stack_html(anim: Animate, token: str) -> str:
+    """Tiers appear one at a time, bottom-up by default.
+
+    `layers` is authored bottom-up, so index 0 is drawn at the LARGEST y (the
+    bottom of the SVG). A `direction: down` block reverses only the reveal
+    ORDER, never the drawn positions -- the stack's geometry is the same
+    picture either way, which is what makes the static fallback correct for both.
+    """
+    token_seed = re.sub(r"\D", "", token) or "0"
+    count = len(anim.layers)
+    rect_ids = [f"anim-layer-rect-{token_seed}-{i}" for i in range(count)]
+    total_height = _LAYER_TOP_MARGIN * 2 + count * _LAYER_HEIGHT + (count - 1) * _LAYER_GAP
+    total_width = _LAYER_WIDTH + _LAYER_TOP_MARGIN * 2
+
+    def layer_y(i: int) -> float:
+        # i == 0 is the bottom layer: count it down from the stack's base.
+        from_top = count - 1 - i
+        return _LAYER_TOP_MARGIN + from_top * (_LAYER_HEIGHT + _LAYER_GAP)
+
+    rows_html = []
+    for i, (name, adds) in enumerate(anim.layers):
+        y = layer_y(i)
+        rows_html.append(
+            f'<g class="anim__layer-row">'
+            f'<rect class="anim__layer-box" id="{rect_ids[i]}" '
+            f'x="{_LAYER_TOP_MARGIN}" y="{y:g}" width="{_LAYER_WIDTH}" '
+            f'height="{_LAYER_HEIGHT}" rx="6" fill="var(--anim-layer-idle)" '
+            f'opacity="0"></rect>'
+            f'<text class="anim__layer-name" x="{_LAYER_TOP_MARGIN + 12}" '
+            f'y="{y + _LAYER_HEIGHT / 2 + 4:g}">{html.escape(name)}</text>'
+            f'<text class="anim__layer-adds" '
+            f'x="{_LAYER_TOP_MARGIN + _LAYER_WIDTH - 12}" '
+            f'y="{y + _LAYER_HEIGHT / 2 + 4:g}" text-anchor="end">'
+            f'{html.escape(adds)}</text>'
+            f'</g>'
+        )
+
+    order = range(count) if anim.direction == "up" else range(count - 1, -1, -1)
+    steps_json: list[dict] = []
+    for position, i in enumerate(order):
+        steps_json.append({
+            "targets": [f"#{rect_ids[i]}"],
+            "props": {"opacity": [0, 1], "fill": "var(--anim-layer-active)"},
+            "duration": 500,
+            "ease": "outQuad",
+        })
+        if position > 0:
+            previous = list(order)[position - 1]
+            steps_json.append({
+                "targets": [f"#{rect_ids[previous]}"],
+                "props": {"fill": "var(--anim-layer-idle)"},
+                "duration": 500,
+                "ease": "outQuad",
+                "position": "<",
+            })
+
+    steps_json.append({
+        "kind": "set", "targets": [f"#{r}" for r in rect_ids],
+        "props": {"opacity": 0, "fill": "var(--anim-layer-idle)"},
+    })
+
+    timeline_json = _timeline_island_json(
+        {"loop": True, "loopDelay": 900, "steps": steps_json}
+    )
+    static_lines = "".join(
+        f"<li>{html.escape(n)} — {html.escape(a)}</li>" for n, a in anim.layers
+    )
+    return (
+        '<div class="anim anim--layer-stack">'
+        f'<svg class="anim__layer-stack" dir="ltr" '
+        f'viewBox="0 0 {total_width:g} {total_height:g}">'
+        f"{''.join(rows_html)}</svg>"
+        f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
+        f'<ol class="anim__layer-static">{static_lines}</ol></div>'
     )
 
 

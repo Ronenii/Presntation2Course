@@ -5,6 +5,10 @@ import re
 import pytest
 
 from p2c.mdrender import (
+    _LAYER_GAP,
+    _LAYER_HEIGHT,
+    _LAYER_TOP_MARGIN,
+    _LAYER_WIDTH,
     _PIPE_BOX_HEIGHT,
     _PIPE_BOX_WIDTH,
     _PIPE_GAP,
@@ -13,6 +17,7 @@ from p2c.mdrender import (
     Animate,
     AnimateError,
     FigureError,
+    _layer_stack_html,
     _pipeline_html,
     mermaid_problem,
     parse_animate,
@@ -752,6 +757,82 @@ def test_pipeline_timeline_resets_every_animated_property_for_the_loop():
 
 def test_pipeline_layout_constants_are_divisible_by_four():
     for value in (_PIPE_BOX_WIDTH, _PIPE_BOX_HEIGHT, _PIPE_GAP, _PIPE_TOP_MARGIN):
+        assert value % 4 == 0
+
+
+def test_layer_stack_parses_layers_bottom_up_and_defaults_direction_up():
+    anim = parse_animate(
+        "pattern: layer-stack\n"
+        "layers:\n"
+        "  - Pixels: raw sensor values\n"
+        "  - Edges: local intensity changes\n"
+        "  - Objects: assembled shapes\n"
+    )
+    assert anim.pattern == "layer-stack"
+    assert anim.layers[0] == ("Pixels", "raw sensor values")
+    assert anim.direction == "up"
+
+
+def test_layer_stack_accepts_explicit_down_direction():
+    anim = parse_animate(
+        "pattern: layer-stack\ndirection: down\n"
+        "layers:\n  - Top: starts here\n  - Bottom: ends here\n"
+    )
+    assert anim.direction == "down"
+
+
+def test_layer_stack_rejects_an_unknown_direction():
+    with pytest.raises(AnimateError, match="direction"):
+        parse_animate(
+            "pattern: layer-stack\ndirection: sideways\n"
+            "layers:\n  - A: does a\n  - B: does b\n"
+        )
+
+
+def test_layer_stack_rejects_bad_layer_counts():
+    with pytest.raises(AnimateError, match="at least 2 layers"):
+        parse_animate("pattern: layer-stack\nlayers:\n  - Only: one\n")
+    body = "pattern: layer-stack\nlayers:\n" + "".join(
+        f"  - L{i}: does {i}\n" for i in range(7)
+    )
+    with pytest.raises(AnimateError, match="at most 6 layers"):
+        parse_animate(body)
+
+
+def test_layer_stack_html_is_ltr_and_static_lists_every_layer():
+    anim = parse_animate(
+        "pattern: layer-stack\n"
+        "layers:\n  - Pixels: raw values\n  - Edges: gradients\n  - Objects: shapes\n"
+    )
+    out = _layer_stack_html(anim, "ANIMTOKEN4")
+    assert 'dir="ltr"' in out
+    assert out.count("<li>") == 3
+    assert "Pixels" in out and "Objects" in out
+
+
+def test_layer_stack_timeline_resets_animated_properties():
+    anim = parse_animate(
+        "pattern: layer-stack\n"
+        "layers:\n  - Pixels: raw values\n  - Edges: gradients\n"
+    )
+    out = _layer_stack_html(anim, "ANIMTOKEN4")
+    data = json.loads(
+        re.search(
+            r'<script type="application/json" class="anim__timeline">(.*?)</script>',
+            out, re.S,
+        ).group(1)
+    )
+    animated = {
+        p for s in data["steps"] if s.get("kind") != "set" for p in (s.get("props") or {})
+    }
+    reset = {
+        p for s in data["steps"] if s.get("kind") == "set" for p in (s.get("props") or {})
+    }
+    assert animated <= reset
+
+
+def test_layer_stack_constants_are_divisible_by_four():
+    for value in (_LAYER_WIDTH, _LAYER_HEIGHT, _LAYER_GAP, _LAYER_TOP_MARGIN):
         assert value % 4 == 0
 
 
