@@ -9,7 +9,12 @@ import pytest
 
 from p2c.build import build, main
 from p2c.imagery import ImageryError
+from p2c.mdrender import render_course
 from p2c.theme import TEMPLATE_PLACEHOLDERS
+from p2c.validate import validate_course
+
+from test_mdrender import FM
+from test_validate import GOOD_QUIZ, check, course
 
 REPO = Path(__file__).resolve().parents[1]
 MINI = REPO / "tests" / "fixtures" / "mini-course"
@@ -465,4 +470,89 @@ def test_animate_blocks_render_inside_a_built_course(tmp_path):
         r'<span class="anim__state-label">Before</span>Ready</div>',
         html,
     )
-    assert [f.code for f in result.findings] == []
+
+
+def test_course_with_new_patterns_builds_and_validates():
+    """End-to-end: a course using all three Task 1-4 patterns (pipeline,
+    layer-stack, transform) renders cleanly through render_course and produces
+    no findings through validate_course. topic-d is justified via <!--
+    no-visual: ... --> and must be excluded from the coverage denominator, so
+    the 3 owing topics (a, b, c) all animating clears the 25% floor with room
+    to spare.
+    """
+    md = (
+        FM + "\n"
+        "# Operating Systems\n\n## Virtual Memory\n\n"
+        "<!-- topic: topic-a -->\n### Topic A\n\n"
+        "```animate\npattern: pipeline\nstages:\n"
+        "  - Raw: unprocessed input\n  - Done: processed output\n```\n\n"
+        f"{GOOD_QUIZ}\n\n"
+        "<!-- topic: topic-b -->\n### Topic B\n\n"
+        "```animate\npattern: layer-stack\nlayers:\n"
+        "  - Base: raw values\n  - Top: assembled shapes\n```\n\n"
+        f"{GOOD_QUIZ}\n\n"
+        "<!-- topic: topic-c -->\n### Topic C\n\n"
+        "```animate\npattern: transform\nfrom: A form\nto: B form\n"
+        "steps:\n  - Convert it\n```\n\n"
+        f"{GOOD_QUIZ}\n\n"
+        "<!-- topic: topic-d -->\n### Topic D\n\n"
+        "<!-- no-visual: administrative topic -->\n\nProse.\n\n"
+        f"{GOOD_QUIZ}\n"
+    )
+    outline = {
+        "title": "Operating Systems",
+        "subject_domain": "systems",
+        "source_decks": ["week1.pdf"],
+        "modules": [
+            {
+                "id": "m-memory",
+                "title": "Virtual Memory",
+                "prerequisites": [],
+                "topics": [
+                    {"id": "topic-a", "title": "Topic A", "slide_refs": [],
+                     "jargon": [], "diagrams": [], "gaps": []},
+                    {"id": "topic-b", "title": "Topic B", "slide_refs": [],
+                     "jargon": [], "diagrams": [], "gaps": []},
+                    {"id": "topic-c", "title": "Topic C", "slide_refs": [],
+                     "jargon": [], "diagrams": [], "gaps": []},
+                    {"id": "topic-d", "title": "Topic D", "slide_refs": [],
+                     "jargon": [], "diagrams": [], "gaps": []},
+                ],
+            }
+        ],
+    }
+
+    rendered = render_course(md)
+    assert rendered.errors == []
+    assert rendered.uses_animate is True
+    # 3 of 3 owing topics animate; topic-d is justified and out of the denominator.
+    assert rendered.animations_per_topic["topic-a"] == 1
+    assert rendered.animations_per_topic["topic-b"] == 1
+    assert rendered.animations_per_topic["topic-c"] == 1
+    assert rendered.animations_per_topic["topic-d"] == 0
+    assert "topic-d" in rendered.topics_visual_justified
+    for pattern_class in ("anim--pipeline", "anim--layer-stack", "anim--transform"):
+        assert pattern_class in rendered.html_body
+
+    findings = validate_course(rendered, outline, "<html><body>ok</body></html>")
+    assert [f.code for f in findings] == []
+
+
+def test_course_of_linear_flowcharts_fails_the_animation_floor():
+    """A course whose only topics are linear mermaid chains, with zero
+    `animate` blocks, must trip the 25% animation floor -- blocking, routed
+    to the writer, and naming the specific topics to convert.
+    """
+    linear_diagram = "```mermaid\nflowchart LR\n  A --> B\n  B --> C\n```"
+    findings = check(
+        course(
+            tlb_body=f"{linear_diagram}\n\n{GOOD_QUIZ}",
+            thrashing_body=f"{linear_diagram}\n\n{GOOD_QUIZ}",
+        )
+    )
+    floor = [f for f in findings if f.code == "animation_floor"]
+    assert len(floor) == 1
+    assert floor[0].blocking is True
+    # Every topic is a conversion candidate: both are linear chains.
+    assert "tlb" in floor[0].message
+    assert "thrashing" in floor[0].message

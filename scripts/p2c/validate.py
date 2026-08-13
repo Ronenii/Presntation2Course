@@ -4,6 +4,7 @@ Only the affected unit re-runs. Anything not attributable to a single module or 
 routes to "build", which re-renders with no agent involved at all.
 """
 
+import math
 import re
 from dataclasses import asdict, dataclass
 
@@ -23,7 +24,10 @@ ROUTE_FOR_CODE = {
     "topic_missing": "summarizer",
     "topic_unknown": "writer",
     "external_request": "build",
+    "animation_floor": "writer",
 }
+
+ANIMATION_FLOOR = 0.25
 
 PLACEHOLDER_PATTERNS = (
     r"\bTODO\b",
@@ -107,6 +111,47 @@ def _external_requests(html_text: str) -> list[str]:
     return hits
 
 
+def animation_floor_findings(rendered, justified_topics: set[str]) -> list[Finding]:
+    """At least a quarter of the topics that owe a visual must animate.
+
+    The denominator deliberately reuses "owes a visual" (every topic without a
+    `no-visual` justification) rather than the outline's `depth` field: the
+    build is not depth-aware, and one definition is better than two that can
+    drift apart. `brief` topics carry `no-visual` by rule, so they drop out.
+    """
+    owing = [t for t in dict.fromkeys(rendered.topic_ids) if t not in justified_topics]
+    if not owing:
+        return []
+    required = math.ceil(ANIMATION_FLOOR * len(owing))
+    animated = sum(
+        1 for t in owing if rendered.animations_per_topic.get(t, 0) > 0
+    )
+    if animated >= required:
+        return []
+
+    candidates = [t for t in rendered.linear_mermaid_topics if t in owing]
+    if candidates:
+        advice = (
+            "convert these topics' mermaid diagrams to `animate` blocks — each is a "
+            "linear chain with no fan-out, which is a sequence rather than a "
+            f"structure: {', '.join(sorted(candidates))}"
+        )
+    else:
+        advice = (
+            "no linear mermaid chains were found to convert, so add `animate` blocks "
+            "(pipeline, layer-stack, transform, state-machine, state-toggle) to the "
+            "topics whose content is a sequence rather than a structure"
+        )
+    return [
+        _finding(
+            "animation_floor",
+            f"only {animated} of {len(owing)} topics that need a visual use an "
+            f"`animate` block ({required} required, {int(ANIMATION_FLOOR * 100)}%); "
+            f"{advice}",
+        )
+    ]
+
+
 def validate_course(rendered: Rendered, outline: dict, html_text: str) -> list[Finding]:
     findings: list[Finding] = []
     modules = anchor_to_module(rendered, outline)
@@ -188,6 +233,13 @@ def validate_course(rendered: Rendered, outline: dict, html_text: str) -> list[F
                 module=modules.get(anchor_of_topic.get(topic_id, "")),
             )
         )
+
+    # 5c: at least a quarter of the topics that owe a visual must animate, or a
+    # generated course can satisfy "has a visual" entirely with mermaid and ship
+    # with zero motion. See animation_floor_findings for the exact rule.
+    findings.extend(
+        animation_floor_findings(rendered, set(rendered.topics_visual_justified))
+    )
 
     # 6: every jargon term has a glossary entry. Reported per topic (rather than
     # pooled across the whole outline) so each finding is attributable to one writer.

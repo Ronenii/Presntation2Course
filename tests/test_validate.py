@@ -1,6 +1,6 @@
 import pytest
 
-from p2c.mdrender import render_course
+from p2c.mdrender import is_linear_mermaid, render_course
 from p2c.validate import (
     ROUTE_FOR_CODE,
     Finding,
@@ -252,3 +252,235 @@ def test_blocking_filters_and_json_round_trips():
         "code": "a", "message": "m", "blocking": True,
         "route": "writer", "module": "m1", "topic": "t1",
     }
+
+
+def test_linear_chain_is_detected():
+    assert is_linear_mermaid("flowchart LR\n  A --> B\n  B --> C\n")
+
+
+def test_branching_diagram_is_not_linear():
+    # A is the source of two edges: that fan-out is what mermaid draws well.
+    assert not is_linear_mermaid("flowchart LR\n  A --> B\n  A --> C\n")
+
+
+def test_single_edge_counts_as_linear():
+    assert is_linear_mermaid("flowchart LR\n  A --> B\n")
+
+
+def test_diagram_with_no_edges_is_not_linear():
+    assert not is_linear_mermaid("flowchart LR\n  A\n")
+
+
+def test_labelled_edges_are_still_linear():
+    assert is_linear_mermaid("flowchart LR\n  A -->|yes| B\n  B -->|next| C\n")
+
+
+def test_node_labels_do_not_break_source_identity():
+    # Regression: real diagrams write the label on first mention only, so `M["x"]`
+    # and a later bare `M` are the SAME source. A regex that folds the label into
+    # the id scores this fan-out as linear.
+    assert not is_linear_mermaid(
+        'flowchart LR\n  M["camera"] -->|"a"| A["roof"]\n  M -->|"b"| B["ground"]\n'
+    )
+
+
+def test_bracketed_nodes_on_a_straight_chain_are_linear():
+    assert is_linear_mermaid(
+        'flowchart LR\n  A["Start"] --> B["Middle"]\n  B --> C["End"]\n'
+    )
+
+
+# --- animation coverage floor -----------------------------------------------
+#
+# A dedicated 4-topic outline/course builder: the animation-floor arithmetic
+# needs more topics than the 2-topic OUTLINE/course() fixtures above provide,
+# and each topic below carries its own quiz so `animation_floor` is the only
+# finding under test (no unrelated topic_without_quiz noise).
+
+FLOOR_OUTLINE = {
+    "title": "Networking",
+    "subject_domain": "systems",
+    "source_decks": ["week2.pdf"],
+    "modules": [
+        {
+            "id": "m-net",
+            "title": "Networking Basics",
+            "prerequisites": [],
+            "topics": [
+                {"id": "t1", "title": "Topic One", "slide_refs": ["week2.pdf#1"],
+                 "jargon": [], "diagrams": [], "gaps": []},
+                {"id": "t2", "title": "Topic Two", "slide_refs": ["week2.pdf#2"],
+                 "jargon": [], "diagrams": [], "gaps": []},
+                {"id": "t3", "title": "Topic Three", "slide_refs": ["week2.pdf#3"],
+                 "jargon": [], "diagrams": [], "gaps": []},
+                {"id": "t4", "title": "Topic Four", "slide_refs": ["week2.pdf#4"],
+                 "jargon": [], "diagrams": [], "gaps": []},
+            ],
+        }
+    ],
+}
+
+FLOOR_HEAD = """---
+title: Networking
+subject_domain: systems
+theme: slate
+source_decks:
+  - week2.pdf
+---
+
+# Networking
+
+## Networking Basics
+"""
+
+ANIMATE_BLOCK = "```animate\npattern: state-toggle\nbefore: Ready\nafter: Running\n```"
+
+LINEAR_MERMAID_BLOCK = "```mermaid\nflowchart LR\n  A --> B\n  B --> C\n```"
+
+BRANCHING_MERMAID_BLOCK = "```mermaid\nflowchart LR\n  A --> B\n  A --> C\n```"
+
+NO_VISUAL = "<!-- no-visual: test fixture prose, nothing spatial to draw -->"
+
+
+def _quiz(question):
+    return (
+        f"```quiz\nq: {question}\n- [ ] wrong\n- [x] right\n- [ ] also wrong\n"
+        "why: because.\n```"
+    )
+
+
+def floor_course(bodies: dict[str, str]) -> str:
+    """Build a 4-topic course; bodies maps topic id -> extra content before its quiz."""
+    parts = [FLOOR_HEAD]
+    for topic_id in ("t1", "t2", "t3", "t4"):
+        title = {"t1": "Topic One", "t2": "Topic Two",
+                 "t3": "Topic Three", "t4": "Topic Four"}[topic_id]
+        extra = bodies.get(topic_id, NO_VISUAL)
+        parts.append(f"\n<!-- topic: {topic_id} -->\n### {title}\n\n")
+        parts.append(f"Some prose about {title.lower()}.\n\n{extra}\n\n")
+        parts.append(_quiz(f"a question about {title.lower()}") + "\n")
+    return "".join(parts)
+
+
+def floor_check(bodies):
+    return check(floor_course(bodies), outline=FLOOR_OUTLINE)
+
+
+def test_animation_floor_is_met_when_a_quarter_of_owing_topics_animate():
+    # 4 topics, none justified -> denominator 4, requires 1. t1 animates.
+    findings = floor_check({
+        "t1": ANIMATE_BLOCK,
+        "t2": NO_VISUAL,
+        "t3": NO_VISUAL,
+        "t4": NO_VISUAL,
+    })
+    assert "animation_floor" not in codes(findings)
+
+
+def test_animation_floor_is_blocking_when_under_and_names_conversion_candidates():
+    # 4 topics, none animate. t2 and t3 carry linear mermaid chains: candidates.
+    findings = floor_check({
+        "t1": NO_VISUAL,
+        "t2": LINEAR_MERMAID_BLOCK,
+        "t3": LINEAR_MERMAID_BLOCK,
+        "t4": NO_VISUAL,
+    })
+    floor = [f for f in findings if f.code == "animation_floor"]
+    assert len(floor) == 1
+    assert floor[0].blocking is True
+    assert floor[0].route == "writer"
+    assert "t2" in floor[0].message and "t3" in floor[0].message
+
+
+def test_animation_floor_requirement_rounds_up():
+    # t4 is no-visual justified (drops out) -> 3 owing topics (t1-t3), each with a
+    # plain, non-justified visual (mermaid) and no animation. 3 * 0.25 = 0.75,
+    # which still rounds up to requiring 1 -- none animate, so this fails.
+    findings_under = floor_check({
+        "t1": BRANCHING_MERMAID_BLOCK,
+        "t2": BRANCHING_MERMAID_BLOCK,
+        "t3": BRANCHING_MERMAID_BLOCK,
+        "t4": NO_VISUAL,
+    })
+    assert "animation_floor" in codes(findings_under)
+
+    # Same 3-owing-topic shape, but t1 now animates -> 1 of 3 meets the
+    # rounded-up requirement of 1.
+    findings_ok = floor_check({
+        "t1": ANIMATE_BLOCK,
+        "t2": BRANCHING_MERMAID_BLOCK,
+        "t3": BRANCHING_MERMAID_BLOCK,
+        "t4": NO_VISUAL,
+    })
+    assert "animation_floor" not in codes(findings_ok)
+
+
+def test_no_visual_justified_topics_leave_the_animation_floor_denominator():
+    # t1 animates; t3/t4 are no-visual justified (drop out of the denominator);
+    # t2 has a plain (non-justified) visual. Denominator is {t1, t2} = 2, requires
+    # 1, and t1 alone satisfies it.
+    findings = floor_check({
+        "t1": ANIMATE_BLOCK,
+        "t2": BRANCHING_MERMAID_BLOCK,
+        "t3": NO_VISUAL,
+        "t4": NO_VISUAL,
+    })
+    assert "animation_floor" not in codes(findings)
+
+
+def test_animation_floor_is_skipped_when_no_topic_owes_a_visual():
+    # All 4 topics justified -> denominator 0 -> check skipped entirely.
+    findings = floor_check({
+        "t1": NO_VISUAL,
+        "t2": NO_VISUAL,
+        "t3": NO_VISUAL,
+        "t4": NO_VISUAL,
+    })
+    assert "animation_floor" not in codes(findings)
+
+
+def test_animation_floor_failure_says_no_linear_when_no_candidates_exist():
+    # 4 topics, none animate, none carry a linear mermaid chain to convert.
+    findings = floor_check({
+        "t1": NO_VISUAL,
+        "t2": BRANCHING_MERMAID_BLOCK,
+        "t3": NO_VISUAL,
+        "t4": NO_VISUAL,
+    })
+    floor = [f for f in findings if f.code == "animation_floor"]
+    assert len(floor) == 1
+    assert "no linear" in floor[0].message.lower()
+
+
+def test_animation_floor_routes_to_the_writer():
+    assert ROUTE_FOR_CODE["animation_floor"] == "writer"
+
+
+def test_a_duplicated_topic_marker_does_not_inflate_the_floor_denominator():
+    """Rendered.topic_ids returns one entry PER SECTION and is not deduplicated
+    (unlike its three siblings topics_missing_visual/topics_visual_justified/
+    topics_missing_quiz, which all dedup via dict.fromkeys). The floor check's
+    `owing` list was the only consumer treating raw topic_ids as a set, so a
+    repeated `<!-- topic: x -->` marker -- a plausible LLM slip, e.g. a second
+    `### ` section re-opening a topic it already covered -- silently inflated
+    the denominator and could flip a compliant build to a false-positive
+    failure.
+
+    All 4 topics owe a visual (none carry `no-visual`) and 1 animates:
+    ceil(0.25*4)=1, met. Splitting t3's content into a second `### ` section
+    that reopens `<!-- topic: t3 -->` must NOT change that outcome: the
+    denominator must still be counted over the 4 distinct topic ids, not the
+    5 raw section entries this produces (which would round ceil(0.25*5)=2 and
+    turn a compliant build into a false-positive failure).
+    """
+    findings = floor_check({
+        "t1": ANIMATE_BLOCK,
+        "t2": BRANCHING_MERMAID_BLOCK,
+        "t3": (
+            BRANCHING_MERMAID_BLOCK
+            + "\n\n<!-- topic: t3 -->\n### Topic Three continued\n\n"
+            + BRANCHING_MERMAID_BLOCK
+        ),
+        "t4": BRANCHING_MERMAID_BLOCK,
+    })
+    assert "animation_floor" not in codes(findings)

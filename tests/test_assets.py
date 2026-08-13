@@ -322,6 +322,63 @@ def test_layout_css_styles_every_component_the_renderers_emit():
         assert selector in css, selector
 
 
+def test_new_animate_patterns_define_their_tokens_and_static_fallbacks():
+    css = (ASSETS / "base" / "layout.css").read_text(encoding="utf-8")
+    for token in (
+        "--anim-pipe-idle", "--anim-pipe-active",
+        "--anim-layer-idle", "--anim-layer-active",
+        "--anim-xform-idle", "--anim-xform-active",
+    ):
+        assert token in css, f"{token} is not defined"
+    # Reduced motion must reveal the markup the timeline would have animated.
+    reduced = css.split("@media (prefers-reduced-motion: reduce)")
+    assert len(reduced) > 1
+    tail = "".join(reduced[1:])
+    for selector in ("anim--pipeline", "anim--layer-stack", "anim--transform"):
+        assert selector in tail, f"{selector} has no reduced-motion fallback"
+
+
+def test_reduced_motion_static_lists_for_the_new_patterns_get_list_styling():
+    """The three OLDER patterns' reduced-motion static-list reveals (.anim__array-steps-static,
+    .anim__path-steps-static, .anim__state-steps-static) all set list-style: decimal plus
+    padding-inline-start/margin, and print.css already sets exactly that for
+    .anim__pipeline-static/.anim__layer-static/.anim__xform-static. The reduced-motion rule for
+    those same three selectors set only `display: block`, leaving them unnumbered and
+    unindented -- the one presentation context that diverged from both its older siblings and
+    its own print sibling.
+    """
+    css = (ASSETS / "base" / "layout.css").read_text()
+    reduced = "".join(css.split("@media (prefers-reduced-motion: reduce)")[1:])
+    rule_start = reduced.index(".anim--pipeline .anim__pipeline-static")
+    rule = reduced[rule_start : reduced.index("}", rule_start)]
+    assert "list-style: decimal" in rule
+    assert "padding-inline-start: var(--space-6)" in rule
+    assert "margin: 0" in rule
+
+
+def test_new_animate_pattern_svgs_scroll_instead_of_shrinking_text():
+    """.anim__pipeline/.anim__layer-stack/.anim__transform previously matched
+    .anim__state-machine's `width: 100%` -- fine for a small fixed viewBox, but
+    a wide one (a 6-stage pipeline, or a transform block whose step text widened
+    the connector gap) got stretched across the full text column and its text
+    scaled down to illegibility (~5-6px effective at a ~700px column against a
+    ~1400px viewBox). The markup now carries explicit width/height presentation
+    attributes so each SVG renders at its own natural size by default (see
+    _pipeline_html/_layer_stack_html/_transform_html); this asserts the CSS side
+    of that fix: `max-width` (never `width`) caps it from overflowing a narrow
+    column, and the wrapper scrolls -- same `overflow-x: auto` idiom .mermaid
+    already uses -- rather than the SVG scaling its text down to fit.
+    """
+    css = (ASSETS / "base" / "layout.css").read_text()
+    svg_rule_start = css.index(".anim__pipeline,")
+    svg_rule = css[svg_rule_start : css.index("}", svg_rule_start)]
+    assert "max-width: 100%" in svg_rule
+    assert re.search(r"(?<!max-)width: 100%", svg_rule) is None
+    wrapper_rule_start = css.index(".anim--pipeline,\n.anim--layer-stack,\n.anim--transform")
+    wrapper_rule = css[wrapper_rule_start : css.index("}", wrapper_rule_start)]
+    assert "overflow-x: auto" in wrapper_rule
+
+
 def test_layout_css_only_uses_tokens_the_themes_define():
     css = (ASSETS / "base" / "layout.css").read_text()
     used = set(re.findall(r"var\((--[a-z0-9-]+)", css))
@@ -330,7 +387,8 @@ def test_layout_css_only_uses_tokens_the_themes_define():
         for t in used
         if t.startswith((
             "--space", "--radius", "--measure", "--z-", "--drawer-closed-x",
-            "--anim-array-", "--anim-state-",
+            "--anim-array-", "--anim-state-", "--anim-pipe-", "--anim-layer-",
+            "--anim-xform-",
         ))
     }
     assert used - layout_owned <= set(REQUIRED_TOKENS)

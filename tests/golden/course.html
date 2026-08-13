@@ -326,6 +326,22 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   --anim-state-idle: var(--color-surface);
   --anim-state-current: var(--color-accent);
 }
+/* Tokens for the pipeline, layer-stack, and transform patterns (Tasks 2-4),
+   referenced via a fill="var(...)" attribute directly on the SVG's own rects
+   -- same reasoning as .anim__state-box above: an author `fill` declaration
+   here would override the attribute the timeline animates. */
+.anim__pipeline {
+  --anim-pipe-idle: var(--color-surface);
+  --anim-pipe-active: var(--color-accent);
+}
+.anim__layer-stack {
+  --anim-layer-idle: var(--color-surface);
+  --anim-layer-active: var(--color-accent);
+}
+.anim__transform {
+  --anim-xform-idle: var(--color-surface);
+  --anim-xform-active: var(--color-accent);
+}
 /* No `fill` here on purpose: the rect carries fill="var(--anim-state-idle)" as
    its own attribute (see _state_machine_html, mirroring _array_ops_html's
    rects). A stylesheet `fill` declaration would be an author declaration that
@@ -478,6 +494,72 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
    print/reduced-motion presentation below, same toggle pair as array-ops. */
 .anim__path-steps-static { display: none; }
 
+/* Unlike .anim__state-machine/.anim__path/.anim__array above (width: 100%,
+   which stretches a wide viewBox across the full column and shrinks its text
+   proportionally -- illegible once a 6-stage pipeline or a wide transform gap
+   pushes the viewBox past ~1000px), these three carry explicit width/height
+   presentation attributes in the markup (see _pipeline_html/_layer_stack_html/
+   _transform_html) so the SVG renders at its own natural, legible size by
+   default. max-width keeps a narrow one from overflowing its column, and the
+   wrapper's overflow-x below -- the same pattern .mermaid already uses for the
+   same reason -- takes over once natural size exceeds the column instead of
+   scaling text down to fit. */
+.anim__pipeline,
+.anim__layer-stack,
+.anim__transform {
+  max-width: 100%;
+  height: auto;
+}
+.anim--pipeline,
+.anim--layer-stack,
+.anim--transform {
+  overflow-x: auto;
+}
+
+.anim__pipe-box,
+.anim__layer-box,
+.anim__xform-box {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
+.anim__pipe-line,
+.anim__xform-line {
+  stroke: var(--color-muted);
+  stroke-width: 2;
+  fill: none;
+}
+
+.anim__pipe-name,
+.anim__layer-name,
+.anim__xform-label {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  fill: var(--color-fg);
+}
+
+.anim__pipe-change,
+.anim__layer-adds,
+.anim__xform-step-text {
+  font-family: var(--font-body);
+  font-size: 11px;
+  fill: var(--color-muted);
+}
+
+.anim__xform-step-bg {
+  fill: var(--color-bg);
+}
+
+/* The static <ol> lists are the print/reduced-motion presentation only; during
+   normal animated playback the SVG carries the meaning. Same toggle-pair
+   pattern as .anim--array-ops. */
+.anim__pipeline-static,
+.anim__layer-static,
+.anim__xform-static {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .anim__array { display: none; }
   /* The caption and legend only mean anything while the timeline is playing --
@@ -494,6 +576,25 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
      it does for array-ops -- but unlike array-ops the caption stays visible here,
      since it holds the author's own text rather than live step narration. */
   .anim__path-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
+
+  /* The timeline never runs here, so every element it would have revealed must
+     be forced visible -- inline opacity="0" and stroke-dashoffset would
+     otherwise leave these diagrams blank. Every stage/layer/step shows at once. */
+  .anim--pipeline .anim__pipe-line,
+  .anim--transform .anim__xform-line {
+    stroke-dashoffset: 0 !important;
+  }
+
+  .anim--layer-stack .anim__layer-box,
+  .anim--transform .anim__xform-step {
+    opacity: 1 !important;
+  }
+
+  .anim--pipeline .anim__pipeline-static,
+  .anim--layer-stack .anim__layer-static,
+  .anim--transform .anim__xform-static {
+    display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0;
+  }
 }
 </style>
 <style>/* Shared print layout. Used by the in-page Download PDF button and export-pdf. */
@@ -556,6 +657,24 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   }
   .anim__state-machine { display: none !important; }
   .anim__state-steps-static {
+    display: block !important; list-style: decimal !important;
+    padding-inline-start: 1.5em !important; margin: 0 !important;
+  }
+
+  /* Same reasoning as the reduced-motion rule in layout.css: the timeline never
+     runs on paper, so pipeline/layer-stack/transform's animated elements would
+     otherwise print blank -- inline opacity="0" and stroke-dashoffset override. */
+  .anim--pipeline .anim__pipe-line,
+  .anim--transform .anim__xform-line {
+    stroke-dashoffset: 0 !important;
+  }
+  .anim--layer-stack .anim__layer-box,
+  .anim--transform .anim__xform-step {
+    opacity: 1 !important;
+  }
+  .anim--pipeline .anim__pipeline-static,
+  .anim--layer-stack .anim__layer-static,
+  .anim--transform .anim__xform-static {
     display: block !important; list-style: decimal !important;
     padding-inline-start: 1.5em !important; margin: 0 !important;
   }

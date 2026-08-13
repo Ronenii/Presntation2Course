@@ -150,6 +150,23 @@ not just decoration. Concretely, prefer `animate` when the topic is:
   steps (`array-ops`) — a sort pass, a partition step, a two-pointer scan.
 - A point moving along a plotted path (`path-trace`) — convergence, a traversal, a
   value sliding along a curve — where you can supply literal `(x, y)` coordinates.
+- An input flowing through named stages that each change it (`pipeline`) — a
+  processing chain, an encode/decode path, a request being progressively enriched.
+  This is the most common sequence shape; reach for it before `state-machine`
+  when each step *transforms* something rather than merely moving between states.
+- Abstraction tiers that build on each other (`layer-stack`) — a protocol stack,
+  levels of representation, a hierarchy of features.
+- One entity becoming another through named intermediate steps (`transform`) —
+  a conversion, a normalization, a change of units or representation. Use it
+  instead of `state-toggle` whenever the middles are worth naming.
+
+**At least 25% of the topics that need a visual must use an `animate` block.**
+The build fails below that floor and tells you which diagrams to convert. The
+usual cause of falling short is drawing a sequence as a `flowchart`: if your
+mermaid diagram is a straight line of boxes with no branching, it is a
+`pipeline` or a `state-machine`, and it belongs in an `animate` block. Aim
+higher than 25% where the material genuinely is sequential — the floor is a
+minimum, not a target.
 
 ```animate
 pattern: state-machine
@@ -171,8 +188,9 @@ after: Cache line marked Modified after a local write
 `state-machine` needs at least 2 states and at least 1 transition, and every transition
 must connect consecutive states in the order you listed them under `states:` — except one
 optional final transition from the last state back to an earlier one. `state-toggle` needs
-both `before:` and `after:`. See `references/quiz-format.md` for the full grammar,
-including `array-ops` and `path-trace`.
+both `before:` and `after:`. See `references/quiz-format.md` for the full grammar of all
+seven patterns, including `array-ops`, `path-trace`, `pipeline`, `layer-stack`, and
+`transform`.
 
 Stay with `mermaid` when the topic is a structure with more than one relationship to
 show at once (a branching flow, several components connected to each other, a

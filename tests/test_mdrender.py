@@ -5,10 +5,28 @@ import re
 import pytest
 
 from p2c.mdrender import (
+    _LAYER_GAP,
+    _LAYER_HEIGHT,
+    _LAYER_TOP_MARGIN,
+    _LAYER_WIDTH,
+    _PIPE_BOX_HEIGHT,
+    _PIPE_BOX_WIDTH,
+    _PIPE_GAP,
+    _PIPE_TOP_MARGIN,
     _STATE_BOX_HEIGHT,
+    _STATE_LABEL_CHAR_WIDTH,
+    _STATE_LABEL_CHIP_PAD_X,
+    _XFORM_BOX_HEIGHT,
+    _XFORM_BOX_WIDTH,
+    _XFORM_GAP,
+    _XFORM_STEP_BG_HEIGHT,
+    _XFORM_TOP_MARGIN,
     Animate,
     AnimateError,
     FigureError,
+    _layer_stack_html,
+    _pipeline_html,
+    _transform_html,
     mermaid_problem,
     parse_animate,
     parse_figure,
@@ -577,9 +595,32 @@ def test_parse_animate_state_machine_rejects_array_and_points_fields():
         )
 
 
+def test_parse_animate_state_machine_rejects_a_stray_stages_key():
+    """Cross-key guards were extended for the three new patterns' keys
+    (stages/layers/steps/direction/from/to) when they were added, but every
+    PRE-EXISTING pattern's guard was written against the old key set and so
+    silently accepted -- and discarded -- these six keys. This asserts the
+    fix: state-machine now rejects a stray `stages:` list exactly like it
+    already rejects `array:`.
+    """
+    with pytest.raises(AnimateError, match="state-machine does not use"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n"
+            "transitions:\n  - A -> B: go\nstages:\n  - X: y\n"
+        )
+
+
 def test_parse_animate_rejects_a_state_toggle_missing_after():
     with pytest.raises(AnimateError, match="needs both 'before:' and 'after:'"):
         parse_animate("pattern: state-toggle\nbefore: only before")
+
+
+def test_parse_animate_state_toggle_rejects_a_stray_layers_key():
+    with pytest.raises(AnimateError, match="state-toggle does not use"):
+        parse_animate(
+            "pattern: state-toggle\nbefore: Shared\nafter: Modified\n"
+            "layers:\n  - X: y\n"
+        )
 
 
 def test_parse_animate_array_ops():
@@ -644,6 +685,388 @@ def test_parse_animate_array_ops_rejects_before_after():
         parse_animate(
             "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 0\nbefore: x"
         )
+
+
+def test_parse_animate_array_ops_rejects_a_stray_steps_key():
+    with pytest.raises(AnimateError, match="array-ops does not use"):
+        parse_animate(
+            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 0\n"
+            "steps:\n  - a step\n"
+        )
+
+
+def test_pipeline_parses_stages_into_name_change_pairs():
+    anim = parse_animate(
+        "pattern: pipeline\n"
+        "stages:\n"
+        "  - Raw image: single RGB frame\n"
+        "  - Encoder: compresses into a feature map\n"
+    )
+    assert anim.pattern == "pipeline"
+    assert anim.stages == [
+        ("Raw image", "single RGB frame"),
+        ("Encoder", "compresses into a feature map"),
+    ]
+
+
+def test_pipeline_rejects_fewer_than_two_stages():
+    with pytest.raises(AnimateError, match="at least 2 stages"):
+        parse_animate("pattern: pipeline\nstages:\n  - Only one: does nothing\n")
+
+
+def test_pipeline_rejects_more_than_six_stages():
+    body = "pattern: pipeline\nstages:\n" + "".join(
+        f"  - Stage {i}: does thing {i}\n" for i in range(7)
+    )
+    with pytest.raises(AnimateError, match="at most 6 stages"):
+        parse_animate(body)
+
+
+def test_pipeline_rejects_stage_without_a_change_description():
+    with pytest.raises(AnimateError, match="must be written as"):
+        parse_animate("pattern: pipeline\nstages:\n  - Encoder\n  - Decoder: expands\n")
+
+
+def test_pipeline_rejects_keys_from_other_patterns():
+    with pytest.raises(AnimateError, match="does not use"):
+        parse_animate(
+            "pattern: pipeline\nstages:\n  - A: does a\n  - B: does b\n"
+            "points:\n  - 0, 1\n"
+        )
+
+
+def test_pipeline_rejects_caption():
+    """Settled convention (verified across all seven patterns): a pattern that
+    does not RENDER a caption REJECTS it -- state-machine/state-toggle/array-ops
+    all reject it already; only path-trace renders and accepts it. pipeline
+    never renders anim.caption (see _pipeline_html), so it must reject the key
+    rather than silently accept-and-discard it.
+    """
+    with pytest.raises(AnimateError, match="does not use"):
+        parse_animate(
+            "pattern: pipeline\nstages:\n  - A: does a\n  - B: does b\n"
+            "caption: some caption\n"
+        )
+
+
+def _pipeline_anim():
+    return parse_animate(
+        "pattern: pipeline\n"
+        "stages:\n"
+        "  - Raw image: single RGB frame\n"
+        "  - Encoder: compresses into a feature map\n"
+        "  - Depth map: one distance per pixel\n"
+    )
+
+
+def test_pipeline_html_pins_ltr_and_lists_every_stage_statically():
+    out = _pipeline_html(_pipeline_anim(), "ANIMTOKEN3")
+    assert 'dir="ltr"' in out
+    assert 'class="anim anim--pipeline"' in out
+    # Static fallback carries every stage, so print/reduced-motion shows them all.
+    for name in ("Raw image", "Encoder", "Depth map"):
+        assert name in out
+    assert out.count("<li>") == 3
+
+
+def test_pipeline_html_draws_connectors_with_dashoffset():
+    out = _pipeline_html(_pipeline_anim(), "ANIMTOKEN3")
+    data = json.loads(
+        re.search(
+            r'<script type="application/json" class="anim__timeline">(.*?)</script>',
+            out, re.S,
+        ).group(1)
+    )
+    dash_steps = [
+        s for s in data["steps"]
+        if "strokeDashoffset" in (s.get("props") or {}) and s.get("kind") != "set"
+    ]
+    # One drawing animation per connector: N stages => N-1 connectors.
+    assert len(dash_steps) == 2
+
+
+def test_pipeline_timeline_resets_every_animated_property_for_the_loop():
+    out = _pipeline_html(_pipeline_anim(), "ANIMTOKEN3")
+    data = json.loads(
+        re.search(
+            r'<script type="application/json" class="anim__timeline">(.*?)</script>',
+            out, re.S,
+        ).group(1)
+    )
+    assert data["loop"] is True
+    animated = {
+        prop
+        for step in data["steps"] if step.get("kind") != "set"
+        for prop in (step.get("props") or {})
+    }
+    reset = {
+        prop
+        for step in data["steps"] if step.get("kind") == "set"
+        for prop in (step.get("props") or {})
+    }
+    # Gotcha 2: absolute values compound across laps unless every one is reset.
+    assert animated <= reset
+
+
+def test_pipeline_layout_constants_are_divisible_by_four():
+    for value in (_PIPE_BOX_WIDTH, _PIPE_BOX_HEIGHT, _PIPE_GAP, _PIPE_TOP_MARGIN):
+        assert value % 4 == 0
+
+
+def test_pipeline_box_width_grows_to_fit_a_long_stage_description():
+    """Neither _PIPE_BOX_WIDTH nor anything else in _pipeline_html sized the box
+    from the stage's own text: a fixed 140px box against real course prose (the
+    doc's own example, 'single RGB frame, no depth information', estimates to
+    ~274px at _STATE_LABEL_CHAR_WIDTH) overflows into the neighbouring box and
+    across the connector. This asserts the fix reuses _state_machine_html's own
+    "estimate width from character count" approach: every rendered box is at
+    least as wide as its own longest line (name or change) needs.
+    """
+    long_change = "single RGB frame, no depth information"
+    anim = parse_animate(
+        "pattern: pipeline\nstages:\n"
+        f"  - Raw image: {long_change}\n  - Depth map: one distance per pixel\n"
+    )
+    out = _pipeline_html(anim, "ANIMTOKEN3")
+    estimated_text_width = (
+        len(long_change) * _STATE_LABEL_CHAR_WIDTH + 2 * _STATE_LABEL_CHIP_PAD_X
+    )
+    widths = [
+        float(w)
+        for w in re.findall(r'<rect class="anim__pipe-box"[^>]*width="([\d.]+)"', out)
+    ]
+    assert widths, "expected at least one anim__pipe-box rect"
+    assert all(w >= estimated_text_width for w in widths), (
+        widths, estimated_text_width,
+    )
+
+
+def test_xform_step_bg_height_is_divisible_by_four():
+    assert _XFORM_STEP_BG_HEIGHT % 4 == 0
+
+
+def test_layer_stack_parses_layers_bottom_up_and_defaults_direction_up():
+    anim = parse_animate(
+        "pattern: layer-stack\n"
+        "layers:\n"
+        "  - Pixels: raw sensor values\n"
+        "  - Edges: local intensity changes\n"
+        "  - Objects: assembled shapes\n"
+    )
+    assert anim.pattern == "layer-stack"
+    assert anim.layers[0] == ("Pixels", "raw sensor values")
+    assert anim.direction == "up"
+
+
+def test_layer_stack_accepts_explicit_down_direction():
+    anim = parse_animate(
+        "pattern: layer-stack\ndirection: down\n"
+        "layers:\n  - Top: starts here\n  - Bottom: ends here\n"
+    )
+    assert anim.direction == "down"
+
+
+def test_layer_stack_rejects_an_unknown_direction():
+    with pytest.raises(AnimateError, match="direction"):
+        parse_animate(
+            "pattern: layer-stack\ndirection: sideways\n"
+            "layers:\n  - A: does a\n  - B: does b\n"
+        )
+
+
+def test_layer_stack_rejects_bad_layer_counts():
+    with pytest.raises(AnimateError, match="at least 2 layers"):
+        parse_animate("pattern: layer-stack\nlayers:\n  - Only: one\n")
+    body = "pattern: layer-stack\nlayers:\n" + "".join(
+        f"  - L{i}: does {i}\n" for i in range(7)
+    )
+    with pytest.raises(AnimateError, match="at most 6 layers"):
+        parse_animate(body)
+
+
+def test_layer_stack_rejects_a_stray_from_line():
+    with pytest.raises(AnimateError, match="does not use"):
+        parse_animate(
+            "pattern: layer-stack\nfrom: 0, 0\n"
+            "layers:\n  - A: does a\n  - B: does b\n"
+        )
+
+
+def test_layer_stack_rejects_caption():
+    with pytest.raises(AnimateError, match="does not use"):
+        parse_animate(
+            "pattern: layer-stack\nlayers:\n  - A: does a\n  - B: does b\n"
+            "caption: some caption\n"
+        )
+
+
+def test_layer_stack_html_is_ltr_and_static_lists_every_layer():
+    anim = parse_animate(
+        "pattern: layer-stack\n"
+        "layers:\n  - Pixels: raw values\n  - Edges: gradients\n  - Objects: shapes\n"
+    )
+    out = _layer_stack_html(anim, "ANIMTOKEN4")
+    assert 'dir="ltr"' in out
+    assert out.count("<li>") == 3
+    assert "Pixels" in out and "Objects" in out
+
+
+def test_layer_stack_timeline_resets_animated_properties():
+    anim = parse_animate(
+        "pattern: layer-stack\n"
+        "layers:\n  - Pixels: raw values\n  - Edges: gradients\n"
+    )
+    out = _layer_stack_html(anim, "ANIMTOKEN4")
+    data = json.loads(
+        re.search(
+            r'<script type="application/json" class="anim__timeline">(.*?)</script>',
+            out, re.S,
+        ).group(1)
+    )
+    animated = {
+        p for s in data["steps"] if s.get("kind") != "set" for p in (s.get("props") or {})
+    }
+    reset = {
+        p for s in data["steps"] if s.get("kind") == "set" for p in (s.get("props") or {})
+    }
+    assert animated <= reset
+
+
+def test_layer_stack_constants_are_divisible_by_four():
+    for value in (_LAYER_WIDTH, _LAYER_HEIGHT, _LAYER_GAP, _LAYER_TOP_MARGIN):
+        assert value % 4 == 0
+
+
+def test_transform_parses_endpoints_and_steps():
+    anim = parse_animate(
+        "pattern: transform\n"
+        "from: Disparity map\n"
+        "to: Metric depth map\n"
+        "steps:\n"
+        "  - Invert each disparity value\n"
+        "  - Scale by the focal-length constant\n"
+    )
+    assert anim.from_entity == "Disparity map"
+    assert anim.to_entity == "Metric depth map"
+    assert anim.steps == [
+        "Invert each disparity value",
+        "Scale by the focal-length constant",
+    ]
+
+
+def test_transform_requires_both_endpoints():
+    with pytest.raises(AnimateError, match="needs both 'from:' and 'to:'"):
+        parse_animate("pattern: transform\nfrom: Only a start\nsteps:\n  - Does a thing\n")
+
+
+def test_transform_rejects_bad_step_counts():
+    with pytest.raises(AnimateError, match="at least 1 step"):
+        parse_animate("pattern: transform\nfrom: A\nto: B\n")
+    body = "pattern: transform\nfrom: A\nto: B\nsteps:\n" + "".join(
+        f"  - Step {i}\n" for i in range(5)
+    )
+    with pytest.raises(AnimateError, match="at most 4 steps"):
+        parse_animate(body)
+
+
+def test_transform_rejects_a_stray_direction_line():
+    with pytest.raises(AnimateError, match="does not use"):
+        parse_animate(
+            "pattern: transform\nfrom: A\nto: B\ndirection: up\n"
+            "steps:\n  - Does a thing\n"
+        )
+
+
+def test_transform_rejects_caption():
+    with pytest.raises(AnimateError, match="does not use"):
+        parse_animate(
+            "pattern: transform\nfrom: A\nto: B\nsteps:\n  - Does a thing\n"
+            "caption: some caption\n"
+        )
+
+
+def test_transform_html_is_ltr_and_shows_both_endpoints_statically():
+    anim = parse_animate(
+        "pattern: transform\nfrom: Disparity map\nto: Metric depth map\n"
+        "steps:\n  - Invert each value\n"
+    )
+    out = _transform_html(anim, "ANIMTOKEN5")
+    assert 'dir="ltr"' in out
+    assert "Disparity map" in out and "Metric depth map" in out
+    assert "Invert each value" in out
+
+
+@pytest.mark.parametrize(
+    "html_out,svg_class",
+    [
+        (
+            _pipeline_html(_pipeline_anim(), "ANIMTOKEN3"),
+            "anim__pipeline",
+        ),
+        (
+            _layer_stack_html(
+                parse_animate(
+                    "pattern: layer-stack\nlayers:\n"
+                    "  - Pixels: raw sensor values\n  - Edges: local intensity changes\n"
+                ),
+                "ANIMTOKEN4",
+            ),
+            "anim__layer-stack",
+        ),
+        (
+            _transform_html(
+                parse_animate(
+                    "pattern: transform\nfrom: A\nto: B\nsteps:\n  - Change it\n"
+                ),
+                "ANIMTOKEN5",
+            ),
+            "anim__transform",
+        ),
+    ],
+)
+def test_new_pattern_svgs_carry_explicit_width_height_matching_their_viewbox(html_out, svg_class):
+    """.anim__pipeline/.anim__layer-stack/.anim__transform's CSS rule caps growth
+    with `max-width: 100%` rather than forcing `width: 100%` (see
+    test_new_animate_pattern_svgs_scroll_instead_of_shrinking_text in
+    test_assets.py) -- but that only keeps a wide diagram legible if the SVG's
+    own natural size is its viewBox, not the browser's 300x150 default for an
+    <svg> with no width/height. Each renderer must therefore emit explicit
+    width/height presentation attributes equal to its viewBox, one CSS px per
+    viewBox unit, so "natural size" means "big enough to read".
+    """
+    svg_open = re.search(rf'<svg class="{svg_class}"[^>]*>', html_out).group(0)
+    view_box = re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg_open)
+    width = re.search(r'width="([\d.]+)"', svg_open)
+    height = re.search(r'height="([\d.]+)"', svg_open)
+    assert view_box and width and height
+    assert float(width.group(1)) == float(view_box.group(1))
+    assert float(height.group(1)) == float(view_box.group(2))
+
+
+def test_transform_timeline_resets_animated_properties():
+    anim = parse_animate(
+        "pattern: transform\nfrom: A thing\nto: Another thing\n"
+        "steps:\n  - Change it\n  - Change it again\n"
+    )
+    out = _transform_html(anim, "ANIMTOKEN5")
+    data = json.loads(
+        re.search(
+            r'<script type="application/json" class="anim__timeline">(.*?)</script>',
+            out, re.S,
+        ).group(1)
+    )
+    animated = {
+        p for s in data["steps"] if s.get("kind") != "set" for p in (s.get("props") or {})
+    }
+    reset = {
+        p for s in data["steps"] if s.get("kind") == "set" for p in (s.get("props") or {})
+    }
+    assert animated <= reset
+
+
+def test_transform_constants_are_divisible_by_four():
+    for value in (_XFORM_BOX_WIDTH, _XFORM_BOX_HEIGHT, _XFORM_GAP, _XFORM_TOP_MARGIN):
+        assert value % 4 == 0
 
 
 @pytest.mark.parametrize(
@@ -1133,6 +1556,14 @@ def test_parse_animate_path_trace_rejects_steps():
         )
 
 
+def test_parse_animate_path_trace_rejects_a_stray_direction_key():
+    with pytest.raises(AnimateError, match="path-trace does not use"):
+        parse_animate(
+            "pattern: path-trace\npoints:\n  - 0, 0\n  - 1, 1\ncaption: c\n"
+            "direction: up\n"
+        )
+
+
 def test_array_ops_renders_bars_and_a_timeline_island():
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
@@ -1345,3 +1776,16 @@ def test_a_path_trace_block_also_counts_as_a_visual():
     )
     rendered = render_course(md)
     assert rendered.topics_missing_visual == []
+
+
+def test_animations_per_topic_counts_blocks_and_backfills_zeros():
+    md = course(
+        '<!-- topic: topic-a -->\n### Topic A\n\n'
+        '```animate\npattern: pipeline\nstages:\n  - Raw: unprocessed\n  - Done: processed\n```\n\n'
+        '<!-- topic: topic-b -->\n### Topic B\n\n'
+        'Prose only.\n'
+    )
+    rendered = render_course(md)
+    assert rendered.animations_per_topic["topic-a"] == 1
+    # Backfilled, not absent: the floor check divides over every topic.
+    assert rendered.animations_per_topic["topic-b"] == 0
