@@ -119,7 +119,7 @@ def animation_floor_findings(rendered, justified_topics: set[str]) -> list[Findi
     build is not depth-aware, and one definition is better than two that can
     drift apart. `brief` topics carry `no-visual` by rule, so they drop out.
     """
-    owing = [t for t in rendered.topic_ids if t not in justified_topics]
+    owing = [t for t in dict.fromkeys(rendered.topic_ids) if t not in justified_topics]
     if not owing:
         return []
     required = math.ceil(ANIMATION_FLOOR * len(owing))

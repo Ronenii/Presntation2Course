@@ -235,10 +235,14 @@ def parse_animate(body: str) -> Animate:
         )
 
     if pattern == "state-machine":
-        if before or after or array_raw or ops_raw or points_raw or caption:
+        if (
+            before or after or array_raw or ops_raw or points_raw or caption
+            or stages_raw or layers_raw or steps_raw or direction or from_value or to_value
+        ):
             raise AnimateError(
                 "state-machine does not use 'before:'/'after:'/'array:'/'ops:'/"
-                "'points:'/'caption:'"
+                "'points:'/'caption:'/'stages:'/'layers:'/'steps:'/'direction:'/"
+                "'from:'/'to:'"
             )
         states = states_raw
         if len(states) < 2:
@@ -289,11 +293,25 @@ def parse_animate(body: str) -> Animate:
     elif pattern == "state-toggle":
         if not before or not after:
             raise AnimateError("state-toggle needs both 'before:' and 'after:'")
-        if states_raw or transitions_raw or array_raw or ops_raw or points_raw or caption:
-            raise AnimateError("state-toggle does not use 'states:'/'transitions:'")
+        if (
+            states_raw or transitions_raw or array_raw or ops_raw or points_raw or caption
+            or stages_raw or layers_raw or steps_raw or direction or from_value or to_value
+        ):
+            raise AnimateError(
+                "state-toggle does not use 'states:'/'transitions:'/'array:'/'ops:'/"
+                "'points:'/'caption:'/'stages:'/'layers:'/'steps:'/'direction:'/"
+                "'from:'/'to:'"
+            )
     elif pattern == "array-ops":
-        if before or after or states_raw or transitions_raw or points_raw or caption:
-            raise AnimateError("array-ops does not use 'before:'/'after:'")
+        if (
+            before or after or states_raw or transitions_raw or points_raw or caption
+            or stages_raw or layers_raw or steps_raw or direction or from_value or to_value
+        ):
+            raise AnimateError(
+                "array-ops does not use 'before:'/'after:'/'states:'/'transitions:'/"
+                "'points:'/'caption:'/'stages:'/'layers:'/'steps:'/'direction:'/"
+                "'from:'/'to:'"
+            )
         if len(array_raw) < 2:
             raise AnimateError("array-ops needs at least 2 array values")
         array: list[int] = []
@@ -326,10 +344,15 @@ def parse_animate(body: str) -> Animate:
             ops.append((verb, a, b_val))
         return Animate(pattern=pattern, array=array, ops=ops)
     elif pattern == "pipeline":
-        if before or after or states_raw or transitions_raw or array_raw or ops_raw or points_raw:
+        if (
+            before or after or states_raw or transitions_raw or array_raw or ops_raw
+            or points_raw or caption or layers_raw or steps_raw or direction
+            or from_value or to_value
+        ):
             raise AnimateError(
                 "pipeline does not use 'before:'/'after:'/'states:'/'transitions:'/"
-                "'array:'/'ops:'/'points:'"
+                "'array:'/'ops:'/'points:'/'caption:'/'layers:'/'steps:'/'direction:'/"
+                "'from:'/'to:'"
             )
         if len(stages_raw) < 2:
             raise AnimateError("pipeline needs at least 2 stages")
@@ -343,15 +366,15 @@ def parse_animate(body: str) -> Animate:
                     f"pipeline stage {line!r} must be written as '<name>: <what changes>'"
                 )
             stages.append((match.group("name").strip(), match.group("change").strip()))
-        return Animate(pattern=pattern, stages=stages, caption=caption or "")
+        return Animate(pattern=pattern, stages=stages)
     elif pattern == "layer-stack":
         if (
             before or after or states_raw or transitions_raw or array_raw or ops_raw
-            or points_raw or stages_raw or from_value or to_value
+            or points_raw or caption or stages_raw or steps_raw or from_value or to_value
         ):
             raise AnimateError(
                 "layer-stack does not use 'before:'/'after:'/'states:'/'transitions:'/"
-                "'array:'/'ops:'/'points:'/'stages:'/'from:'/'to:'"
+                "'array:'/'ops:'/'points:'/'caption:'/'stages:'/'steps:'/'from:'/'to:'"
             )
         if direction is not None and direction not in ("up", "down"):
             raise AnimateError(
@@ -371,16 +394,15 @@ def parse_animate(body: str) -> Animate:
             layers.append((match.group("name").strip(), match.group("change").strip()))
         return Animate(
             pattern=pattern, layers=layers, direction=direction or "up",
-            caption=caption or "",
         )
     elif pattern == "transform":
         if (
             before or after or direction or states_raw or transitions_raw
-            or array_raw or ops_raw or points_raw or stages_raw or layers_raw
+            or array_raw or ops_raw or points_raw or caption or stages_raw or layers_raw
         ):
             raise AnimateError(
                 "transform does not use 'before:'/'after:'/'direction:'/'states:'/"
-                "'transitions:'/'array:'/'ops:'/'points:'/'stages:'/'layers:'"
+                "'transitions:'/'array:'/'ops:'/'points:'/'caption:'/'stages:'/'layers:'"
             )
         if not from_value or not to_value:
             raise AnimateError("transform needs both 'from:' and 'to:'")
@@ -390,11 +412,17 @@ def parse_animate(body: str) -> Animate:
             raise AnimateError("transform takes at most 4 steps")
         return Animate(
             pattern=pattern, from_entity=from_value, to_entity=to_value,
-            steps=list(steps_raw), caption=caption or "",
+            steps=list(steps_raw),
         )
     else:  # path-trace
-        if before or after or states_raw or transitions_raw or array_raw or ops_raw:
-            raise AnimateError("path-trace does not use 'before:'/'after:'")
+        if (
+            before or after or states_raw or transitions_raw or array_raw or ops_raw
+            or stages_raw or layers_raw or steps_raw or direction or from_value or to_value
+        ):
+            raise AnimateError(
+                "path-trace does not use 'before:'/'after:'/'states:'/'transitions:'/"
+                "'array:'/'ops:'/'stages:'/'layers:'/'steps:'/'direction:'/'from:'/'to:'"
+            )
         if len(points_raw) < 2:
             raise AnimateError("path-trace needs at least 2 points")
         points: list[tuple[float, float]] = []
@@ -439,8 +467,16 @@ _LAYER_TOP_MARGIN = 20
 
 _XFORM_BOX_WIDTH = 180
 _XFORM_BOX_HEIGHT = 60
-_XFORM_GAP = 120  # room between the two endpoint boxes for the step labels
+_XFORM_GAP = 120  # MINIMUM room between the two endpoint boxes for the step labels --
+                  # widened per-block below when a step's authored text needs more
+                  # (see _transform_html), so this is a floor, not the final gap.
 _XFORM_TOP_MARGIN = 24
+_XFORM_STEP_BG_HEIGHT = 20  # matches _STATE_LABEL_CHIP_HEIGHT's own 12 + 2*pad recipe
+                            # (12 + 2*_STATE_LABEL_CHIP_PAD_Y at pad=4 would be 20; kept
+                            # as its own constant, not reused verbatim, since a wider
+                            # mask reads better with a touch more vertical breathing
+                            # room than a state-machine transition chip needs) and stays
+                            # divisible by 4 per this branch's layout-constant rule.
 
 _STATE_BOX_WIDTH = 130
 _STATE_BOX_HEIGHT = 56
@@ -841,19 +877,36 @@ def _pipeline_html(anim: Animate, token: str) -> str:
     rect_ids = [f"anim-pipe-rect-{token_seed}-{i}" for i in range(len(anim.stages))]
     line_ids = [f"anim-pipe-line-{token_seed}-{i}" for i in range(len(anim.stages) - 1)]
 
+    # Every box must be at least as wide as its OWN longest line (name or
+    # change) needs, or authored prose overflows into the neighbouring box and
+    # across the connector -- reusing _state_machine_html's own "estimate width
+    # from character count" approach (_STATE_LABEL_CHAR_WIDTH,
+    # _STATE_LABEL_CHIP_PAD_X) rather than inventing a second mechanism. Every
+    # box in the row is then sized to the WIDEST stage, not just its own text,
+    # so the row reads as one consistent grid rather than a jagged staircase of
+    # differently sized boxes; _PIPE_BOX_WIDTH remains the floor for short text.
+    box_width = max(
+        [_PIPE_BOX_WIDTH]
+        + [
+            max(len(name), len(change)) * _STATE_LABEL_CHAR_WIDTH
+            + 2 * _STATE_LABEL_CHIP_PAD_X
+            for name, change in anim.stages
+        ]
+    )
+
     box_center_y = _PIPE_TOP_MARGIN + _PIPE_BOX_HEIGHT / 2
-    total_width = len(anim.stages) * _PIPE_BOX_WIDTH + (len(anim.stages) - 1) * _PIPE_GAP
+    total_width = len(anim.stages) * box_width + (len(anim.stages) - 1) * _PIPE_GAP
     total_height = _PIPE_TOP_MARGIN * 2 + _PIPE_BOX_HEIGHT
 
     def box_x(i: int) -> float:
-        return i * (_PIPE_BOX_WIDTH + _PIPE_GAP)
+        return i * (box_width + _PIPE_GAP)
 
     # Connectors are emitted BEFORE the boxes so z-order puts lines behind nodes
     # (diagram-design: "Draw arrows before boxes"), and each box's opaque rect
     # then covers the connector's ends.
     lines_html = []
     for i in range(len(anim.stages) - 1):
-        x1 = box_x(i) + _PIPE_BOX_WIDTH
+        x1 = box_x(i) + box_width
         x2 = box_x(i + 1)
         lines_html.append(
             f'<line class="anim__pipe-line" id="{line_ids[i]}" '
@@ -867,11 +920,11 @@ def _pipeline_html(anim: Animate, token: str) -> str:
     boxes_html = []
     for i, (name, change) in enumerate(anim.stages):
         x = box_x(i)
-        center_x = x + _PIPE_BOX_WIDTH / 2
+        center_x = x + box_width / 2
         boxes_html.append(
             f'<g class="anim__pipe-stage">'
             f'<rect class="anim__pipe-box" id="{rect_ids[i]}" x="{x:g}" '
-            f'y="{_PIPE_TOP_MARGIN}" width="{_PIPE_BOX_WIDTH}" '
+            f'y="{_PIPE_TOP_MARGIN}" width="{box_width:g}" '
             f'height="{_PIPE_BOX_HEIGHT}" rx="8" '
             f'fill="var(--anim-pipe-idle)"></rect>'
             f'<text class="anim__pipe-name" x="{center_x:g}" '
@@ -926,6 +979,7 @@ def _pipeline_html(anim: Animate, token: str) -> str:
     return (
         '<div class="anim anim--pipeline">'
         f'<svg class="anim__pipeline" dir="ltr" '
+        f'width="{total_width:g}" height="{total_height:g}" '
         f'viewBox="0 0 {total_width:g} {total_height:g}">'
         f"{''.join(lines_html)}{''.join(boxes_html)}</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
@@ -1003,6 +1057,7 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
     return (
         '<div class="anim anim--layer-stack">'
         f'<svg class="anim__layer-stack" dir="ltr" '
+        f'width="{total_width:g}" height="{total_height:g}" '
         f'viewBox="0 0 {total_width:g} {total_height:g}">'
         f"{''.join(rows_html)}</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
@@ -1023,12 +1078,27 @@ def _transform_html(anim: Animate, token: str) -> str:
     line_id = f"anim-xform-line-{token_seed}"
     step_ids = [f"anim-xform-step-{token_seed}-{i}" for i in range(len(anim.steps))]
 
+    # Each step's mask must be at least as wide as its own authored text -- reusing
+    # _state_machine_html's exact "estimate width from character count" approach
+    # (_STATE_LABEL_CHAR_WIDTH, _STATE_LABEL_CHIP_PAD_X) rather than inventing a
+    # second sizing mechanism. The connector's gap is then widened, if needed, to
+    # the WIDEST step's mask plus a further _STATE_LABEL_CHIP_PAD_X of clearance
+    # on each side (so the mask itself never touches an endpoint box), so the
+    # longest authored step never overhangs the mask meant to keep the connector
+    # from bleeding through its text (_XFORM_GAP remains the floor for short steps).
+    step_widths = [
+        len(text) * _STATE_LABEL_CHAR_WIDTH + 2 * _STATE_LABEL_CHIP_PAD_X
+        for text in anim.steps
+    ]
+    widest_step = max(step_widths, default=0)
+    gap = max(_XFORM_GAP, widest_step + 2 * _STATE_LABEL_CHIP_PAD_X)
+
     box_center_y = _XFORM_TOP_MARGIN + _XFORM_BOX_HEIGHT / 2
-    total_width = _XFORM_BOX_WIDTH * 2 + _XFORM_GAP
+    total_width = _XFORM_BOX_WIDTH * 2 + gap
     total_height = _XFORM_TOP_MARGIN * 2 + _XFORM_BOX_HEIGHT
     line_x1 = _XFORM_BOX_WIDTH
-    line_x2 = _XFORM_BOX_WIDTH + _XFORM_GAP
-    label_center_x = line_x1 + _XFORM_GAP / 2
+    line_x2 = _XFORM_BOX_WIDTH + gap
+    label_center_x = line_x1 + gap / 2
 
     def endpoint(box_id: str, x: float, label: str) -> str:
         return (
@@ -1047,10 +1117,12 @@ def _transform_html(anim: Animate, token: str) -> str:
     # rect so the connector cannot bleed through the text.
     labels_html = []
     for i, text in enumerate(anim.steps):
+        mask_width = step_widths[i]
         labels_html.append(
             f'<g class="anim__xform-step" id="{step_ids[i]}" opacity="0">'
-            f'<rect class="anim__xform-step-bg" x="{label_center_x - 56:g}" '
-            f'y="{box_center_y - 26:g}" width="112" height="18" rx="2"></rect>'
+            f'<rect class="anim__xform-step-bg" x="{label_center_x - mask_width / 2:g}" '
+            f'y="{box_center_y - 26:g}" width="{mask_width:g}" '
+            f'height="{_XFORM_STEP_BG_HEIGHT}" rx="2"></rect>'
             f'<text class="anim__xform-step-text" x="{label_center_x:g}" '
             f'y="{box_center_y - 13:g}" text-anchor="middle">'
             f'{html.escape(text)}</text>'
@@ -1060,7 +1132,7 @@ def _transform_html(anim: Animate, token: str) -> str:
     steps_json: list[dict] = [
         {
             "targets": [f"#{line_id}"],
-            "props": {"strokeDashoffset": [_XFORM_GAP, 0]},
+            "props": {"strokeDashoffset": [gap, 0]},
             "duration": STEP_SECONDS * 1000,
             "ease": "inOutQuad",
         }
@@ -1092,7 +1164,7 @@ def _transform_html(anim: Animate, token: str) -> str:
     })
     steps_json.append({
         "kind": "set", "targets": [f"#{line_id}"],
-        "props": {"strokeDashoffset": _XFORM_GAP},
+        "props": {"strokeDashoffset": gap},
     })
     steps_json.append({
         "kind": "set", "targets": [f"#{to_id}"],
@@ -1106,12 +1178,13 @@ def _transform_html(anim: Animate, token: str) -> str:
     return (
         '<div class="anim anim--transform">'
         f'<svg class="anim__transform" dir="ltr" '
+        f'width="{total_width:g}" height="{total_height:g}" '
         f'viewBox="0 0 {total_width:g} {total_height:g}">'
         f'<line class="anim__xform-line" id="{line_id}" x1="{line_x1:g}" '
         f'y1="{box_center_y:g}" x2="{line_x2:g}" y2="{box_center_y:g}" '
-        f'stroke-dasharray="{_XFORM_GAP}" stroke-dashoffset="{_XFORM_GAP}"></line>'
+        f'stroke-dasharray="{gap:g}" stroke-dashoffset="{gap:g}"></line>'
         f'{endpoint(from_id, 0, anim.from_entity)}'
-        f'{endpoint(to_id, _XFORM_BOX_WIDTH + _XFORM_GAP, anim.to_entity)}'
+        f'{endpoint(to_id, _XFORM_BOX_WIDTH + gap, anim.to_entity)}'
         f"{''.join(labels_html)}</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
         f'<ol class="anim__xform-static">{static_steps}</ol></div>'

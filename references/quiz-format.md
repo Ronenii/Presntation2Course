@@ -191,9 +191,10 @@ steps:
 `from:` and `to:` are both required; `steps:` needs 1–4 entries. Use this instead of
 `state-toggle` when the change has intermediate steps worth naming.
 
-`pipeline`, `layer-stack`, and `transform` also accept an optional `caption:`. Each
-pattern rejects the keys it does not use, so a typo'd block (e.g. `stages:` on a
-`transform`) fails loudly instead of being silently ignored.
+Each pattern rejects the keys it does not use, so a typo'd block (e.g. `stages:` on
+a `transform`) fails loudly instead of being silently ignored. `caption:` is one such
+key: only `path-trace` renders a caption, so it is the only pattern that accepts
+one — `pipeline`, `layer-stack`, and `transform` all reject it.
 
 Seven patterns exist: `state-machine`, `state-toggle`, `array-ops`, `path-trace`,
 `pipeline`, `layer-stack`, `transform` — no others. This is a deliberately bounded

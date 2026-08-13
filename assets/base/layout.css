@@ -427,11 +427,26 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
    print/reduced-motion presentation below, same toggle pair as array-ops. */
 .anim__path-steps-static { display: none; }
 
+/* Unlike .anim__state-machine/.anim__path/.anim__array above (width: 100%,
+   which stretches a wide viewBox across the full column and shrinks its text
+   proportionally -- illegible once a 6-stage pipeline or a wide transform gap
+   pushes the viewBox past ~1000px), these three carry explicit width/height
+   presentation attributes in the markup (see _pipeline_html/_layer_stack_html/
+   _transform_html) so the SVG renders at its own natural, legible size by
+   default. max-width keeps a narrow one from overflowing its column, and the
+   wrapper's overflow-x below -- the same pattern .mermaid already uses for the
+   same reason -- takes over once natural size exceeds the column instead of
+   scaling text down to fit. */
 .anim__pipeline,
 .anim__layer-stack,
 .anim__transform {
-  width: 100%;
+  max-width: 100%;
   height: auto;
+}
+.anim--pipeline,
+.anim--layer-stack,
+.anim--transform {
+  overflow-x: auto;
 }
 
 .anim__pipe-box,
@@ -511,6 +526,6 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .anim--pipeline .anim__pipeline-static,
   .anim--layer-stack .anim__layer-static,
   .anim--transform .anim__xform-static {
-    display: block;
+    display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0;
   }
 }

@@ -14,9 +14,12 @@ from p2c.mdrender import (
     _PIPE_GAP,
     _PIPE_TOP_MARGIN,
     _STATE_BOX_HEIGHT,
+    _STATE_LABEL_CHAR_WIDTH,
+    _STATE_LABEL_CHIP_PAD_X,
     _XFORM_BOX_HEIGHT,
     _XFORM_BOX_WIDTH,
     _XFORM_GAP,
+    _XFORM_STEP_BG_HEIGHT,
     _XFORM_TOP_MARGIN,
     Animate,
     AnimateError,
@@ -592,9 +595,32 @@ def test_parse_animate_state_machine_rejects_array_and_points_fields():
         )
 
 
+def test_parse_animate_state_machine_rejects_a_stray_stages_key():
+    """Cross-key guards were extended for the three new patterns' keys
+    (stages/layers/steps/direction/from/to) when they were added, but every
+    PRE-EXISTING pattern's guard was written against the old key set and so
+    silently accepted -- and discarded -- these six keys. This asserts the
+    fix: state-machine now rejects a stray `stages:` list exactly like it
+    already rejects `array:`.
+    """
+    with pytest.raises(AnimateError, match="state-machine does not use"):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n"
+            "transitions:\n  - A -> B: go\nstages:\n  - X: y\n"
+        )
+
+
 def test_parse_animate_rejects_a_state_toggle_missing_after():
     with pytest.raises(AnimateError, match="needs both 'before:' and 'after:'"):
         parse_animate("pattern: state-toggle\nbefore: only before")
+
+
+def test_parse_animate_state_toggle_rejects_a_stray_layers_key():
+    with pytest.raises(AnimateError, match="state-toggle does not use"):
+        parse_animate(
+            "pattern: state-toggle\nbefore: Shared\nafter: Modified\n"
+            "layers:\n  - X: y\n"
+        )
 
 
 def test_parse_animate_array_ops():
@@ -661,6 +687,14 @@ def test_parse_animate_array_ops_rejects_before_after():
         )
 
 
+def test_parse_animate_array_ops_rejects_a_stray_steps_key():
+    with pytest.raises(AnimateError, match="array-ops does not use"):
+        parse_animate(
+            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 0\n"
+            "steps:\n  - a step\n"
+        )
+
+
 def test_pipeline_parses_stages_into_name_change_pairs():
     anim = parse_animate(
         "pattern: pipeline\n"
@@ -698,6 +732,20 @@ def test_pipeline_rejects_keys_from_other_patterns():
         parse_animate(
             "pattern: pipeline\nstages:\n  - A: does a\n  - B: does b\n"
             "points:\n  - 0, 1\n"
+        )
+
+
+def test_pipeline_rejects_caption():
+    """Settled convention (verified across all seven patterns): a pattern that
+    does not RENDER a caption REJECTS it -- state-machine/state-toggle/array-ops
+    all reject it already; only path-trace renders and accepts it. pipeline
+    never renders anim.caption (see _pipeline_html), so it must reject the key
+    rather than silently accept-and-discard it.
+    """
+    with pytest.raises(AnimateError, match="does not use"):
+        parse_animate(
+            "pattern: pipeline\nstages:\n  - A: does a\n  - B: does b\n"
+            "caption: some caption\n"
         )
 
 
@@ -765,6 +813,38 @@ def test_pipeline_layout_constants_are_divisible_by_four():
         assert value % 4 == 0
 
 
+def test_pipeline_box_width_grows_to_fit_a_long_stage_description():
+    """Neither _PIPE_BOX_WIDTH nor anything else in _pipeline_html sized the box
+    from the stage's own text: a fixed 140px box against real course prose (the
+    doc's own example, 'single RGB frame, no depth information', estimates to
+    ~274px at _STATE_LABEL_CHAR_WIDTH) overflows into the neighbouring box and
+    across the connector. This asserts the fix reuses _state_machine_html's own
+    "estimate width from character count" approach: every rendered box is at
+    least as wide as its own longest line (name or change) needs.
+    """
+    long_change = "single RGB frame, no depth information"
+    anim = parse_animate(
+        "pattern: pipeline\nstages:\n"
+        f"  - Raw image: {long_change}\n  - Depth map: one distance per pixel\n"
+    )
+    out = _pipeline_html(anim, "ANIMTOKEN3")
+    estimated_text_width = (
+        len(long_change) * _STATE_LABEL_CHAR_WIDTH + 2 * _STATE_LABEL_CHIP_PAD_X
+    )
+    widths = [
+        float(w)
+        for w in re.findall(r'<rect class="anim__pipe-box"[^>]*width="([\d.]+)"', out)
+    ]
+    assert widths, "expected at least one anim__pipe-box rect"
+    assert all(w >= estimated_text_width for w in widths), (
+        widths, estimated_text_width,
+    )
+
+
+def test_xform_step_bg_height_is_divisible_by_four():
+    assert _XFORM_STEP_BG_HEIGHT % 4 == 0
+
+
 def test_layer_stack_parses_layers_bottom_up_and_defaults_direction_up():
     anim = parse_animate(
         "pattern: layer-stack\n"
@@ -809,6 +889,14 @@ def test_layer_stack_rejects_a_stray_from_line():
         parse_animate(
             "pattern: layer-stack\nfrom: 0, 0\n"
             "layers:\n  - A: does a\n  - B: does b\n"
+        )
+
+
+def test_layer_stack_rejects_caption():
+    with pytest.raises(AnimateError, match="does not use"):
+        parse_animate(
+            "pattern: layer-stack\nlayers:\n  - A: does a\n  - B: does b\n"
+            "caption: some caption\n"
         )
 
 
@@ -889,6 +977,14 @@ def test_transform_rejects_a_stray_direction_line():
         )
 
 
+def test_transform_rejects_caption():
+    with pytest.raises(AnimateError, match="does not use"):
+        parse_animate(
+            "pattern: transform\nfrom: A\nto: B\nsteps:\n  - Does a thing\n"
+            "caption: some caption\n"
+        )
+
+
 def test_transform_html_is_ltr_and_shows_both_endpoints_statically():
     anim = parse_animate(
         "pattern: transform\nfrom: Disparity map\nto: Metric depth map\n"
@@ -898,6 +994,53 @@ def test_transform_html_is_ltr_and_shows_both_endpoints_statically():
     assert 'dir="ltr"' in out
     assert "Disparity map" in out and "Metric depth map" in out
     assert "Invert each value" in out
+
+
+@pytest.mark.parametrize(
+    "html_out,svg_class",
+    [
+        (
+            _pipeline_html(_pipeline_anim(), "ANIMTOKEN3"),
+            "anim__pipeline",
+        ),
+        (
+            _layer_stack_html(
+                parse_animate(
+                    "pattern: layer-stack\nlayers:\n"
+                    "  - Pixels: raw sensor values\n  - Edges: local intensity changes\n"
+                ),
+                "ANIMTOKEN4",
+            ),
+            "anim__layer-stack",
+        ),
+        (
+            _transform_html(
+                parse_animate(
+                    "pattern: transform\nfrom: A\nto: B\nsteps:\n  - Change it\n"
+                ),
+                "ANIMTOKEN5",
+            ),
+            "anim__transform",
+        ),
+    ],
+)
+def test_new_pattern_svgs_carry_explicit_width_height_matching_their_viewbox(html_out, svg_class):
+    """.anim__pipeline/.anim__layer-stack/.anim__transform's CSS rule caps growth
+    with `max-width: 100%` rather than forcing `width: 100%` (see
+    test_new_animate_pattern_svgs_scroll_instead_of_shrinking_text in
+    test_assets.py) -- but that only keeps a wide diagram legible if the SVG's
+    own natural size is its viewBox, not the browser's 300x150 default for an
+    <svg> with no width/height. Each renderer must therefore emit explicit
+    width/height presentation attributes equal to its viewBox, one CSS px per
+    viewBox unit, so "natural size" means "big enough to read".
+    """
+    svg_open = re.search(rf'<svg class="{svg_class}"[^>]*>', html_out).group(0)
+    view_box = re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg_open)
+    width = re.search(r'width="([\d.]+)"', svg_open)
+    height = re.search(r'height="([\d.]+)"', svg_open)
+    assert view_box and width and height
+    assert float(width.group(1)) == float(view_box.group(1))
+    assert float(height.group(1)) == float(view_box.group(2))
 
 
 def test_transform_timeline_resets_animated_properties():
@@ -1410,6 +1553,14 @@ def test_parse_animate_path_trace_rejects_steps():
     with pytest.raises(AnimateError, match="path-trace does not use 'before:'/'after:'"):
         parse_animate(
             "pattern: path-trace\npoints:\n  - 0, 0\n  - 1, 1\ncaption: c\nbefore: x"
+        )
+
+
+def test_parse_animate_path_trace_rejects_a_stray_direction_key():
+    with pytest.raises(AnimateError, match="path-trace does not use"):
+        parse_animate(
+            "pattern: path-trace\npoints:\n  - 0, 0\n  - 1, 1\ncaption: c\n"
+            "direction: up\n"
         )
 
 

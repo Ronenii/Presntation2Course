@@ -454,3 +454,33 @@ def test_animation_floor_failure_says_no_linear_when_no_candidates_exist():
 
 def test_animation_floor_routes_to_the_writer():
     assert ROUTE_FOR_CODE["animation_floor"] == "writer"
+
+
+def test_a_duplicated_topic_marker_does_not_inflate_the_floor_denominator():
+    """Rendered.topic_ids returns one entry PER SECTION and is not deduplicated
+    (unlike its three siblings topics_missing_visual/topics_visual_justified/
+    topics_missing_quiz, which all dedup via dict.fromkeys). The floor check's
+    `owing` list was the only consumer treating raw topic_ids as a set, so a
+    repeated `<!-- topic: x -->` marker -- a plausible LLM slip, e.g. a second
+    `### ` section re-opening a topic it already covered -- silently inflated
+    the denominator and could flip a compliant build to a false-positive
+    failure.
+
+    All 4 topics owe a visual (none carry `no-visual`) and 1 animates:
+    ceil(0.25*4)=1, met. Splitting t3's content into a second `### ` section
+    that reopens `<!-- topic: t3 -->` must NOT change that outcome: the
+    denominator must still be counted over the 4 distinct topic ids, not the
+    5 raw section entries this produces (which would round ceil(0.25*5)=2 and
+    turn a compliant build into a false-positive failure).
+    """
+    findings = floor_check({
+        "t1": ANIMATE_BLOCK,
+        "t2": BRANCHING_MERMAID_BLOCK,
+        "t3": (
+            BRANCHING_MERMAID_BLOCK
+            + "\n\n<!-- topic: t3 -->\n### Topic Three continued\n\n"
+            + BRANCHING_MERMAID_BLOCK
+        ),
+        "t4": BRANCHING_MERMAID_BLOCK,
+    })
+    assert "animation_floor" not in codes(findings)
