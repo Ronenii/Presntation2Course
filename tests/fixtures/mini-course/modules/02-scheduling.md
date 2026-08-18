@@ -27,16 +27,9 @@ transitions:
 ```
 
 ```animate
-pattern: array-ops
-array:
-  - 5
-  - 3
-  - 8
-  - 1
-ops:
-  - compare 0 1
-  - swap 0 1
-  - highlight 2
+pattern: state-toggle
+before: First-come, first-served
+after: Round robin
 ```
 
 ```quiz

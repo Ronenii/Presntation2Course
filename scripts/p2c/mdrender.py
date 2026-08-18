@@ -97,9 +97,6 @@ _ANIMATE_KEY = re.compile(
     r"^(?P<key>pattern|before|after|caption|direction|from|to):\s*(?P<value>.*)$"
 )
 _ANIMATE_STEP = re.compile(r"^\s*-\s*(?P<text>.+)$")
-_ARRAY_OP = re.compile(
-    r"^(?P<verb>compare|swap|highlight)\s+(?P<a>\d+)(?:\s+(?P<b>\d+))?$"
-)
 _TRANSITION = re.compile(r"^(?P<from>.+?)\s*->\s*(?P<to>.+?):\s*(?P<action>.+)$")
 _STAGE = re.compile(r"^(?P<name>.+?):\s*(?P<change>.+)$")
 
@@ -146,9 +143,6 @@ class Animate:
     pattern: str
     before: str = ""
     after: str = ""
-    array: list[int] = field(default_factory=list)
-    ops: list[tuple[str, int, int | None]] = field(default_factory=list)
-    points: list[tuple[float, float]] = field(default_factory=list)
     caption: str = ""
     states: list[str] = field(default_factory=list)
     transitions: list[tuple[str, str, str]] = field(default_factory=list)
@@ -161,19 +155,26 @@ class Animate:
 
 
 _LIST_HEADERS = {
-    "array:": "array", "ops:": "ops", "points:": "points",
     "states:": "states", "transitions:": "transitions",
     "stages:": "stages", "layers:": "layers", "steps:": "steps",
 }
+
+
+_PATTERNS = ("state-machine", "state-toggle", "pipeline", "layer-stack", "transform")
+
+
+def _require_known_pattern(pattern: str | None) -> None:
+    if pattern not in _PATTERNS:
+        raise AnimateError(
+            "animate pattern must be 'state-machine', 'state-toggle', 'pipeline', "
+            f"'layer-stack', or 'transform', got {pattern!r}"
+        )
 
 
 def parse_animate(body: str) -> Animate:
     pattern: str | None = None
     before: str | None = None
     after: str | None = None
-    array_raw: list[str] = []
-    ops_raw: list[str] = []
-    points_raw: list[str] = []
     states_raw: list[str] = []
     transitions_raw: list[str] = []
     stages_raw: list[str] = []
@@ -186,7 +187,6 @@ def parse_animate(body: str) -> Animate:
     section: str | None = None
 
     lists = {
-        "array": array_raw, "ops": ops_raw, "points": points_raw,
         "states": states_raw, "transitions": transitions_raw,
         "stages": stages_raw, "layers": layers_raw, "steps": steps_raw,
     }
@@ -206,6 +206,12 @@ def parse_animate(body: str) -> Animate:
             if name == "pattern":
                 if pattern is not None:
                     raise AnimateError("animate has more than one 'pattern:' line")
+                # Validated here rather than after the loop so the pattern name is
+                # what the author hears about first. A removed pattern's block
+                # still carries its old keys ("array:", "points:"), which are no
+                # longer list headers -- checking later would report the stray key
+                # and never mention that the pattern itself is gone.
+                _require_known_pattern(value)
                 pattern = value
             elif name == "before":
                 before = value
@@ -225,24 +231,18 @@ def parse_animate(body: str) -> Animate:
             continue
         raise AnimateError(f"unrecognised line in animate block: {line.strip()!r}")
 
-    if pattern not in (
-        "state-machine", "state-toggle", "array-ops", "path-trace", "pipeline",
-        "layer-stack", "transform",
-    ):
-        raise AnimateError(
-            "animate pattern must be 'state-machine', 'state-toggle', 'array-ops', "
-            f"'path-trace', 'pipeline', 'layer-stack', or 'transform', got {pattern!r}"
-        )
+    # Re-checked after the loop to cover the block that never named a pattern at
+    # all: the in-loop call above only fires on a "pattern:" line.
+    _require_known_pattern(pattern)
 
     if pattern == "state-machine":
         if (
-            before or after or array_raw or ops_raw or points_raw or caption
+            before or after or caption
             or stages_raw or layers_raw or steps_raw or direction or from_value or to_value
         ):
             raise AnimateError(
-                "state-machine does not use 'before:'/'after:'/'array:'/'ops:'/"
-                "'points:'/'caption:'/'stages:'/'layers:'/'steps:'/'direction:'/"
-                "'from:'/'to:'"
+                "state-machine does not use 'before:'/'after:'/'caption:'/'stages:'/"
+                "'layers:'/'steps:'/'direction:'/'from:'/'to:'"
             )
         states = states_raw
         if len(states) < 2:
@@ -294,65 +294,22 @@ def parse_animate(body: str) -> Animate:
         if not before or not after:
             raise AnimateError("state-toggle needs both 'before:' and 'after:'")
         if (
-            states_raw or transitions_raw or array_raw or ops_raw or points_raw or caption
+            states_raw or transitions_raw or caption
             or stages_raw or layers_raw or steps_raw or direction or from_value or to_value
         ):
             raise AnimateError(
-                "state-toggle does not use 'states:'/'transitions:'/'array:'/'ops:'/"
-                "'points:'/'caption:'/'stages:'/'layers:'/'steps:'/'direction:'/"
-                "'from:'/'to:'"
+                "state-toggle does not use 'states:'/'transitions:'/'caption:'/"
+                "'stages:'/'layers:'/'steps:'/'direction:'/'from:'/'to:'"
             )
-    elif pattern == "array-ops":
-        if (
-            before or after or states_raw or transitions_raw or points_raw or caption
-            or stages_raw or layers_raw or steps_raw or direction or from_value or to_value
-        ):
-            raise AnimateError(
-                "array-ops does not use 'before:'/'after:'/'states:'/'transitions:'/"
-                "'points:'/'caption:'/'stages:'/'layers:'/'steps:'/'direction:'/"
-                "'from:'/'to:'"
-            )
-        if len(array_raw) < 2:
-            raise AnimateError("array-ops needs at least 2 array values")
-        array: list[int] = []
-        for item in array_raw:
-            try:
-                array.append(int(item))
-            except ValueError:
-                raise AnimateError(f"array item {item!r} is not an integer") from None
-        if not ops_raw:
-            raise AnimateError("array-ops needs at least one op")
-        ops: list[tuple[str, int, int | None]] = []
-        for line in ops_raw:
-            match = _ARRAY_OP.match(line)
-            if not match:
-                raise AnimateError(f"invalid array-ops operation: {line!r}")
-            verb, a, b = match.group("verb"), int(match.group("a")), match.group("b")
-            if verb == "highlight":
-                if b is not None:
-                    raise AnimateError(f"invalid array-ops operation: {line!r}")
-                b_val = None
-            else:
-                if b is None:
-                    raise AnimateError(f"invalid array-ops operation: {line!r}")
-                b_val = int(b)
-            for idx in (a, b_val):
-                if idx is not None and idx >= len(array):
-                    raise AnimateError(
-                        f"array-ops index {idx} out of range for array of length {len(array)}"
-                    )
-            ops.append((verb, a, b_val))
-        return Animate(pattern=pattern, array=array, ops=ops)
     elif pattern == "pipeline":
         if (
-            before or after or states_raw or transitions_raw or array_raw or ops_raw
-            or points_raw or caption or layers_raw or steps_raw or direction
+            before or after or states_raw or transitions_raw
+            or caption or layers_raw or steps_raw or direction
             or from_value or to_value
         ):
             raise AnimateError(
                 "pipeline does not use 'before:'/'after:'/'states:'/'transitions:'/"
-                "'array:'/'ops:'/'points:'/'caption:'/'layers:'/'steps:'/'direction:'/"
-                "'from:'/'to:'"
+                "'caption:'/'layers:'/'steps:'/'direction:'/'from:'/'to:'"
             )
         if len(stages_raw) < 2:
             raise AnimateError("pipeline needs at least 2 stages")
@@ -369,12 +326,12 @@ def parse_animate(body: str) -> Animate:
         return Animate(pattern=pattern, stages=stages)
     elif pattern == "layer-stack":
         if (
-            before or after or states_raw or transitions_raw or array_raw or ops_raw
-            or points_raw or caption or stages_raw or steps_raw or from_value or to_value
+            before or after or states_raw or transitions_raw
+            or caption or stages_raw or steps_raw or from_value or to_value
         ):
             raise AnimateError(
                 "layer-stack does not use 'before:'/'after:'/'states:'/'transitions:'/"
-                "'array:'/'ops:'/'points:'/'caption:'/'stages:'/'steps:'/'from:'/'to:'"
+                "'caption:'/'stages:'/'steps:'/'from:'/'to:'"
             )
         if direction is not None and direction not in ("up", "down"):
             raise AnimateError(
@@ -398,11 +355,11 @@ def parse_animate(body: str) -> Animate:
     elif pattern == "transform":
         if (
             before or after or direction or states_raw or transitions_raw
-            or array_raw or ops_raw or points_raw or caption or stages_raw or layers_raw
+            or caption or stages_raw or layers_raw
         ):
             raise AnimateError(
                 "transform does not use 'before:'/'after:'/'direction:'/'states:'/"
-                "'transitions:'/'array:'/'ops:'/'points:'/'caption:'/'stages:'/'layers:'"
+                "'transitions:'/'caption:'/'stages:'/'layers:'"
             )
         if not from_value or not to_value:
             raise AnimateError("transform needs both 'from:' and 'to:'")
@@ -414,46 +371,16 @@ def parse_animate(body: str) -> Animate:
             pattern=pattern, from_entity=from_value, to_entity=to_value,
             steps=list(steps_raw),
         )
-    else:  # path-trace
-        if (
-            before or after or states_raw or transitions_raw or array_raw or ops_raw
-            or stages_raw or layers_raw or steps_raw or direction or from_value or to_value
-        ):
-            raise AnimateError(
-                "path-trace does not use 'before:'/'after:'/'states:'/'transitions:'/"
-                "'array:'/'ops:'/'stages:'/'layers:'/'steps:'/'direction:'/'from:'/'to:'"
-            )
-        if len(points_raw) < 2:
-            raise AnimateError("path-trace needs at least 2 points")
-        points: list[tuple[float, float]] = []
-        for item in points_raw:
-            match = re.match(r"^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$", item)
-            if not match:
-                raise AnimateError(f"invalid path-trace point: {item!r}")
-            points.append((float(match.group(1)), float(match.group(2))))
-        if not caption:
-            raise AnimateError("path-trace needs 'caption:'")
-        return Animate(pattern=pattern, points=points, caption=caption)
+    else:
+        # The whitelist above admits exactly five patterns and every one of them
+        # is handled by a branch, so reaching here means a pattern was added to
+        # the whitelist without a parse branch. Raise rather than fall through:
+        # the previous version ended in a bare `else` that parsed the last
+        # pattern, which would silently mis-parse any newly whitelisted name.
+        raise AnimateError(f"animate pattern {pattern!r} has no parser branch")
 
     return Animate(pattern=pattern, before=before or "", after=after or "")
 
-
-_BAR_WIDTH = 36
-_BAR_GAP = 18
-_BAR_MAX_HEIGHT = 120
-_BAR_HEADROOM = 40  # verified in mockup: enough room above the tallest bar for a
-                    # 1.15x highlight scale-pulse to never approach the SVG's own edge
-_BAR_BASELINE_Y = _BAR_HEADROOM + _BAR_MAX_HEIGHT  # y-coordinate of the x-axis line
-_PATH_PADDING = 10
-# Constant visual speed: every path-trace segment is timed at the same
-# milliseconds-per-viewBox-unit, so a segment twice as long on screen takes twice
-# as long to traverse (a fixed per-segment duration would instead make short hops
-# crawl and long hops sprint). The max(300, ...) floor keeps a near-zero-length
-# segment from flashing past unnoticeably.
-_PATH_MS_PER_UNIT = 90
-_PATH_MIN_SEGMENT_MS = 300
-
-_ARRAY_VERB_LABEL = {"compare": "comparing", "swap": "swapping", "highlight": "highlighting"}
 
 _PIPE_BOX_WIDTH = 140
 _PIPE_BOX_HEIGHT = 64
@@ -521,27 +448,23 @@ def _animate_html(anim: Animate, token: str) -> str:
         return _state_machine_html(anim, token)
     if anim.pattern == "state-toggle":
         return _state_toggle_html(anim, token)
-    if anim.pattern == "array-ops":
-        return _array_ops_html(anim, token)
     if anim.pattern == "pipeline":
         return _pipeline_html(anim, token)
     if anim.pattern == "layer-stack":
         return _layer_stack_html(anim, token)
-    if anim.pattern == "transform":
-        return _transform_html(anim, token)
-    # path-trace
-    return _path_trace_html(anim, token)
+    return _transform_html(anim, token)
 
 
 def _state_machine_html(anim: Animate, token: str) -> str:
-    """A marker travels between labeled state boxes as each transition fires,
-    reusing path-trace's proven "path-segment" step-kind mechanism (a tweened
-    {x, y} state object mirrored onto the marker's cx/cy via onUpdate -- see
-    _path_trace_html's docstring for why this indirection exists). Each
-    transition's action label is invisible at rest and fades in/out only for
-    that transition's own step, via a parallel "position": "<" step -- the
-    same "pair a second property change with the main tween" pattern
-    _array_ops_html already uses for its scale-pulse-alongside-a-fill-change.
+    """A marker travels between labeled state boxes as each transition fires.
+
+    Movement uses the "path-segment" step kind: a tweened {x, y} state object
+    mirrored onto the marker's cx/cy via onUpdate, rather than animating cx/cy
+    directly, because they are SVG geometry attributes and not every browser
+    animates them reliably as CSS properties. Each transition's action label is
+    invisible at rest and fades in and out only during its own step, via a
+    parallel "position": "<" step that pairs the opacity change with the
+    movement tween.
 
     Only AUTHORED transitions are ever drawn or animated. If the chain has no
     authored back-edge (parse_animate guarantees at most one, and only from
@@ -550,20 +473,19 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     a drawn or animated arrow -- so a reader never mistakes the animation's
     replay-for-engagement loop for a transition that was never authored.
     """
-    # See _array_ops_html's token_seed comment: the token's literal text must
-    # never appear in this function's return value (blocks.restore() does an
-    # unconditional second substitution pass keyed on the token), so only the
+    # The token's literal text must never appear in this function's return
+    # value: blocks.restore() does an unconditional second substitution pass
+    # keyed on the token, so an id containing it would be corrupted. Only the
     # token's ordinal digits are used to build element ids.
     token_seed = re.sub(r"\D", "", token) or "0"
     box_ids = [f"anim-state-box-{token_seed}-{i}" for i in range(len(anim.states))]
     # The <g> wrapper is never the fill-animation target: the only VISIBLE shape
     # is its child <rect>, whose own fill wins over anything inherited from the
     # group, so an animated fill on the <g> never reaches a rendered pixel.
-    # _array_ops_html tracks separate rect_ids for exactly this reason; this
-    # mirrors it, including the rect's inline fill="var(--anim-state-idle)"
-    # attribute (rather than a stylesheet rule) so nothing competes with the
-    # interpolated value while still rendering correctly before JS runs and
-    # under reduced-motion/print.
+    # Hence a separate rect id per state, and an inline
+    # fill="var(--anim-state-idle)" attribute rather than a stylesheet rule, so
+    # nothing competes with the interpolated value while still rendering
+    # correctly before JS runs and under reduced-motion/print.
     rect_ids = [f"anim-state-rect-{token_seed}-{i}" for i in range(len(anim.states))]
     label_ids = [f"anim-state-label-{token_seed}-{i}" for i in range(len(anim.transitions))]
     marker_id = f"anim-state-marker-{token_seed}"
@@ -1188,286 +1110,6 @@ def _transform_html(anim: Animate, token: str) -> str:
         f"{''.join(labels_html)}</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
         f'<ol class="anim__xform-static">{static_steps}</ol></div>'
-    )
-
-
-def _array_ops_html(anim: Animate, token: str) -> str:
-    """Bars occupy fixed slot x-positions expressed as plain SVG attributes (never a
-    transform="translate(...)" ATTRIBUTE): animating any transform-family property
-    (translateX, scale) makes anime.js set a CSS transform, which fully replaces
-    -- does not compose with -- an SVG transform attribute on the same element (see
-    .claude/skills/animejs/references/api-reference.md's Gotchas section). Each
-    bar's <g> also gets transform-box: fill-box; transform-origin: center so a
-    scale-pulse grows from the bar's own visual center, not the SVG viewport's
-    (0,0) origin.
-    """
-    max_value = max(anim.array) or 1
-    n = len(anim.array)
-    slot_width = _BAR_WIDTH + _BAR_GAP
-    width = n * slot_width + _BAR_GAP
-    # See _step_reveal_html's token_seed comment: the token's literal text must
-    # never appear in this function's return value (blocks.restore() does an
-    # unconditional second substitution pass keyed on the token), so only the
-    # token's ordinal digits are used to build element ids.
-    token_seed = re.sub(r"\D", "", token) or "0"
-
-    # slot_of_bar[original_index] = which slot that bar currently occupies, replayed
-    # op by op. Bars are tracked by their ORIGINAL index, so a bar's value/height
-    # never changes -- only which slot it sits in does.
-    slot_of_bar = list(range(n))
-    bar_ids = [f"anim-bar-{token_seed}-{i}" for i in range(n)]
-    rect_ids = [f"anim-rect-{token_seed}-{i}" for i in range(n)]
-    caption_id = f"anim-caption-{token_seed}"
-
-    def home_x(slot: int) -> int:
-        return _BAR_GAP + slot * slot_width
-
-    bars_html = []
-    for i in range(n):
-        value = anim.array[i]
-        height = round((value / max_value) * _BAR_MAX_HEIGHT, 1)
-        x = home_x(i)
-        y = _BAR_BASELINE_Y - height
-        bars_html.append(
-            f'<g class="anim__array-bar" id="{bar_ids[i]}" '
-            f'style="transform-box: fill-box; transform-origin: center;">'
-            f'<rect id="{rect_ids[i]}" x="{x}" y="{y}" width="{_BAR_WIDTH}" height="{height}" '
-            f'rx="4" fill="var(--anim-array-idle)"></rect>'
-            f'<text class="anim__array-label" x="{x + _BAR_WIDTH / 2:g}" '
-            f'y="{_BAR_BASELINE_Y + 20}">{html.escape(str(value))}</text>'
-            "</g>"
-        )
-
-    # Every `fill` keyframe array below holds CSS custom-property references
-    # (var(--anim-array-*)), which anime.js cannot interpolate as colors -- its
-    # color classifier only recognizes #hex/rgb()/rgba()/hsl()/hsla() literals.
-    # So a fill "transition" is an intentional instant color-swap at each
-    # keyframe boundary, not a smooth fade, and no "ease" is set on fill-only
-    # steps because an ease has no effect on a discrete value change. The
-    # indirection is kept deliberately: each of the three themes defines these
-    # tokens differently in light AND dark mode, so resolving them to literals
-    # at render time would hard-code one theme's palette into every build.
-    steps_json: list[dict] = []
-    for verb, a, b in anim.ops:
-        if verb == "highlight":
-            caption = f"{_ARRAY_VERB_LABEL[verb]} index {a}"
-            steps_json.append({
-                "targets": [f"#{rect_ids[a]}"],
-                "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-highlight)", "var(--anim-array-highlight)"]},
-                "duration": 900, "position": "+=300", "caption": caption,
-            })
-            steps_json.append({
-                "targets": [f"#{bar_ids[a]}"],
-                "props": {"scale": [1, 1.15, 1]},
-                "duration": 900, "ease": "outElastic(1, .6)", "position": "<",
-            })
-        elif verb == "compare":
-            caption = f"{_ARRAY_VERB_LABEL[verb]} index {a} and {b}"
-            steps_json.append({
-                "targets": [f"#{rect_ids[a]}", f"#{rect_ids[b]}"],
-                "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-compare)", "var(--anim-array-idle)"]},
-                "duration": 700, "position": None if not steps_json else "+=300",
-                "caption": caption,
-            })
-            steps_json.append({
-                "targets": [f"#{bar_ids[a]}", f"#{bar_ids[b]}"],
-                "props": {"scale": [1, 1.08, 1]},
-                "duration": 700, "ease": "inOutQuad", "position": "<",
-            })
-        else:  # swap
-            slot_of_bar[a], slot_of_bar[b] = slot_of_bar[b], slot_of_bar[a]
-            # Each bar's translateX is its OWN absolute displacement from its own
-            # home slot -- deliberately NOT a `delta`/`-delta` mirrored pair. The
-            # mirrored form is only correct while both bars still sit in their home
-            # slots; once an earlier swap has displaced either one, the two bars'
-            # required displacements are no longer negatives of each other (e.g.
-            # "swap 0 2" then "swap 0 1" needs +54 for bar 0 and +108 for bar 1).
-            # Absolute values also survive loop: true, since each lap re-animates
-            # toward the same fixed target rather than compounding a relative nudge.
-            delta_a = (slot_of_bar[a] - a) * slot_width
-            delta_b = (slot_of_bar[b] - b) * slot_width
-            caption = f"{_ARRAY_VERB_LABEL[verb]} index {a} and {b}"
-            steps_json.append({
-                "targets": [f"#{rect_ids[a]}", f"#{rect_ids[b]}"],
-                "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-swap)", "var(--anim-array-idle)"]},
-                "duration": 750, "position": "+=300", "caption": caption,
-            })
-            steps_json.append({
-                "targets": [f"#{bar_ids[a]}"], "props": {"translateX": delta_a},
-                "duration": 650, "ease": "inOutBack", "position": "<",
-            })
-            steps_json.append({
-                "targets": [f"#{bar_ids[b]}"], "props": {"translateX": delta_b},
-                "duration": 650, "ease": "inOutBack", "position": "<",
-            })
-
-    # Hold the final state on screen (a no-op animation on an already-idle target,
-    # purely for its 900ms of dwell time), then snap every bar's transform/fill back
-    # to idle right before the loop restarts (the loop-state-drift gotcha) -- a swap
-    # must look like a real, sticky reorder (the swapped bars stay in each other's
-    # slots through the following highlight step), never a bounce-back.
-    steps_json.append({"targets": [f"#{bar_ids[0]}"], "props": {}, "duration": 900})
-    steps_json.append({
-        "kind": "set", "targets": [f"#{b}" for b in bar_ids], "props": {"translateX": 0, "scale": 1},
-    })
-    steps_json.append({
-        "kind": "set", "targets": [f"#{r}" for r in rect_ids], "props": {"fill": "var(--anim-array-idle)"},
-    })
-
-    timeline = {"loop": True, "loopDelay": 1200, "steps": steps_json}
-    timeline_json = _timeline_island_json(timeline)
-
-    legend_items = "".join(
-        f'<span class="anim__array-legend-item"><span class="anim__array-legend-swatch '
-        f'anim__array-legend-swatch--{kind}"></span>{kind}</span>'
-        for kind in ("idle", "compare", "swap", "highlight")
-    )
-
-    axis_y = _BAR_BASELINE_Y
-    mid_y = _BAR_HEADROOM + _BAR_MAX_HEIGHT / 2
-    chrome = (
-        f'<line class="anim__array-axis" x1="0" y1="{_BAR_HEADROOM - 4}" '
-        f'x2="0" y2="{axis_y}"></line>'
-        f'<line class="anim__array-axis" x1="0" y1="{axis_y}" x2="{width}" y2="{axis_y}"></line>'
-        f'<line class="anim__array-gridline" x1="0" y1="{mid_y:g}" x2="{width}" y2="{mid_y:g}"></line>'
-    )
-
-    # Reduced-motion/print static fallback (same dual-render precedent as
-    # state-toggle): the animated <svg> is hidden and this plain step list shown
-    # instead, rather than trying to freeze an infinitely-looping timeline
-    # mid-cycle.
-    op_lines = "".join(
-        f"<li>{html.escape(verb)} index {a}" + (f" and {b}" if b is not None else "") + "</li>"
-        for verb, a, b in anim.ops
-    )
-    static_fallback = f'<ol class="anim__array-steps-static">{op_lines}</ol>'
-
-    return (
-        f'<div class="anim anim--array-ops">'
-        f'<p class="anim__caption" id="{caption_id}" data-anim-id="{caption_id}">'
-        f"Step 1 of {len(anim.ops)}</p>"
-        f'<svg class="anim__array" dir="ltr" viewBox="0 0 {width} {_BAR_BASELINE_Y + 40}">'
-        f"{chrome}{''.join(bars_html)}</svg>"
-        f'<div class="anim__array-legend">{legend_items}</div>'
-        f'<script type="application/json" class="anim__timeline" data-anim-id="{caption_id}">'
-        f"{timeline_json}</script>"
-        f"{static_fallback}</div>"
-    )
-
-
-def _path_trace_html(anim: Animate, token: str) -> str:
-    """A marker travels the plotted points at constant visual speed, extending a
-    fading trail behind it while a live caption names the current segment.
-
-    The "path-segment" step kind exists because the trail is not a tween: its "d"
-    attribute must ACCUMULATE one "L x,y" command per frame. anime.js can animate
-    SVG attributes like cx/cy directly, but that would expose no per-frame value to
-    append with, so the coordinator tweens a plain {x, y} state object instead and
-    mirrors it onto both the marker's cx/cy and the trail's growing "d" in onUpdate.
-
-    "set-attr" then rewinds "d" to just its "M x,y" origin before the loop repeats;
-    a path-data string is not interpolatable, so it is assigned, not tweened.
-    """
-    # See _step_reveal_html's token_seed comment: only the token's ordinal digits
-    # are used to build element ids, never the token's literal text.
-    token_seed = re.sub(r"\D", "", token) or "0"
-    marker_id = f"anim-marker-{token_seed}"
-    trail_id = f"anim-trail-{token_seed}"
-    caption_id = f"anim-caption-{token_seed}"
-
-    xs = [x for x, _ in anim.points]
-    ys = [y for _, y in anim.points]
-    data_min_x, data_max_x = min(xs), max(xs)
-    data_min_y, data_max_y = min(ys), max(ys)
-    min_x, max_x = data_min_x - _PATH_PADDING, data_max_x + _PATH_PADDING
-    min_y, max_y = data_min_y - _PATH_PADDING, data_max_y + _PATH_PADDING
-    points_attr = " ".join(f"{x:g},{y:g}" for x, y in anim.points)
-    # Axes drawn at the data's own min edges (not always literal 0), so a plot
-    # whose values never cross zero (e.g. all y > 0) still gets a frame of
-    # reference at its own floor/left-edge rather than an axis floating away
-    # from every data point.
-    axis = (
-        f'<line class="anim__path-axis" x1="{min_x:g}" y1="{data_max_y:g}" '
-        f'x2="{max_x:g}" y2="{data_max_y:g}"></line>'
-        f'<line class="anim__path-axis" x1="{data_min_x:g}" y1="{min_y:g}" '
-        f'x2="{data_min_x:g}" y2="{max_y:g}"></line>'
-    )
-    labels = (
-        f'<text class="anim__path-tick" x="{data_min_x:g}" y="{data_max_y + 9:g}">'
-        f"{data_min_x:g}</text>"
-        f'<text class="anim__path-tick" x="{data_max_x:g}" y="{data_max_y + 9:g}">'
-        f"{data_max_x:g}</text>"
-        f'<text class="anim__path-tick" x="{data_min_x - 2:g}" y="{data_min_y:g}">'
-        f"{data_min_y:g}</text>"
-        f'<text class="anim__path-tick" x="{data_min_x - 2:g}" y="{data_max_y:g}">'
-        f"{data_max_y:g}</text>"
-    )
-
-    x0, y0 = anim.points[0]
-    steps_json: list[dict] = []
-    for (fx, fy), (tx, ty) in zip(anim.points, anim.points[1:]):
-        segment_length = math.hypot(tx - fx, ty - fy)
-        duration = max(_PATH_MIN_SEGMENT_MS, round(segment_length * _PATH_MS_PER_UNIT))
-        steps_json.append({
-            "kind": "path-segment",
-            "marker": f"#{marker_id}",
-            "trail": f"#{trail_id}",
-            "from": [fx, fy],
-            "to": [tx, ty],
-            "duration": duration,
-            "ease": "inOutSine",
-            # A brief pause at each plotted point makes the vertices legible as
-            # data points rather than one continuous sweep. The first segment has
-            # no preceding step to offset from.
-            "position": None if not steps_json else "+=150",
-            "caption": f"Moving from ({fx:g}, {fy:g}) to ({tx:g}, {ty:g})",
-        })
-    # Snap marker and trail back to the origin before the loop restarts (the
-    # loop-state-drift gotcha): the trail's "d" grows by an L command on every
-    # frame, so without this reset the second lap would keep appending to a path
-    # that already spans the whole plot.
-    steps_json.append({
-        "kind": "set", "targets": [f"#{marker_id}"],
-        "props": {"cx": x0, "cy": y0},
-    })
-    steps_json.append({
-        "kind": "set-attr", "targets": [f"#{trail_id}"],
-        "props": {"d": f"M {x0:g},{y0:g}"},
-    })
-
-    timeline = {"loop": True, "loopDelay": 1200, "steps": steps_json}
-    timeline_json = _timeline_island_json(timeline)
-
-    # Reduced-motion/print static fallback, same dual-render precedent as
-    # array-ops: the segment sequence stays fully readable without any motion.
-    op_lines = "".join(
-        f"<li>from ({fx:g}, {fy:g}) to ({tx:g}, {ty:g})</li>"
-        for (fx, fy), (tx, ty) in zip(anim.points, anim.points[1:])
-    )
-    static_fallback = f'<ol class="anim__path-steps-static">{op_lines}</ol>'
-
-    return (
-        '<div class="anim anim--path-trace">'
-        # Both classes: .anim__caption is the live-narration hook wireAnimations()
-        # rewrites per segment, while .anim__path-caption marks this caption as
-        # carrying the COURSE AUTHOR'S own text (anim.caption) rather than the
-        # generated "Step N of M" chrome array-ops shows. That distinction is why
-        # the print/reduced-motion hiding rule is scoped to .anim--array-ops:
-        # hiding real authored content on paper would lose information.
-        f'<p class="anim__caption anim__path-caption" id="{caption_id}" '
-        f'data-anim-id="{caption_id}">'
-        f"{html.escape(anim.caption)}</p>"
-        f'<svg class="anim__path" dir="ltr" '
-        f'viewBox="{min_x:g} {min_y:g} {max_x - min_x:g} {max_y - min_y:g}">'
-        f"{axis}{labels}"
-        f'<polyline class="anim__path-line" points="{points_attr}"></polyline>'
-        f'<path class="anim__path-trail" id="{trail_id}" d="M {x0:g},{y0:g}"></path>'
-        f'<circle class="anim__path-marker" id="{marker_id}" r="1.2" '
-        f'cx="{x0:g}" cy="{y0:g}"></circle>'
-        "</svg>"
-        f'<script type="application/json" class="anim__timeline" data-anim-id="{caption_id}">'
-        f"{timeline_json}</script>"
-        f"{static_fallback}</div>"
     )
 
 

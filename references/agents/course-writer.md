@@ -146,10 +146,6 @@ not just decoration. Concretely, prefer `animate` when the topic is:
   `transitions:`.
 - A single entity's before/after contrast (`state-toggle`) — one object, one state
   change, no third state and no other actors worth drawing.
-- One pass of an array/list transformation you can express as compare/swap/highlight
-  steps (`array-ops`) — a sort pass, a partition step, a two-pointer scan.
-- A point moving along a plotted path (`path-trace`) — convergence, a traversal, a
-  value sliding along a curve — where you can supply literal `(x, y)` coordinates.
 - An input flowing through named stages that each change it (`pipeline`) — a
   processing chain, an encode/decode path, a request being progressively enriched.
   This is the most common sequence shape; reach for it before `state-machine`
@@ -189,7 +185,7 @@ after: Cache line marked Modified after a local write
 must connect consecutive states in the order you listed them under `states:` — except one
 optional final transition from the last state back to an earlier one. `state-toggle` needs
 both `before:` and `after:`. See `references/quiz-format.md` for the full grammar of all
-seven patterns, including `array-ops`, `path-trace`, `pipeline`, `layer-stack`, and
+five patterns: `state-machine`, `state-toggle`, `pipeline`, `layer-stack`, and
 `transform`.
 
 Stay with `mermaid` when the topic is a structure with more than one relationship to

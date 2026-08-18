@@ -301,23 +301,11 @@ def test_layout_css_styles_every_component_the_renderers_emit():
         ".sources-group",
         ".sources",
         ".diagram-fallback",
-        ".anim__caption",
-        ".anim--array-ops",
-        ".anim__array",
-        ".anim__array-axis",
-        ".anim__array-gridline",
-        ".anim__array-label",
-        ".anim__array-legend",
-        ".anim__array-steps-static",
-        ".anim--path-trace",
-        ".anim__path",
-        ".anim__path-axis",
-        ".anim__path-tick",
-        ".anim__path-line",
-        ".anim__path-marker",
-        ".anim__path-trail",
-        ".anim__path-caption",
-        ".anim__path-steps-static",
+        ".anim__state-machine",
+        ".anim__state-steps-static",
+        ".anim__pipeline",
+        ".anim__layer-stack",
+        ".anim__transform",
     ):
         assert selector in css, selector
 
@@ -394,22 +382,21 @@ def test_layout_css_only_uses_tokens_the_themes_define():
     assert used - layout_owned <= set(REQUIRED_TOKENS)
 
 
-def test_caption_hiding_is_scoped_to_array_ops_so_authored_captions_survive():
-    """Array-ops and path-trace share .anim__caption, but they hold different kinds
-    of text. Array-ops' caption is generated chrome ("Step 1 of 3") that means
-    nothing once frozen, so print and reduced motion hide it. Path-trace's caption
-    is the course author's OWN written text (anim.caption) -- real content, which a
-    bare `.anim__caption { display: none }` silently deleted from every printout and
-    from every reduced-motion reader's page. Both hiding rules must therefore be
-    scoped to .anim--array-ops.
+def test_no_stylesheet_still_targets_a_removed_pattern():
+    """array-ops and path-trace are gone, and with them the only two patterns
+    that emitted .anim__caption, .anim__array*, and .anim__path*. A rule left
+    behind targeting any of them is dead weight that later reads as a live
+    convention -- and a stale `.anim--array-ops`-scoped hide would silently do
+    nothing while looking like it still guards something.
     """
+    dead = (
+        "anim--array-ops", "anim--path-trace", "anim__caption",
+        "anim__array", "anim__path", "anim-array",
+    )
     for name in (ASSETS / "base" / "layout.css", ASSETS / "print.css"):
         css = name.read_text()
-        hide_rules = re.findall(r"^\s*([^\n{]*\.anim__caption[^\n{]*)\{[^}]*display:\s*none",
-                                css, re.MULTILINE)
-        assert hide_rules, f"{name.name}: no .anim__caption hiding rule found at all"
-        for selector in hide_rules:
-            assert ".anim--array-ops" in selector, f"{name.name}: unscoped hide {selector!r}"
+        for selector in dead:
+            assert selector not in css, f"{name.name} still references {selector}"
 
 
 def test_print_css_reveals_quiz_answers_and_hides_chrome():

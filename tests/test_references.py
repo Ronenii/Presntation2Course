@@ -104,16 +104,31 @@ def test_rubric_notes_figure_and_animate_are_covered_by_existing_codes():
     assert "animate" in text
 
 
-def test_course_writer_prompt_documents_the_new_animate_patterns():
+def test_course_writer_prompt_documents_the_animate_patterns():
     prose = (REFS / "agents" / "course-writer.md").read_text()
-    assert "array-ops" in prose
-    assert "path-trace" in prose
+    assert "state-machine" in prose
+    assert "pipeline" in prose
 
 
-def test_quiz_format_documents_the_new_animate_patterns():
+def test_quiz_format_documents_the_animate_patterns():
     prose = (REFS / "quiz-format.md").read_text()
-    assert "array-ops" in prose
-    assert "path-trace" in prose
+    assert "state-machine" in prose
+    assert "pipeline" in prose
+
+
+def test_no_reference_doc_advertises_a_removed_pattern():
+    """A documented pattern the parser rejects is worse than no documentation:
+    the writer copies the example verbatim and the build fails. array-ops and
+    path-trace are gone, so no author-facing file may still name them.
+    """
+    for path in (
+        REFS / "agents" / "course-writer.md",
+        REFS / "quiz-format.md",
+        REFS / "rubric.md",
+    ):
+        prose = path.read_text()
+        for dead in ("array-ops", "path-trace"):
+            assert dead not in prose, f"{path.name} still documents {dead}"
 
 
 def test_researcher_prompt_uses_the_strict_sources_grammar():

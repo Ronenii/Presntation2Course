@@ -152,9 +152,20 @@ merged: הנתון מוחזר לתהליך
 Note these fixtures use patterns built in Tasks 5–7. **Sequencing:** do Task 1's code
 removal now, but land the fixture rewrites in the task that introduces the pattern each
 one needs (`compare` → Task 6, `build-up` → Task 5, `split-merge` → Task 7). Until then,
-use `state-toggle` as a temporary stand-in so the suite stays green, and leave a
-`# TODO(task-N)` comment naming the final pattern. **Task 7 must verify no stand-in
-remains.**
+use a surviving pattern as a temporary stand-in so the suite stays green.
+
+⚠️ **Do NOT mark the stand-ins with a `TODO` comment in the fixture markdown.** Validator
+rule 7 scans the rendered body for `\bTODO\b` and raises a blocking `placeholder` finding,
+so an HTML comment inside a fixture fails the build. Track the stand-ins here instead:
+
+| Fixture | Stand-in used | Becomes | Task |
+|---|---|---|---|
+| `mini-course/modules/02-scheduling.md` | `state-toggle` | `compare` | 6 |
+| `mini-course-he/modules/01-section.md` (first) | `state-toggle` | `build-up` | 5 |
+| `mini-course-he/modules/01-section.md` (second) | `pipeline` | `split-merge` | 7 |
+
+**Task 7 must verify all three are resolved** by checking this table against the fixtures,
+since there is no in-tree marker to grep for.
 
 - [ ] **Step 5: Update every affected test**
 
@@ -813,7 +824,7 @@ Fan-out and fan-in connectors are cubic Béziers whose path lengths are computed
 for the `stroke-dashoffset` draw (no runtime `getTotalLength()`). Constants divisible by 4.
 Branch boxes settle to the faint accent wash; the merged box takes solid accent with inverted text.
 
-- [ ] **Step 4: Replace the final Hebrew stand-in** with the `split-merge` block from Task 1, Step 4. **Then grep the whole fixture tree for any remaining `TODO(task-` comment and confirm none survive.**
+- [ ] **Step 4: Replace the final Hebrew stand-in** with the `split-merge` block from Task 1, Step 4. **Then check the stand-in table in Task 1, Step 4 against the fixture tree and confirm all three rows are resolved** — there is no `TODO` marker to grep for, because validator rule 7 rejects one.
 
 - [ ] **Step 5: Run the tests, then the full suite**
 

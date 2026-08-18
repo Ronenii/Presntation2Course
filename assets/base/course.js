@@ -415,22 +415,15 @@
       } catch (err) {
         return; // malformed data island: leave the static fallback visible
       }
-      var animId = island.getAttribute("data-anim-id");
-      var caption = animId
-        ? document.querySelector('.anim__caption[data-anim-id="' + animId + '"]')
-        : null;
       var tl = anime.createTimeline({ loop: !!data.loop, loopDelay: data.loopDelay || 0 });
       (data.steps || []).forEach(function (step) {
         // A plain {x, y} state object is tweened rather than the marker's cx/cy
-        // directly (anime.js CAN animate SVG attributes) because the trail is not
-        // a tween at all: its "d" must ACCUMULATE an "L x,y" command per frame, so
-        // onUpdate needs the live interpolated coordinates as numbers. Reading them
-        // off a state object gives both the marker position and the trail growth
-        // from a single animation.
+        // directly (anime.js CAN animate SVG attributes) because onUpdate needs
+        // the live interpolated coordinates as numbers: a curved segment derives
+        // the marker's position from a cubic Bezier evaluated at t, which is not
+        // expressible as a direct attribute tween.
         if (step.kind === "path-segment") {
           var marker = document.querySelector(step.marker);
-          var trail = step.trail ? document.querySelector(step.trail) : null;
-          var stepCaption = step.caption;
           var fromX = step.from[0];
           var fromY = step.from[1];
           var toX = step.to[0];
@@ -439,10 +432,9 @@
           // cubic Bezier arcing above the row) carries the SAME two control
           // points its <path>'s "C x1 y1, x2 y2, x y" already uses, so the
           // traveling marker visibly follows the drawn arc instead of cutting a
-          // straight line underneath it. Every other segment (path-trace, and
-          // state-machine's own forward transitions) has no "via" and keeps the
-          // original plain linear x/y tween -- unchanged from before curves
-          // existed, since a straight segment's Bezier-with-zero-curvature form
+          // straight line underneath it. Every other segment (state-machine's
+          // own forward transitions) has no "via" and keeps the plain linear
+          // x/y tween: a straight segment's Bezier-with-zero-curvature form
           // would be equivalent but is needless extra math for the common case.
           var via1 = step.via1;
           var via2 = step.via2;
@@ -468,7 +460,6 @@
                 state.x = fromX;
                 state.y = fromY;
               }
-              if (stepCaption && caption) { caption.textContent = stepCaption; }
             },
             onUpdate: function () {
               var x, y;
@@ -483,9 +474,6 @@
               if (marker) {
                 marker.setAttribute("cx", x);
                 marker.setAttribute("cy", y);
-              }
-              if (trail) {
-                trail.setAttribute("d", trail.getAttribute("d") + " L " + x + "," + y);
               }
             },
           };
@@ -502,15 +490,14 @@
           }
           return;
         }
-        // Instant attribute write for a non-interpolatable value: the trail's "d"
-        // is a path-data string ("M 0,10"), so it is assigned outright rather than
+        // Instant attribute write for a value anime.js cannot interpolate --
+        // a path-data string ("M 0,10"), say -- assigned outright rather than
         // routed through tl.set()'s tween machinery.
         //
         // It must be SCHEDULED on the timeline (a zero-duration step whose onBegin
-        // does the write), not executed here during wiring. Writing it inline would
-        // run it exactly once at page load, so on a looping timeline the trail's
-        // "d" -- which grows by one "L x,y" per frame -- would never rewind and
-        // would instead accumulate without bound across every lap.
+        // does the write), not executed here during wiring: writing it inline would
+        // run it exactly once at page load, so on a looping timeline the value
+        // would never be re-applied on the second and later laps.
         if (step.kind === "set-attr") {
           var attrTargets = step.targets || [];
           var attrProps = step.props || {};
@@ -532,9 +519,6 @@
         Object.keys(step.props || {}).forEach(function (key) { props[key] = step.props[key]; });
         if (step.duration != null) { props.duration = step.duration; }
         if (step.ease) { props.ease = step.ease; }
-        if (step.caption && caption) {
-          props.onBegin = function () { caption.textContent = step.caption; };
-        }
         if (step.kind === "set") {
           tl.set(step.targets, props);
         } else if (step.position) {

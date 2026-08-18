@@ -512,6 +512,14 @@ def test_parse_animate_rejects_an_unknown_pattern():
         parse_animate("pattern: spin\nstates:\n  - a\n  - b")
 
 
+def test_removed_patterns_are_rejected():
+    for pattern in ("array-ops", "path-trace"):
+        with pytest.raises(AnimateError, match="animate pattern must be"):
+            parse_animate(
+                f"pattern: {pattern}\narray:\n  - 1\n  - 2\nops:\n  - swap 0 1\n"
+            )
+
+
 def test_parse_animate_rejects_a_state_machine_with_one_state():
     with pytest.raises(AnimateError, match="at least 2 states"):
         parse_animate("pattern: state-machine\nstates:\n  - only one\ntransitions:")
@@ -584,11 +592,24 @@ def test_parse_animate_state_machine_rejects_a_malformed_transition_line():
         )
 
 
-def test_parse_animate_state_machine_rejects_array_and_points_fields():
+def test_parse_animate_state_machine_rejects_a_stray_before_key():
     with pytest.raises(
         AnimateError,
-        match="state-machine does not use 'before:'/'after:'/'array:'/'ops:'/'points:'/'caption:'",
+        match="state-machine does not use 'before:'/'after:'/'caption:'",
     ):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n"
+            "transitions:\n  - A -> B: go\nbefore: something\n"
+        )
+
+
+def test_a_removed_patterns_key_is_no_longer_a_list_header():
+    """`array:`/`ops:`/`points:` died with array-ops and path-trace, so they are
+    not list headers any more. A block still carrying one is rejected as an
+    unrecognised line rather than by a pattern's cross-key guard -- different
+    message, same outcome: it never parses and never gets silently discarded.
+    """
+    with pytest.raises(AnimateError, match="unrecognised line in animate block"):
         parse_animate(
             "pattern: state-machine\nstates:\n  - A\n  - B\n"
             "transitions:\n  - A -> B: go\narray:\n  - 1\n"
@@ -620,78 +641,6 @@ def test_parse_animate_state_toggle_rejects_a_stray_layers_key():
         parse_animate(
             "pattern: state-toggle\nbefore: Shared\nafter: Modified\n"
             "layers:\n  - X: y\n"
-        )
-
-
-def test_parse_animate_array_ops():
-    anim = parse_animate(
-        "pattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\n  - 1\n"
-        "ops:\n  - compare 0 1\n  - swap 0 1\n  - highlight 2"
-    )
-    assert anim == Animate(
-        pattern="array-ops",
-        array=[5, 3, 8, 1],
-        ops=[("compare", 0, 1), ("swap", 0, 1), ("highlight", 2, None)],
-    )
-
-
-def test_parse_animate_array_ops_rejects_too_few_values():
-    with pytest.raises(AnimateError, match="at least 2 array values"):
-        parse_animate("pattern: array-ops\narray:\n  - 5\nops:\n  - highlight 0")
-
-
-def test_parse_animate_array_ops_rejects_a_non_integer_value():
-    with pytest.raises(AnimateError, match="array item 'five' is not an integer"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - five\n  - 3\nops:\n  - highlight 0"
-        )
-
-
-def test_parse_animate_array_ops_rejects_no_ops():
-    with pytest.raises(AnimateError, match="at least one op"):
-        parse_animate("pattern: array-ops\narray:\n  - 1\n  - 2\nops:")
-
-
-def test_parse_animate_array_ops_rejects_a_malformed_op():
-    with pytest.raises(AnimateError, match="invalid array-ops operation: 'flip 0'"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - flip 0"
-        )
-
-
-def test_parse_animate_array_ops_rejects_compare_with_one_index():
-    with pytest.raises(AnimateError, match="invalid array-ops operation: 'compare 0'"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - compare 0"
-        )
-
-
-def test_parse_animate_array_ops_rejects_highlight_with_two_indices():
-    with pytest.raises(AnimateError, match="invalid array-ops operation: 'highlight 0 1'"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 0 1"
-        )
-
-
-def test_parse_animate_array_ops_rejects_an_out_of_range_index():
-    with pytest.raises(AnimateError, match=r"index 2 out of range for array of length 2"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 2"
-        )
-
-
-def test_parse_animate_array_ops_rejects_before_after():
-    with pytest.raises(AnimateError, match="array-ops does not use 'before:'/'after:'"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 0\nbefore: x"
-        )
-
-
-def test_parse_animate_array_ops_rejects_a_stray_steps_key():
-    with pytest.raises(AnimateError, match="array-ops does not use"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 0\n"
-            "steps:\n  - a step\n"
         )
 
 
@@ -731,16 +680,16 @@ def test_pipeline_rejects_keys_from_other_patterns():
     with pytest.raises(AnimateError, match="does not use"):
         parse_animate(
             "pattern: pipeline\nstages:\n  - A: does a\n  - B: does b\n"
-            "points:\n  - 0, 1\n"
+            "layers:\n  - X: adds x\n"
         )
 
 
 def test_pipeline_rejects_caption():
-    """Settled convention (verified across all seven patterns): a pattern that
-    does not RENDER a caption REJECTS it -- state-machine/state-toggle/array-ops
-    all reject it already; only path-trace renders and accepts it. pipeline
-    never renders anim.caption (see _pipeline_html), so it must reject the key
-    rather than silently accept-and-discard it.
+    """Settled convention: a pattern that does not RENDER a caption REJECTS it.
+    path-trace was the only pattern that ever rendered one, and it is gone, so
+    no surviving pattern accepts `caption:`. pipeline never renders
+    anim.caption (see _pipeline_html), so it must reject the key rather than
+    silently accept-and-discard it.
     """
     with pytest.raises(AnimateError, match="does not use"):
         parse_animate(
@@ -1077,9 +1026,8 @@ def test_transform_constants_are_divisible_by_four():
         # transitions play sequentially by design (see
         # test_state_machine_transitions_play_sequentially_not_all_at_once in
         # this file), so it emits no "<" position for THIS test to check the
-        # escaping of -- its "<" coverage comes from array-ops below instead.
+        # escaping of.
         'pattern: state-toggle\nbefore: Shared\nafter: Modified',
-        'pattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\nops:\n  - compare 0 1\n  - swap 0 1',
     ],
 )
 def test_timeline_island_position_tokens_are_not_html_escaped(block):
@@ -1518,233 +1466,6 @@ def test_a_figure_or_animate_block_also_counts_as_a_visual():
     )
     rendered = render_course(md)
     assert rendered.topics_missing_visual == []
-
-
-def test_parse_animate_path_trace():
-    anim = parse_animate(
-        "pattern: path-trace\npoints:\n  - 0, 10\n  - 5, 2\n  - 10, 8\n  - 15, 0\n"
-        "caption: Gradient descent converging toward the minimum"
-    )
-    assert anim == Animate(
-        pattern="path-trace",
-        points=[(0.0, 10.0), (5.0, 2.0), (10.0, 8.0), (15.0, 0.0)],
-        caption="Gradient descent converging toward the minimum",
-    )
-
-
-def test_parse_animate_path_trace_rejects_one_point():
-    with pytest.raises(AnimateError, match="at least 2 points"):
-        parse_animate("pattern: path-trace\npoints:\n  - 0, 0\ncaption: c")
-
-
-def test_parse_animate_path_trace_rejects_a_malformed_point():
-    with pytest.raises(AnimateError, match=r"invalid path-trace point: 'not-a-point'"):
-        parse_animate(
-            "pattern: path-trace\npoints:\n  - 0, 0\n  - not-a-point\ncaption: c"
-        )
-
-
-def test_parse_animate_path_trace_rejects_missing_caption():
-    with pytest.raises(AnimateError, match="path-trace needs 'caption:'"):
-        parse_animate("pattern: path-trace\npoints:\n  - 0, 0\n  - 1, 1")
-
-
-def test_parse_animate_path_trace_rejects_steps():
-    with pytest.raises(AnimateError, match="path-trace does not use 'before:'/'after:'"):
-        parse_animate(
-            "pattern: path-trace\npoints:\n  - 0, 0\n  - 1, 1\ncaption: c\nbefore: x"
-        )
-
-
-def test_parse_animate_path_trace_rejects_a_stray_direction_key():
-    with pytest.raises(AnimateError, match="path-trace does not use"):
-        parse_animate(
-            "pattern: path-trace\npoints:\n  - 0, 0\n  - 1, 1\ncaption: c\n"
-            "direction: up\n"
-        )
-
-
-def test_array_ops_renders_bars_and_a_timeline_island():
-    md = course(
-        '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\n  - 1\n'
-        'ops:\n  - compare 0 1\n  - swap 0 1\n  - highlight 2\n```\n\n'
-        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
-        '```glossary\nTLB: definition\n```\n'
-    )
-    rendered = render_course(md)
-    assert rendered.errors == []
-    assert rendered.html_body.count('<g class="anim__array-bar"') == 4
-    assert rendered.html_body.count('<text class="anim__array-label"') == 4
-    assert '>5<' in rendered.html_body
-    assert '>3<' in rendered.html_body
-    assert '>8<' in rendered.html_body
-    assert '>1<' in rendered.html_body
-    assert 'class="anim__array-legend"' in rendered.html_body
-    assert 'class="anim__caption"' in rendered.html_body
-    assert 'transform-box: fill-box; transform-origin: center' in rendered.html_body
-    assert 'transform="translate(' not in rendered.html_body  # the SVG-transform-attribute gotcha
-    assert '<ol class="anim__array-steps-static">' in rendered.html_body
-    assert '<li>compare index 0 and 1</li>' in rendered.html_body
-    assert '<li>swap index 0 and 1</li>' in rendered.html_body
-    assert '<li>highlight index 2</li>' in rendered.html_body
-
-    match = re.search(
-        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
-        rendered.html_body,
-        re.DOTALL,
-    )
-    assert match, "no anim__timeline data island found"
-    timeline = json.loads(match.group(1))
-    assert timeline["loop"] is True
-    kinds = [step.get("kind", "add") for step in timeline["steps"]]
-    assert kinds[-1] == "set" and kinds[-2] == "set"  # the loop-reset pair, last in the list
-    swap_steps = [s for s in timeline["steps"] if s.get("caption", "").startswith("swapping")]
-    assert len(swap_steps) >= 1
-
-    # Fill-only steps carry no "ease": their keyframes are var(--anim-array-*)
-    # references, which anime.js cannot interpolate as colors (its classifier only
-    # accepts #hex/rgb()/rgba()/hsl()/hsla()), so the swap is an instant cut and an
-    # ease would only advertise a smoothness that never happens. Steps that animate
-    # a real numeric property (scale/translateX) still ease.
-    fill_only = [
-        s for s in timeline["steps"]
-        if s.get("kind", "add") == "add" and set(s["props"]) == {"fill"}
-    ]
-    assert len(fill_only) == 3  # one per op: compare, swap, highlight
-    assert all("ease" not in s for s in fill_only), fill_only
-    motion_steps = [
-        s for s in timeline["steps"]
-        if s.get("kind", "add") == "add" and s["props"] and "fill" not in s["props"]
-    ]
-    assert motion_steps and all("ease" in s for s in motion_steps)
-
-
-def test_array_ops_swap_displacement_lands_each_bar_in_the_other_bars_slot():
-    """A swap's translateX must be each bar's ABSOLUTE displacement from its own
-    home slot -- (slot_of_bar[i] - i) * slot_width computed independently per bar,
-    never `delta` and `-delta`. The mirrored form is only right when both bars
-    start in their home slots; after any earlier swap has already displaced one of
-    them it sends that bar to the wrong x. `swap 0 2` then `swap 0 1` exercises
-    exactly that: by the second swap, bar 1 sits in slot 0 and bar 0 sits in slot
-    2, so the two bars' displacements are NOT negatives of each other.
-    """
-    md = course(
-        '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\n  - 1\n'
-        'ops:\n  - swap 0 2\n  - swap 0 1\n```\n\n'
-        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
-        '```glossary\nTLB: definition\n```\n'
-    )
-    rendered = render_course(md)
-    assert rendered.errors == []
-    match = re.search(
-        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
-        rendered.html_body,
-        re.DOTALL,
-    )
-    assert match
-    timeline = json.loads(match.group(1))
-
-    # Recover each bar's rendered home x from its <rect> so the expected
-    # displacements are derived from the real emitted geometry, not a constant
-    # duplicated from the implementation.
-    home_x = {
-        int(m.group(1)): float(m.group(2))
-        for m in re.finditer(r'<rect id="anim-rect-\d+-(\d)" x="([\d.]+)"', rendered.html_body)
-    }
-    assert len(home_x) == 4
-
-    # translateX steps, in emission order, keyed by the bar id they target.
-    moves = [
-        (int(re.search(r"-(\d)$", s["targets"][0]).group(1)), s["props"]["translateX"])
-        for s in timeline["steps"]
-        if s.get("kind") != "set" and "translateX" in s.get("props", {})
-    ]
-    # swap 0 2 moves bars 0 and 2; swap 0 1 then moves bars 0 and 1.
-    assert [bar for bar, _ in moves] == [0, 2, 0, 1]
-
-    # After both swaps: slot_of_bar == [1, 0, 2 -> see below]. Walk it explicitly.
-    slot_of_bar = [0, 1, 2, 3]
-    slot_of_bar[0], slot_of_bar[2] = slot_of_bar[2], slot_of_bar[0]
-    slot_of_bar[0], slot_of_bar[1] = slot_of_bar[1], slot_of_bar[0]
-    assert slot_of_bar == [1, 2, 0, 3]
-
-    # Each move must place its bar exactly on the home x of the slot it now occupies.
-    final = {}
-    for bar, dx in moves:
-        final[bar] = home_x[bar] + dx
-    for bar in (0, 1, 2):
-        assert final[bar] == home_x[slot_of_bar[bar]], (
-            f"bar {bar} landed at {final[bar]}, slot {slot_of_bar[bar]} is at "
-            f"{home_x[slot_of_bar[bar]]}"
-        )
-    # The second swap's two deltas are genuinely NOT mirror images -- this is the
-    # case the naive `delta`/`-delta` pair gets wrong.
-    assert moves[2][1] != -moves[3][1]
-
-
-def test_path_trace_renders_gridlines_trail_and_a_timeline_island():
-    md = course(
-        '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: path-trace\npoints:\n  - 0, 10\n  - 5, 2\n  - 10, 8\n  - 15, 0\n'
-        'caption: TLB hit rate rising\n```\n\n'
-        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
-        '```glossary\nTLB: definition\n```\n'
-    )
-    rendered = render_course(md)
-    assert rendered.errors == []
-    assert '<line class="anim__path-axis"' in rendered.html_body
-    assert '<text class="anim__path-tick"' in rendered.html_body
-    assert '<polyline class="anim__path-line"' in rendered.html_body
-    assert '<path class="anim__path-trail"' in rendered.html_body
-    assert '<circle class="anim__path-marker"' in rendered.html_body
-    # Both classes: .anim__caption is the live-narration hook, .anim__path-caption
-    # marks this caption as the author's own text so the print/reduced-motion rules
-    # (scoped to .anim--array-ops) leave it visible.
-    assert 'class="anim__caption anim__path-caption"' in rendered.html_body
-    assert '<ol class="anim__path-steps-static">' in rendered.html_body
-    assert '<li>from (0, 10) to (5, 2)</li>' in rendered.html_body
-    assert '<li>from (5, 2) to (10, 8)</li>' in rendered.html_body
-    assert '<li>from (10, 8) to (15, 0)</li>' in rendered.html_body
-
-    match = re.search(
-        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
-        rendered.html_body,
-        re.DOTALL,
-    )
-    assert match, "no anim__timeline data island found"
-    timeline = json.loads(match.group(1))
-    assert timeline["loop"] is True
-    # One path-segment step per segment (0->5->10->15), plus the two reset steps
-    # that snap the marker/trail back to the start before the loop restarts.
-    segments = [s for s in timeline["steps"] if s["kind"] == "path-segment"]
-    assert len(segments) == 3
-    assert [s["kind"] for s in timeline["steps"][3:]] == ["set", "set-attr"]
-    assert segments[0]["caption"] == "Moving from (0, 10) to (5, 2)"
-
-    # Constant visual speed: each segment's duration is proportional to its real
-    # Euclidean length. (0,10)->(5,2) spans hypot(5, 8) = 9.434 units while
-    # (5,2)->(10,8) spans only hypot(5, 6) = 7.810, so the FIRST segment is the
-    # longer one and must get the longer duration.
-    durations = [s["duration"] for s in segments]
-    assert durations[0] > durations[1]
-    assert durations[0] == durations[2]  # (0,10)->(5,2) and (10,8)->(15,0) are congruent
-    # Proportionality, not merely ordering: ms-per-unit is constant across segments.
-    ratios = [d / math.hypot(s["to"][0] - s["from"][0], s["to"][1] - s["from"][1])
-              for d, s in zip(durations, segments)]
-    assert all(abs(r - ratios[0]) < 1.0 for r in ratios)
-
-
-def test_a_broken_array_ops_block_becomes_an_error_not_a_crash():
-    md = course(
-        '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: array-ops\narray:\n  - 1\nops:\n  - highlight 0\n```\n\n'
-        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
-        '```glossary\nTLB: definition\n```\n'
-    )
-    rendered = render_course(md)
-    assert any("array-ops" in e for e in rendered.errors)
 
 
 def test_a_broken_path_trace_block_becomes_an_error_not_a_crash():

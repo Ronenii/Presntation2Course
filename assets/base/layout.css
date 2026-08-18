@@ -308,7 +308,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .anim__state-marker { fill: var(--color-accent); }
 /* Hidden during normal animated playback; shown only under the static
    print/reduced-motion presentation below, same toggle-pair pattern as
-   .anim__array-steps-static/.anim__path-steps-static. */
+   .anim__pipeline-static/.anim__layer-static/.anim__xform-static. */
 .anim__state-steps-static { display: none; }
 /* display: grid + a shared grid-area (rather than position: absolute) sizes the
    container to the tallest state's content, so realistic caption-length text that
@@ -339,97 +339,9 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .anim__state-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
 }
 
-.anim--array-ops { text-align: center; }
-/* Live step narration, rewritten by each timeline step's onBegin (see
-   wireAnimations in course.js). Rendered with the pre-JS "Step 1 of N" text so
-   the slot never collapses to zero height and shift the bars when JS lands. */
-.anim__caption {
-  text-align: center; font-weight: 600; font-size: 1rem; color: var(--color-fg);
-  margin: 0 0 var(--space-3);
-}
-.anim__array {
-  width: 100%; height: auto;
-  /* Bar fill for each of the three op verbs, plus the resting/idle color -- named
-     by the anime.js timeline island's per-step `fill` keyframes and by the initial
-     fill attribute on every rect. Those keyframes carry these var() references
-     verbatim, which anime.js cannot interpolate as colors, so each step swaps the
-     fill instantly at the keyframe boundary rather than fading between the two
-     colors. That is deliberate: it keeps the bars theme-aware (each theme defines
-     these tokens differently in light and dark mode) at the cost of a hard cut.
-     compare/swap/highlight reuse the same semantic
-     colors quiz feedback already uses (warn/accent/correct), so a reader doesn't
-     have to learn a second color vocabulary for the same ideas ("being
-     inspected", "in motion", "settled/done"). */
-  --anim-array-idle: var(--color-border);
-  --anim-array-compare: var(--color-warn);
-  --anim-array-swap: var(--color-accent);
-  --anim-array-highlight: var(--color-correct);
-}
-.anim__array-axis { stroke: var(--color-fg); stroke-width: 1.5; }
-.anim__array-gridline { stroke: var(--color-border); stroke-width: 1; stroke-dasharray: 3,3; }
-.anim__array-label {
-  font-size: 15px;
-  fill: var(--color-fg);
-  text-anchor: middle;
-}
-.anim__array-legend {
-  display: flex; gap: var(--space-4); justify-content: center;
-  margin-block-start: var(--space-2); font-size: 0.75rem; color: var(--color-muted);
-}
-.anim__array-legend-swatch {
-  display: inline-block; inline-size: 10px; block-size: 10px; border-radius: 2px;
-  margin-inline-end: var(--space-1);
-}
-.anim__array-legend-swatch--idle { background: var(--color-border); }
-.anim__array-legend-swatch--compare { background: var(--color-warn); }
-.anim__array-legend-swatch--swap { background: var(--color-accent); }
-.anim__array-legend-swatch--highlight { background: var(--color-correct); }
-/* Hidden during normal animated playback; shown only under the static
-   print/reduced-motion presentation below, same toggle-pair pattern as
-   .anim__state-label. */
-.anim__array-steps-static { display: none; }
-
-.anim--path-trace { text-align: center; }
-.anim__path { width: 100%; height: auto; max-block-size: 16rem; }
-.anim__path-axis {
-  stroke: var(--color-border);
-  stroke-width: 1;
-}
-.anim__path-tick {
-  font-size: 6px;
-  fill: var(--color-muted);
-}
-.anim__path-line {
-  fill: none;
-  stroke: var(--color-border);
-  stroke-width: 2;
-}
-/* The trail is drawn by wireAnimations() appending to this path's "d" as the
-   marker advances; the reduced opacity keeps it reading as a motion wake behind
-   the marker rather than a second data series competing with .anim__path-line. */
-.anim__path-trail {
-  fill: none;
-  stroke: var(--color-accent);
-  stroke-width: 1.2;
-  stroke-linecap: round;
-  opacity: 0.6;
-}
-.anim__path-marker { fill: var(--color-accent); }
-/* Path-trace's caption carries the course author's own written text (anim.caption),
-   not the generated "Step N of M" chrome array-ops shows -- which is why the
-   print/reduced-motion hiding rules below are scoped to .anim--array-ops and
-   leave this one visible. It otherwise inherits .anim__caption's styling
-   (full-contrast --color-fg at 1rem, margin BELOW it since it renders above the
-   plot); the earlier muted/0.9rem/margin-block-start declarations here fought
-   that and are gone. Authored prose wraps, so keep it readable at any width. */
-.anim__path-caption { text-wrap: balance; }
-/* Hidden during animated playback; shown only under the static
-   print/reduced-motion presentation below, same toggle pair as array-ops. */
-.anim__path-steps-static { display: none; }
-
-/* Unlike .anim__state-machine/.anim__path/.anim__array above (width: 100%,
-   which stretches a wide viewBox across the full column and shrinks its text
-   proportionally -- illegible once a 6-stage pipeline or a wide transform gap
+/* Unlike .anim__state-machine above (width: 100%, which stretches a wide
+   viewBox across the full column and shrinks its text proportionally --
+   illegible once a 6-stage pipeline or a wide transform gap
    pushes the viewBox past ~1000px), these three carry explicit width/height
    presentation attributes in the markup (see _pipeline_html/_layer_stack_html/
    _transform_html) so the SVG renders at its own natural, legible size by
@@ -486,7 +398,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 
 /* The static <ol> lists are the print/reduced-motion presentation only; during
    normal animated playback the SVG carries the meaning. Same toggle-pair
-   pattern as .anim--array-ops. */
+   pattern as .anim__state-steps-static. */
 .anim__pipeline-static,
 .anim__layer-static,
 .anim__xform-static {
@@ -494,22 +406,6 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .anim__array { display: none; }
-  /* The caption and legend only mean anything while the timeline is playing --
-     wireAnimations() bails out entirely under reduced motion, so both would
-     otherwise sit there frozen on the pre-JS "Step 1 of N" text. Scoped to
-     array-ops on purpose: path-trace's caption is the course author's own
-     written text, real content that must stay visible without motion. */
-  .anim--array-ops .anim__caption { display: none; }
-  .anim__array-legend { display: none; }
-  .anim__array-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
-  /* No CSS animation left to disable -- wireAnimations() bails out entirely under
-     reduced motion, so the marker/trail simply stay at their rendered starting
-     position. The step list carries the sequence information instead, exactly as
-     it does for array-ops -- but unlike array-ops the caption stays visible here,
-     since it holds the author's own text rather than live step narration. */
-  .anim__path-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
-
   /* The timeline never runs here, so every element it would have revealed must
      be forced visible -- inline opacity="0" and stroke-dashoffset would
      otherwise leave these diagrams blank. Every stage/layer/step shows at once. */
