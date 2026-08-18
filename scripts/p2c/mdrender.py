@@ -405,24 +405,38 @@ _XFORM_STEP_BG_HEIGHT = 20  # matches _STATE_LABEL_CHIP_HEIGHT's own 12 + 2*pad 
                             # room than a state-machine transition chip needs) and stays
                             # divisible by 4 per this branch's layout-constant rule.
 
-_STATE_BOX_WIDTH = 130
-_STATE_BOX_HEIGHT = 56
-_STATE_GAP = 70  # horizontal gap between box edges, wide enough for an arrow + label
-_STATE_TOP_MARGIN = 20  # headroom above the row when there is no back-edge arc
-_STATE_BACK_EDGE_HEADROOM = 40  # extra top margin so the back-edge's arc and its
-                                # arrowhead never clip the SVG's own top edge
-_STATE_LABEL_LANE_OFFSET = 22  # a transition label sits this far above the row,
-                               # clear of the box tops -- its own background
-                               # chip (see _STATE_LABEL_CHIP_*) keeps it legible
-                               # even where a long label overhangs a box edge
+_STATE_BOX_HEIGHT = 44
+_STATE_BOX_MIN_WIDTH = 96  # a two-letter state still reads as a box, not a chip
+_STATE_BOX_PAD_X = 24  # horizontal padding inside a state box, around its label
+_STATE_NAME_CHAR_WIDTH = 7.6  # rough px-per-character at the box label's 13px/600
+                              # weight font. SVG cannot measure real text at render
+                              # time, so a box's width is estimated from its
+                              # authored string's length -- generous enough that
+                              # real glyphs stay inside it. The old renderer used a
+                              # fixed 130px box instead and clipped every longer name.
+_STATE_RING_RADIUS = 76  # minimum radius of the closed track the marker rides.
+                         # The actual radius grows with the state count and the
+                         # widest box, so neighbours never collide -- see the
+                         # chord calculation in _state_machine_html.
+_STATE_BOX_GAP = 28  # clear space required between two adjacent boxes on the ring
+_STATE_TRACK_MARGIN = 28  # space between the track's bounding box and the SVG edge,
+                          # enough for a node box straddling the track plus its
+                          # transition chip
 _STATE_LABEL_CHIP_PAD_X = 8  # horizontal padding inside a label's background chip
 _STATE_LABEL_CHIP_PAD_Y = 3  # vertical padding inside a label's background chip
 _STATE_LABEL_CHAR_WIDTH = 7.2  # rough px-per-character at the label's 12px/600
-                               # weight font -- SVG cannot measure real text
-                               # width at render time, so the chip's size is
-                               # estimated from the authored string's length,
-                               # generous enough that real glyphs stay inside it
-_STATE_MARKER_RADIUS = 9
+                               # weight font -- same estimation caveat as
+                               # _STATE_NAME_CHAR_WIDTH above
+_STATE_MARKER_RADIUS = 7
+_STATE_SEGMENT_MS = 900  # marker travel time for one transition
+_STATE_DWELL_MS = 500  # pause at each state before the next transition begins
+_STATE_VISITED_OPACITY = 0.14  # the faint accent wash a visited state settles to
+                               # and keeps. Light enough that --color-fg stays
+                               # legible on it (so the arrival inversion can be
+                               # undone), strong enough to read as "been here".
+                               # Mirrors --anim-visited-strength in layout.css,
+                               # which the reduced-motion and print blocks use
+                               # where no timeline runs to apply this.
 
 
 def _timeline_island_json(timeline: dict) -> str:
@@ -455,305 +469,434 @@ def _animate_html(anim: Animate, token: str) -> str:
     return _transform_html(anim, token)
 
 
+def _ring_positions(count: int, cx: float, cy: float, radius: float) -> list[tuple[float, float]]:
+    """Evenly spaced points on a circle, first one at the top, going clockwise.
+
+    Starting at the top (rather than at angle 0, which is the 3 o'clock
+    position) puts state[0] where a reader's eye lands first, and clockwise
+    matches the direction people expect a cycle to run.
+    """
+    positions = []
+    for i in range(count):
+        angle = -math.pi / 2 + (2 * math.pi * i / count)
+        positions.append((cx + radius * math.cos(angle), cy + radius * math.sin(angle)))
+    return positions
+
+
+def _arc_between(
+    start: tuple[float, float], end: tuple[float, float], cx: float, cy: float
+) -> tuple[float, float, float, float]:
+    """Cubic control points approximating the circular arc from start to end.
+
+    The marker rides the track by reusing the existing "path-segment" step kind,
+    which interpolates a cubic Bezier through via1/via2 (see wireAnimations in
+    course.js). A circular arc is not exactly a cubic, but the standard
+    tangent-handle approximation is visually indistinguishable at these radii,
+    and it means the track needs no new client-side machinery.
+
+    Handle length k = 4/3 * tan(theta/4) is the classic minimal-error constant
+    for approximating a circular arc of sweep theta with one cubic. Error grows
+    sharply with sweep: measured against a true circle of radius 76, a 120-degree
+    sweep (3 states) deviates 0.12px, but a 180-degree one (2 states) deviates
+    1.4px -- visible as the arc bulging off the ring. _ARC_MAX_SWEEP caps this by
+    splitting a wide sweep, so callers get a list of cubics rather than one.
+    """
+    ax, ay = start[0] - cx, start[1] - cy
+    bx, by = end[0] - cx, end[1] - cy
+    theta = math.atan2(ax * by - ay * bx, ax * bx + ay * by)
+    if theta <= 0:
+        theta += 2 * math.pi
+    k = 4 / 3 * math.tan(theta / 4)
+    # Tangent at each endpoint, rotated 90 degrees from the radius, scaled by k.
+    return (
+        start[0] - k * ay,
+        start[1] + k * ax,
+        end[0] + k * by,
+        end[1] - k * bx,
+    )
+
+
+_ARC_MAX_SWEEP = math.pi * 2 / 3  # 120 degrees; see _arc_between's error note
+
+
+def _arc_chain(
+    start: tuple[float, float], end: tuple[float, float], cx: float, cy: float
+) -> list[tuple[tuple[float, float], tuple[float, float], tuple[float, float]]]:
+    """The arc from start to end as one or more cubics, each within _ARC_MAX_SWEEP.
+
+    Returns [(control1, control2, endpoint), ...]; the caller already knows the
+    start point. Splitting keeps a wide sweep (a 2-state machine's 180 degrees)
+    from bulging visibly off the ring.
+    """
+    ax, ay = start[0] - cx, start[1] - cy
+    bx, by = end[0] - cx, end[1] - cy
+    theta = math.atan2(ax * by - ay * bx, ax * bx + ay * by)
+    if theta <= 0:
+        theta += 2 * math.pi
+    pieces = max(1, math.ceil(theta / _ARC_MAX_SWEEP))
+    radius = math.hypot(ax, ay)
+    start_angle = math.atan2(ay, ax)
+    out = []
+    previous = start
+    for i in range(1, pieces + 1):
+        angle = start_angle + theta * i / pieces
+        point = (cx + radius * math.cos(angle), cy + radius * math.sin(angle))
+        c1x, c1y, c2x, c2y = _arc_between(previous, point, cx, cy)
+        out.append(((c1x, c1y), (c2x, c2y), point))
+        previous = point
+    return out
+
+
 def _state_machine_html(anim: Animate, token: str) -> str:
-    """A marker travels between labeled state boxes as each transition fires.
+    """States sit on a closed track that the marker rides, one lap per cycle.
 
-    Movement uses the "path-segment" step kind: a tweened {x, y} state object
-    mirrored onto the marker's cx/cy via onUpdate, rather than animating cx/cy
-    directly, because they are SVG geometry attributes and not every browser
-    animates them reliably as CSS properties. Each transition's action label is
-    invisible at rest and fades in and out only during its own step, via a
-    parallel "position": "<" step that pairs the opacity change with the
-    movement tween.
+    The track is the shape: a process that returns to its first state is drawn
+    as a ring like any other, rather than as a special-cased arc bolted above a
+    straight row. A chain that never returns simply leaves its final arc
+    undrawn, so the same geometry serves both.
 
-    Only AUTHORED transitions are ever drawn or animated. If the chain has no
-    authored back-edge (parse_animate guarantees at most one, and only from
-    the last state), the loop-restart is an invisible "kind": "set" snap of
-    the marker back to the first box and every label/box back to idle -- never
-    a drawn or animated arrow -- so a reader never mistakes the animation's
-    replay-for-engagement loop for a transition that was never authored.
+    Three behaviours carry the meaning:
+
+    - A state takes the accent as the marker arrives, then settles to a faint
+      accent wash and KEEPS it (.anim__visited, a fill-opacity animation). The
+      path travelled so far therefore stays readable at any moment, instead of
+      each state flashing back to blank behind the marker.
+    - Only the in-progress transition's label is visible. Each label fades in as
+      its own segment begins and out as it ends, so N labels never compete for
+      attention at once.
+    - Box width derives from the authored state name, so a long name is not
+      clipped.
+
+    Movement reuses the "path-segment" step kind, whose via1/via2 cubic controls
+    already exist for the old back-edge arc; each track segment is one such
+    cubic (see _arc_between).
     """
     # The token's literal text must never appear in this function's return
     # value: blocks.restore() does an unconditional second substitution pass
     # keyed on the token, so an id containing it would be corrupted. Only the
     # token's ordinal digits are used to build element ids.
     token_seed = re.sub(r"\D", "", token) or "0"
-    box_ids = [f"anim-state-box-{token_seed}-{i}" for i in range(len(anim.states))]
-    # The <g> wrapper is never the fill-animation target: the only VISIBLE shape
-    # is its child <rect>, whose own fill wins over anything inherited from the
-    # group, so an animated fill on the <g> never reaches a rendered pixel.
-    # Hence a separate rect id per state, and an inline
-    # fill="var(--anim-state-idle)" attribute rather than a stylesheet rule, so
-    # nothing competes with the interpolated value while still rendering
-    # correctly before JS runs and under reduced-motion/print.
-    rect_ids = [f"anim-state-rect-{token_seed}-{i}" for i in range(len(anim.states))]
-    text_ids = [f"anim-state-text-{token_seed}-{i}" for i in range(len(anim.states))]
+    count = len(anim.states)
+    rect_ids = [f"anim-state-rect-{token_seed}-{i}" for i in range(count)]
+    text_ids = [f"anim-state-text-{token_seed}-{i}" for i in range(count)]
     label_ids = [f"anim-state-label-{token_seed}-{i}" for i in range(len(anim.transitions))]
     marker_id = f"anim-state-marker-{token_seed}"
 
-    # A back-edge's arc peaks above the row (see below), so the row itself is
-    # pushed down by _STATE_BACK_EDGE_HEADROOM whenever one exists -- otherwise
-    # the arc and its arrowhead have nowhere to go but past the SVG's own top
-    # edge (y=0), clipping. A chain with no back-edge keeps the smaller,
-    # plain _STATE_TOP_MARGIN.
-    has_back_edge_precheck = False
-    last_index_precheck = len(anim.states) - 1
-    last_transition_precheck = anim.transitions[-1]
-    if (
-        anim.states.index(last_transition_precheck[1]) < last_index_precheck
-        and anim.states.index(last_transition_precheck[0]) == last_index_precheck
-    ):
-        has_back_edge_precheck = True
-    row_y = _STATE_BACK_EDGE_HEADROOM if has_back_edge_precheck else _STATE_TOP_MARGIN
-    # Forward arrows and the traveling marker run at the boxes' own vertical
-    # center -- a real flowchart line entering/exiting each box at its edge --
-    # rather than a separate lane below. Never through a box's own text
-    # despite sharing its height: boxes paint LAST (see the return value's
-    # paint-order comment below), so each box's opaque rect covers the arrow's
-    # end and the marker's full extent whenever either is at/behind a box.
-    box_center_y = row_y + _STATE_BOX_HEIGHT / 2
+    box_widths = [
+        max(
+            _STATE_BOX_MIN_WIDTH,
+            len(name) * _STATE_NAME_CHAR_WIDTH + 2 * _STATE_BOX_PAD_X,
+        )
+        for name in anim.states
+    ]
 
-    def box_x(i: int) -> int:
-        return _STATE_GAP + i * (_STATE_BOX_WIDTH + _STATE_GAP)
+    # The ring must be big enough that adjacent boxes do not collide. Neighbours
+    # sit 2*pi/count apart, so the chord between their centres is
+    # 2*R*sin(pi/count); requiring that to exceed the two half-widths plus a gap
+    # gives the minimum radius. A fixed radius was the first version's mistake:
+    # it looked right for three states and overlapped badly at five or six.
+    widest = max(box_widths)
+    chord_needed = widest + _STATE_BOX_GAP
+    radius = max(
+        _STATE_RING_RADIUS,
+        chord_needed / (2 * math.sin(math.pi / count)),
+    )
+    # The ring is laid out around a provisional origin; the viewBox is then
+    # derived from where the content actually ended up (see the shift below).
+    # Computing bounds up front instead would mean predicting each label's push
+    # distance twice, and the first version of this function got that prediction
+    # wrong -- labels clipped the SVG edge at several state counts.
+    cx = cy = 0.0
+    centers = _ring_positions(count, cx, cy, radius)
 
-    def box_center_x(i: int) -> float:
-        return box_x(i) + _STATE_BOX_WIDTH / 2
+    # The track: one arc per AUTHORED transition, never one per adjacent pair.
+    # A chain whose transitions do not cover every pair legitimately has a gap,
+    # and closing the ring across it would draw an edge the course-writer never
+    # wrote -- the standing rule that only authored transitions are ever drawn.
+    # A cycle closes its own ring naturally, because its final authored
+    # transition returns to the first state.
+    #
+    # Each arc is a separate <path> rather than one subpath chain, so a gap is a
+    # real absence rather than a straight line closing it.
+    def _cubic_at(p0, c1, c2, p3, t):
+        mt = 1 - t
+        return (
+            mt ** 3 * p0[0] + 3 * mt ** 2 * t * c1[0] + 3 * mt * t ** 2 * c2[0] + t ** 3 * p3[0],
+            mt ** 3 * p0[1] + 3 * mt ** 2 * t * c1[1] + 3 * mt * t ** 2 * c2[1] + t ** 3 * p3[1],
+        )
 
-    total_width = len(anim.states) * (_STATE_BOX_WIDTH + _STATE_GAP) + _STATE_GAP
-    total_height = row_y + _STATE_BOX_HEIGHT + _STATE_LABEL_LANE_OFFSET + 4
+    def _lerp(a, b, t):
+        return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+    track_segments = []
+    for from_state, to_state, _action in anim.transitions:
+        from_i = anim.states.index(from_state)
+        to_i = anim.states.index(to_state)
+        start = centers[from_i]
+        pieces = _arc_chain(start, centers[to_i], cx, cy)
+
+        # The drawn arc stops short of the destination box rather than running to
+        # its centre, so the arrowhead lands on the box's edge where it can be
+        # seen. Only the LAST piece is trimmed; earlier ones are drawn whole.
+        # t is found by walking the curve rather than solving analytically: a
+        # cubic's arc length has no closed form, and 60 samples is well under a
+        # pixel at these radii.
+        last_c1, last_c2, last_end = pieces[-1]
+        piece_start = pieces[-2][2] if len(pieces) > 1 else start
+        stop_distance = box_widths[to_i] / 2 + 6
+        trim_t = 1.0
+        for sample in range(60, 0, -1):
+            t = sample / 60
+            point = _cubic_at(piece_start, last_c1, last_c2, last_end, t)
+            if math.hypot(point[0] - last_end[0], point[1] - last_end[1]) >= stop_distance:
+                trim_t = t
+                break
+        # de Casteljau split at trim_t. The leading sub-curve's controls are the
+        # first interpolation point (p01) and the second-level one (q0); its end
+        # is the third-level point, which is the curve's own value at trim_t.
+        p01 = _lerp(piece_start, last_c1, trim_t)
+        p12 = _lerp(last_c1, last_c2, trim_t)
+        q0 = _lerp(p01, p12, trim_t)
+        tip = _cubic_at(piece_start, last_c1, last_c2, last_end, trim_t)
+
+        d = [f"M {start[0]:.1f} {start[1]:.1f}"]
+        for control1, control2, endpoint in pieces[:-1]:
+            d.append(
+                f"C {control1[0]:.1f} {control1[1]:.1f}, "
+                f"{control2[0]:.1f} {control2[1]:.1f}, "
+                f"{endpoint[0]:.1f} {endpoint[1]:.1f}"
+            )
+        d.append(
+            f"C {p01[0]:.1f} {p01[1]:.1f}, {q0[0]:.1f} {q0[1]:.1f}, "
+            f"{tip[0]:.1f} {tip[1]:.1f}"
+        )
+        track_segments.append(
+            f'<path class="anim__state-track" fill="none" d="{" ".join(d)}" '
+            f'marker-end="url(#anim-arrowhead-{token_seed})"></path>'
+        )
+    track_html = "".join(track_segments)
+
+    # The arrowhead is shared by every arc, so a reader sees each transition's
+    # direction without having to infer it from the marker's motion.
+    defs_html = (
+        f'<defs><marker id="anim-arrowhead-{token_seed}" markerWidth="8" '
+        f'markerHeight="8" refX="7" refY="4" orient="auto">'
+        f'<path class="anim__state-arrowhead" d="M0,0 L8,4 L0,8 Z"></path>'
+        f"</marker></defs>"
+    )
+
+    # A dot plus a soft halo. Both circles sit at the group's own origin and the
+    # GROUP carries the cx/cy the timeline drives, so one path-segment step moves
+    # both -- no second animation target and no new key in the step contract.
+    marker_html = (
+        f'<g class="anim__state-marker">'
+        f'<circle id="{marker_id}" class="anim__state-marker-dot" '
+        f'cx="{centers[0][0]:.1f}" cy="{centers[0][1]:.1f}" '
+        f'r="{_STATE_MARKER_RADIUS}"></circle>'
+        f'<circle id="{marker_id}-glow" class="anim__state-marker-glow" '
+        f'cx="{centers[0][0]:.1f}" cy="{centers[0][1]:.1f}" '
+        f'r="{_STATE_MARKER_RADIUS * 2}"></circle>'
+        "</g>"
+    )
+
+    # Boxes paint AFTER the marker so the marker passes BEHIND them: SVG has no
+    # z-index, document order is paint order, and a marker drawn last would
+    # cover each state's label as it went by.
+    #
+    # Each box is two stacked rects: an opaque base that hides the track and the
+    # marker behind it, and a wash rect above it whose fill-opacity the timeline
+    # animates. Animating opacity on a single rect would fade the box out
+    # instead, revealing the track through it.
+    # Every drawn rectangle's extent, accumulated so the viewBox can be derived
+    # from real content rather than predicted.
+    extents: list[tuple[float, float, float, float]] = []
 
     boxes_html = []
-    for i, label in enumerate(anim.states):
-        x = box_x(i)
-        # The label carries its own id so it can invert to
-        # --color-accent-contrast in step with its rect taking the accent fill.
-        # --color-fg on --color-accent measures 1.82:1 to 3.83:1 across the three
-        # themes, well under the 4.5:1 floor, so an active state's label was
-        # briefly unreadable every lap.
+    for i, name in enumerate(anim.states):
+        width = box_widths[i]
+        x = centers[i][0] - width / 2
+        y = centers[i][1] - _STATE_BOX_HEIGHT / 2
+        extents.append((x, y, x + width, y + _STATE_BOX_HEIGHT))
         boxes_html.append(
-            f'<g class="anim__state-box" id="{box_ids[i]}">'
-            f'<rect id="{rect_ids[i]}" x="{x}" y="{row_y}" '
-            f'width="{_STATE_BOX_WIDTH}" height="{_STATE_BOX_HEIGHT}" rx="8" '
-            f'fill="var(--anim-state-idle)"></rect>'
-            f'<text id="{text_ids[i]}" x="{x + _STATE_BOX_WIDTH / 2:g}" '
-            f'y="{row_y + _STATE_BOX_HEIGHT / 2 + 5:g}" '
-            f'fill="var(--color-fg)">'
-            f"{html.escape(label)}</text>"
+            f'<g class="anim__state-box">'
+            f'<rect class="anim__state-base" x="{x:.1f}" y="{y:.1f}" '
+            f'width="{width:.1f}" height="{_STATE_BOX_HEIGHT}" rx="10"></rect>'
+            f'<rect class="anim__state-rect anim__visited" id="{rect_ids[i]}" '
+            f'x="{x:.1f}" y="{y:.1f}" '
+            f'width="{width:.1f}" height="{_STATE_BOX_HEIGHT}" rx="10" '
+            f'fill="var(--color-accent)" fill-opacity="0"></rect>'
+            f'<text class="anim__state-name" id="{text_ids[i]}" '
+            f'x="{centers[i][0]:.1f}" y="{centers[i][1] + 5:.1f}" '
+            f'fill="var(--color-fg)">{html.escape(name)}</text>'
             "</g>"
         )
-
-    # Static arrows: one per AUTHORED forward transition, always visible -- this
-    # is the diagram's permanent structure. Derived from anim.transitions, never
-    # from every adjacent pair in anim.states: the grammar only requires
-    # transitions to cover the consecutive pairs they actually name, so a chain
-    # may legitimately have a gap, and drawing an arrow across that gap would
-    # invent an edge the course-writer never authored (the standing rule is that
-    # only authored transitions are ever drawn or animated as edges). A trailing
-    # authored back-edge (from the last state to an earlier one) is excluded
-    # here -- it gets its own curved arrow above the row instead, visually
-    # distinct from the forward chain.
-    arrows_html = []
-    forward_transitions = [
-        t for t in anim.transitions
-        if anim.states.index(t[1]) == anim.states.index(t[0]) + 1
-    ]
-    for from_state, to_state, _action in forward_transitions:
-        i = anim.states.index(from_state)
-        x1 = box_center_x(i)
-        x2 = box_center_x(i + 1)
-        arrows_html.append(
-            f'<line class="anim__state-arrow" x1="{x1:g}" y1="{box_center_y:g}" '
-            f'x2="{x2:g}" y2="{box_center_y:g}" marker-end="url(#anim-arrowhead-{token_seed})">'
-            "</line>"
-        )
-
-    back_edge = None
-    back_edge_curve: tuple[float, float, float, float] | None = None
-    last_index = len(anim.states) - 1
-    last_transition = anim.transitions[-1]
-    if anim.states.index(last_transition[1]) < last_index and anim.states.index(last_transition[0]) == last_index:
-        back_target_index = anim.states.index(last_transition[1])
-        x_from = box_center_x(last_index)
-        x_to = box_center_x(back_target_index)
-        y_top = row_y
-        arc_y = row_y - (_STATE_BACK_EDGE_HEADROOM - 10)
-        back_edge = (
-            f'<path class="anim__state-arrow anim__state-arrow--back" '
-            f'd="M {x_from:g} {y_top} C {x_from:g} {arc_y:g}, {x_to:g} {arc_y:g}, '
-            f'{x_to:g} {y_top}" marker-end="url(#anim-arrowhead-{token_seed})"></path>'
-        )
-        # The traveling marker's back-edge step reuses these exact two control
-        # points (see the timeline-building loop below) so it visibly follows
-        # this same drawn arc instead of cutting a straight line beneath it.
-        back_edge_curve = (x_from, arc_y, x_to, arc_y)
-
-    # Each label gets a background chip behind its text (a rect sized from the
-    # authored action string's estimated width) so it stays legible even where
-    # it overhangs a box's edge -- both chip and text paint AFTER the boxes
-    # (see the return value's paint-order comment), the opposite of the
-    # arrow/marker, which paint BEFORE the boxes precisely so the boxes can
-    # cover them. A label is never meant to be partly hidden; an arrow/marker
-    # sliding behind a box is the intended "enters the box" look.
+    # Labels paint LAST: authored prose stays legible above everything. Each sits
+    # at the midpoint of its own arc, pushed far enough outward that its chip
+    # clears the boxes -- which straddle the ring, so a label only just outside
+    # the radius would sit on top of them.
     labels_html = []
     for i, (from_state, to_state, action) in enumerate(anim.transitions):
         from_i = anim.states.index(from_state)
         to_i = anim.states.index(to_state)
-        lx = (box_center_x(from_i) + box_center_x(to_i)) / 2
-        # The back-edge's label sits higher, above its own arc, clear of the
-        # forward labels' band right above the row -- same distinction the
-        # original (pre-lane) layout drew between the two cases.
-        is_this_the_back_edge = back_edge_curve is not None and i == len(anim.transitions) - 1
-        ly = (row_y - (_STATE_BACK_EDGE_HEADROOM - 6)) if is_this_the_back_edge else (row_y - _STATE_LABEL_LANE_OFFSET)
         chip_width = len(action) * _STATE_LABEL_CHAR_WIDTH + 2 * _STATE_LABEL_CHIP_PAD_X
         chip_height = 12 + 2 * _STATE_LABEL_CHIP_PAD_Y
-        # Grouped under one id so the timeline's single opacity animation (see
-        # below) fades the chip and its text together -- an empty chip left
-        # behind by an invisible label would otherwise read as a stray box.
+        # Direction from the ring's centre to the arc's midpoint. For a 2-state
+        # machine the two centres are diametrically opposite, so their midpoint
+        # IS the centre and the direction is undefined; fall back to the
+        # perpendicular of the chord, which sends the two labels to opposite
+        # sides instead of stacking them both at the centre.
+        mid_x = (centers[from_i][0] + centers[to_i][0]) / 2 - cx
+        mid_y = (centers[from_i][1] + centers[to_i][1]) / 2 - cy
+        length = math.hypot(mid_x, mid_y)
+        if length < 1e-6:
+            chord_x = centers[to_i][0] - centers[from_i][0]
+            chord_y = centers[to_i][1] - centers[from_i][1]
+            chord_length = math.hypot(chord_x, chord_y) or 1.0
+            mid_x, mid_y = -chord_y / chord_length, chord_x / chord_length
+            length = 1.0
+        unit_x, unit_y = mid_x / length, mid_y / length
+        # Clear the boxes' own extent along this direction, then the chip's, then
+        # a breathing gap. Both reaches are the half-extent of an axis-aligned
+        # rectangle measured along (unit_x, unit_y), which is the SUM of the two
+        # projected half-sides -- not the larger of them. Taking the max instead
+        # under-measured any direction that is neither axis-aligned, and labels
+        # at the top and bottom of an 8-state ring overlapped their boxes.
+        box_reach = (
+            abs(unit_x) * max(box_widths) / 2 + abs(unit_y) * _STATE_BOX_HEIGHT / 2
+        )
+        chip_reach = abs(unit_x) * chip_width / 2 + abs(unit_y) * chip_height / 2
+        push = radius + box_reach + chip_reach + 8
+        lx = cx + unit_x * push
+        ly = cy + unit_y * push
+        extents.append((
+            lx - chip_width / 2, ly - chip_height / 2,
+            lx + chip_width / 2, ly + chip_height / 2,
+        ))
         labels_html.append(
-            f'<g class="anim__state-transition-label-group" id="{label_ids[i]}">'
+            f'<g class="anim__state-transition-label-group" id="{label_ids[i]}" '
+            f'opacity="0">'
             f'<rect class="anim__state-transition-label-bg" '
-            f'x="{lx - chip_width / 2:g}" y="{ly - chip_height + 4:g}" '
-            f'width="{chip_width:g}" height="{chip_height:g}" rx="4"></rect>'
+            f'x="{lx - chip_width / 2:.1f}" y="{ly - chip_height / 2:.1f}" '
+            f'width="{chip_width:.1f}" height="{chip_height:.1f}" rx="4"></rect>'
             f'<text class="anim__state-transition-label" '
-            f'x="{lx:g}" y="{ly:g}">{html.escape(action)}</text>'
+            f'x="{lx:.1f}" y="{ly + 4:.1f}">{html.escape(action)}</text>'
             "</g>"
         )
 
-    marker_x0, marker_y0 = box_center_x(0), box_center_y
-    marker_html = (
-        f'<circle class="anim__state-marker" id="{marker_id}" '
-        f'cx="{marker_x0:g}" cy="{marker_y0:g}" r="{_STATE_MARKER_RADIUS}"></circle>'
-    )
-
-    defs = (
-        f'<defs><marker id="anim-arrowhead-{token_seed}" markerWidth="8" markerHeight="8" '
-        f'refX="6" refY="4" orient="auto"><path class="anim__state-arrowhead" '
-        f'd="M0,0 L8,4 L0,8 Z"></path></marker></defs>'
-    )
-
+    # Timeline. Each transition is one lap segment: label in, marker travels the
+    # arc, arriving state takes the accent and holds the wash, label out.
     steps_json: list[dict] = []
-    for i, (from_state, to_state, action) in enumerate(anim.transitions):
+    for i, (from_state, to_state, _action) in enumerate(anim.transitions):
         from_i = anim.states.index(from_state)
         to_i = anim.states.index(to_state)
-        fx, fy = box_center_x(from_i), box_center_y
-        tx, ty = box_center_x(to_i), box_center_y
-        marker_step: dict = {
-            "kind": "path-segment",
-            "marker": f"#{marker_id}",
-            "from": [fx, fy],
-            "to": [tx, ty],
-            "duration": 900,
-            "ease": "inOutQuad",
-            "position": None,
-        }
-        # The back-edge (always the LAST authored transition, per the grammar)
-        # gets the same two cubic-Bezier control points as its own drawn arc
-        # (see back_edge_curve above), so the marker visibly follows that curve
-        # instead of cutting a straight line beneath it -- its "from"/"to" are
-        # overridden to the arc's own endpoints (the box's TOP edge, row_y, not
-        # box_center_y), since the arc starts/ends there, arcing above the row.
-        if back_edge_curve is not None and i == len(anim.transitions) - 1:
-            via1_x, via1_y, via2_x, via2_y = back_edge_curve
-            marker_step["from"] = [box_center_x(from_i), row_y]
-            marker_step["to"] = [box_center_x(to_i), row_y]
-            marker_step["via1"] = [via1_x, via1_y]
-            marker_step["via2"] = [via2_x, via2_y]
-        # The label must be fully visible BEFORE the marker starts moving and
-        # stay visible until AFTER it arrives, so it leads and trails the
-        # marker's own travel window rather than fading in lockstep with it.
-        # anime.js spaces a single tween's keyframes evenly across its one
-        # duration, so syncing both start times (as one opacity [0,1,1,0]
-        # step used to do) put the fade-in mid-travel instead of ahead of
-        # it. Three steps in strict sequence fix this: fade in first (its
-        # own 200ms), then the marker travels while the label sits at full
-        # opacity, then fade out (another 200ms) -- each step with no
-        # "position" override runs sequentially after the one before it, so
-        # this chain alone guarantees "label visible" fully brackets
-        # "marker moving" on both ends. The box-fill highlight below must
-        # still align with the marker's OWN start, so it is anchored via a
-        # negative offset from this chain's start rather than "<" (which
-        # would now resolve against the fade-in, not the marker).
+        start = centers[from_i]
+        end = centers[to_i]
+        pieces = _arc_chain(start, end, cx, cy)
+
         steps_json.append({
             "targets": [f"#{label_ids[i]}"],
             "props": {"opacity": [0, 1]},
             "duration": 200,
         })
-        steps_json.append(marker_step)
+        # A wide sweep is split into several cubics (see _arc_chain), each its
+        # own path-segment step running back-to-back. Splitting the travel this
+        # way needs no new client-side machinery, and the segments share the
+        # transition's total duration so travel speed is unchanged.
+        piece_ms = _STATE_SEGMENT_MS / len(pieces)
+        piece_start = start
+        for piece_index, (control1, control2, endpoint) in enumerate(pieces):
+            steps_json.append({
+                "kind": "path-segment",
+                "marker": f"#{marker_id}, #{marker_id}-glow",
+                "from": [round(piece_start[0], 1), round(piece_start[1], 1)],
+                "to": [round(endpoint[0], 1), round(endpoint[1], 1)],
+                "via1": [round(control1[0], 1), round(control1[1], 1)],
+                "via2": [round(control2[0], 1), round(control2[1], 1)],
+                "duration": round(piece_ms),
+                # Ease in on the first piece and out on the last, but run the
+                # middle at a constant rate: easing every piece would make the
+                # marker stutter at each internal join.
+                "ease": (
+                    "inOutQuad" if len(pieces) == 1
+                    else "inQuad" if piece_index == 0
+                    else "outQuad" if piece_index == len(pieces) - 1
+                    else "linear"
+                ),
+                "position": None,
+            })
+            piece_start = endpoint
+        # Arrival is a full-strength accent flash, so the eye is drawn to the
+        # state the marker just reached.
+        steps_json.append({
+            "targets": [f"#{rect_ids[to_i]}"],
+            "props": {"fillOpacity": [0, 1]},
+            "duration": 300,
+            "position": "-=260",
+        })
+        # Its label inverts on the same clock: --color-fg on a solid accent
+        # measures 1.82:1 to 3.83:1 across the themes, below the 4.5:1 floor.
+        steps_json.append({
+            "targets": [f"#{text_ids[to_i]}"],
+            "props": {"fill": ["var(--color-fg)", "var(--color-accent-contrast)"]},
+            "duration": 300,
+            "position": "<",
+        })
+        # The flash then settles to the faint wash and KEEPS it -- no later step
+        # animates it back down mid-lap. That is the whole point: the path
+        # travelled so far stays visible instead of each state flashing back to
+        # blank behind the marker. Only the trailing reset clears it, so the next
+        # lap starts clean. The label returns to --color-fg, legible again once
+        # the fill is this pale.
+        steps_json.append({
+            "targets": [f"#{rect_ids[to_i]}"],
+            "props": {"fillOpacity": _STATE_VISITED_OPACITY},
+            "duration": _STATE_DWELL_MS,
+        })
+        steps_json.append({
+            "targets": [f"#{text_ids[to_i]}"],
+            "props": {"fill": "var(--color-fg)"},
+            "duration": 200,
+            "position": "<",
+        })
+        # The label leaves with its own segment, so exactly one is ever visible.
         steps_json.append({
             "targets": [f"#{label_ids[i]}"],
             "props": {"opacity": [1, 0]},
             "duration": 200,
+            "position": "<",
         })
-        steps_json.append({
-            "targets": [f"#{rect_ids[to_i]}"],
-            "props": {"fill": ["var(--anim-state-idle)", "var(--anim-state-current)"]},
-            "duration": 300, "position": "-=1100",
-        })
-        # Invert the arriving state's label on the SAME clock as its fill, so the
-        # text is never --color-fg on a solid accent (1.82:1 to 3.83:1 across the
-        # themes -- unreadable). "<" starts it with the fill step above.
-        steps_json.append({
-            "targets": [f"#{text_ids[to_i]}"],
-            "props": {"fill": ["var(--color-fg)", "var(--color-accent-contrast)"]},
-            "duration": 300, "position": "<",
-        })
-        if i > 0:
-            previous_to_i = anim.states.index(anim.transitions[i - 1][1])
-            steps_json.append({
-                "targets": [f"#{rect_ids[previous_to_i]}"],
-                "props": {"fill": ["var(--anim-state-current)", "var(--anim-state-idle)"]},
-                "duration": 300, "position": "-=300",
-            })
-            steps_json.append({
-                "targets": [f"#{text_ids[previous_to_i]}"],
-                "props": {"fill": ["var(--color-accent-contrast)", "var(--color-fg)"]},
-                "duration": 300, "position": "<",
-            })
 
-    has_back_edge = back_edge is not None
-    if not has_back_edge:
-        # Hold on the final state briefly, then snap everything back to the
-        # start invisibly -- never a drawn/animated "final -> first" arrow.
-        steps_json.append({"targets": [f"#{marker_id}"], "props": {}, "duration": 900})
+    # Every animated property is reset before the loop restarts. anime.js
+    # compounds absolute values across laps otherwise: the wash would already be
+    # at full opacity when the next lap tried to animate it up again, and the
+    # inverted label colour would sit on an idle box.
+    steps_json.append({
+        "kind": "set",
+        "targets": [f"#{r}" for r in rect_ids],
+        "props": {"fillOpacity": 0},
+    })
+    steps_json.append({
+        "kind": "set",
+        "targets": [f"#{t}" for t in text_ids],
+        "props": {"fill": "var(--color-fg)"},
+    })
+    steps_json.append({
+        "kind": "set",
+        "targets": [f"#{l}" for l in label_ids],
+        "props": {"opacity": 0},
+    })
+    # The marker only needs snapping back when the authored transitions do NOT
+    # return it to the first state. A true cycle ends its lap where it began, so
+    # emitting the reset anyway would be a no-op that reads, to anyone auditing
+    # the timeline, like an invisible unauthored "last -> first" jump.
+    ends_where_it_started = (
+        anim.states.index(anim.transitions[-1][1]) == 0
+    )
+    if not ends_where_it_started:
         steps_json.append({
-            "kind": "set", "targets": [f"#{marker_id}"],
-            "props": {"cx": marker_x0, "cy": marker_y0},
-        })
-        steps_json.append({
-            "kind": "set", "targets": [f"#{r}" for r in rect_ids],
-            "props": {"fill": "var(--anim-state-idle)"},
-        })
-        steps_json.append({
-            "kind": "set", "targets": [f"#{t}" for t in text_ids],
-            "props": {"fill": "var(--color-fg)"},
-        })
-        steps_json.append({
-            "kind": "set", "targets": [f"#{l}" for l in label_ids],
-            "props": {"opacity": 0},
-        })
-    else:
-        # The back-edge's own arrival-box highlight (added in the loop above)
-        # already returns the diagram toward state[0] visibly, but the box
-        # fill from that final arrival must still settle back to idle before
-        # the loop restarts, exactly like every other arrival does.
-        last_to_i = anim.states.index(anim.transitions[-1][1])
-        steps_json.append({
-            "kind": "set", "targets": [f"#{rect_ids[last_to_i]}"],
-            "props": {"fill": "var(--anim-state-idle)"},
-        })
-        # Every text that was inverted during the lap resets too: without this the
-        # accent-contrast fill persists into the next lap, where the box beneath
-        # it is idle again -- dark-on-dark.
-        steps_json.append({
-            "kind": "set", "targets": [f"#{t}" for t in text_ids],
-            "props": {"fill": "var(--color-fg)"},
-        })
-        # Transition labels reset here as well. The no-back-edge branch above
-        # already did this; this branch did not, so on a looping cycle every
-        # label kept whatever opacity it ended the lap on.
-        steps_json.append({
-            "kind": "set", "targets": [f"#{l}" for l in label_ids],
-            "props": {"opacity": 0},
+            "kind": "set",
+            "targets": [f"#{marker_id}", f"#{marker_id}-glow"],
+            "props": {"cx": round(centers[0][0], 1), "cy": round(centers[0][1], 1)},
         })
 
     timeline = {"loop": True, "loopDelay": 800, "steps": steps_json}
@@ -765,22 +908,36 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     )
     static_fallback = f'<ol class="anim__state-steps-static">{static_lines}</ol>'
 
-    back_edge_svg = back_edge or ""
-    # Paint order matters here, in two opposite directions:
-    # - Arrows and the marker come BEFORE the boxes, so a box's opaque rect
-    #   covers the arrow's end and the marker's full extent whenever either is
-    #   at/behind it -- the marker reads as a token entering the box, and the
-    #   arrow reads as originating/terminating exactly at the box's edge,
-    #   never floating in front of the box or its text.
-    # - Labels (with their own background chip) come AFTER the boxes, on top
-    #   of everything -- a label is authored prose, not diagram structure, and
-    #   must stay fully legible even where it overhangs a box's edge.
+    # The viewBox is derived from where the content actually landed, plus the
+    # marker's glow (which straddles the ring and can reach past every box when
+    # a state sits at an extreme) and a uniform margin. The ring was laid out
+    # around origin (0, 0), so these bounds are negative on two sides; rather
+    # than translate every coordinate, the viewBox's own origin is moved.
+    left = min(e[0] for e in extents)
+    top = min(e[1] for e in extents)
+    right = max(e[2] for e in extents)
+    bottom = max(e[3] for e in extents)
+    glow = _STATE_MARKER_RADIUS * 2
+    left = min(left, -radius - glow)
+    top = min(top, -radius - glow)
+    right = max(right, radius + glow)
+    bottom = max(bottom, radius + glow)
+    view_x = left - _STATE_TRACK_MARGIN
+    view_y = top - _STATE_TRACK_MARGIN
+    total_width = (right - left) + 2 * _STATE_TRACK_MARGIN
+    total_height = (bottom - top) + 2 * _STATE_TRACK_MARGIN
+
+    # Paint order, which SVG derives from document order alone:
+    #   track -> marker -> boxes -> labels
+    # The marker precedes the boxes so it passes BEHIND them, reading as a token
+    # entering each box rather than covering the box's own label. The labels
+    # come last so authored prose is never occluded.
     return (
         '<div class="anim anim--state-machine">'
         f'<svg class="anim__state-machine" dir="ltr" '
-        f'viewBox="0 0 {total_width} {total_height}">'
-        f"{defs}{''.join(arrows_html)}{back_edge_svg}"
-        f"{marker_html}{''.join(boxes_html)}{''.join(labels_html)}</svg>"
+        f'width="{total_width:.0f}" height="{total_height:.0f}" '
+        f'viewBox="{view_x:.1f} {view_y:.1f} {total_width:.1f} {total_height:.1f}">'
+        f"{track_html}{marker_html}{''.join(boxes_html)}{''.join(labels_html)}</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
         f"{static_fallback}</div>"
     )

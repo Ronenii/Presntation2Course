@@ -322,12 +322,12 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .figure figcaption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
 
 .anim { margin: var(--space-6) 0; }
-.anim--state-machine { text-align: center; }
-.anim__state-machine {
-  width: 100%; height: auto;
-  --anim-state-idle: var(--color-surface);
-  --anim-state-current: var(--color-accent);
-}
+.anim--state-machine { text-align: center; overflow-x: auto; }
+/* max-width rather than width: 100%. Stretching a fixed viewBox across the full
+   column scales its text down with it, which is what made a 5-state machine
+   illegible; capping instead lets the ring render at its natural size and hands
+   overflow to the wrapper's own scroll, the same approach .mermaid uses. */
+.anim__state-machine { max-width: 100%; height: auto; }
 /* Tokens for the pipeline, layer-stack, and transform patterns (Tasks 2-4),
    referenced via a fill="var(...)" attribute directly on the SVG's own rects
    -- same reasoning as .anim__state-box above: an author `fill` declaration
@@ -367,32 +367,50 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
    slightly more presence to read as "visited". Themes may override
    --anim-visited-strength; the fallback here keeps the rule working for a
    theme that does not. layout.css deliberately carries no dark-mode block of
-   its own -- themes own that three-state (media query + [data-theme]) dance. */
+   its own -- themes own that three-state (media query + [data-theme]) dance.
+
+   Only `fill` is declared here, never `fill-opacity`: a stylesheet declaration
+   of any kind outranks an inline PRESENTATION attribute, so declaring it would
+   override the renderer's fill-opacity="0" and paint every box pre-tinted
+   before the timeline ever runs. The wash strength is applied by the timeline's
+   own fillOpacity target instead, and the token is read by the reduced-motion
+   and print blocks below, where there is no timeline to do it. */
 .anim__visited {
   fill: var(--color-accent);
-  fill-opacity: var(--anim-visited-strength, .12);
 }
 
-/* No `fill` here on purpose: the rect carries fill="var(--anim-state-idle)" as
-   its own attribute (see _state_machine_html). A stylesheet `fill` declaration
-   would be an author declaration that overrides the attribute, so the
-   arrival-highlight animation's interpolated fill would never reach a rendered
-   pixel. */
-.anim__state-box rect {
-  stroke: var(--color-border); stroke-width: 1.5;
-}
-/* No `fill` here, for the same reason as the rect above: the <text> carries
-   fill="var(--color-fg)" as its own attribute so the timeline can interpolate it
-   to --color-accent-contrast while its box holds the accent. A stylesheet
-   `fill` would outrank the attribute and the inversion would never render. */
-.anim__state-box text {
-  font-size: 13px; text-anchor: middle; dominant-baseline: middle;
-}
-.anim__state-arrow {
+/* The track the marker rides: one arc per authored transition. Drawn at reduced
+   contrast so it reads as the path between states rather than as another
+   element competing with them. */
+.anim__state-track {
   stroke: var(--color-border); stroke-width: 1.5; fill: none;
 }
-.anim__state-arrow--back { stroke-dasharray: 4, 3; }
 .anim__state-arrowhead { fill: var(--color-border); }
+
+/* Each state box is two stacked rects. The base is opaque so the track and the
+   marker passing behind it are hidden; the wash above it is what the timeline
+   tints. Animating a single rect's opacity would fade the whole box out and
+   show the track through it. */
+.anim__state-base {
+  fill: var(--color-surface); stroke: var(--color-border); stroke-width: 1.5;
+}
+/* No `fill-opacity` here: see .anim__visited above. The renderer's inline
+   fill-opacity="0" must win at rest, and a stylesheet declaration of any kind
+   would outrank it. */
+.anim__state-rect { stroke: none; }
+/* No `fill` here either: the <text> carries fill="var(--color-fg)" as its own
+   attribute so the timeline can interpolate it to --color-accent-contrast while
+   its box holds the accent flash. */
+.anim__state-name {
+  font-size: 13px; font-weight: 600; text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+/* The travelling marker: a solid dot with a soft halo behind it. Both circles
+   are moved by one timeline step (they share a selector), and both are emitted
+   BEFORE the boxes so they pass behind them. */
+.anim__state-marker-dot { fill: var(--color-accent); }
+.anim__state-marker-glow { fill: var(--color-accent); opacity: .16; }
 /* Named distinctly from .anim__state-label (state-toggle's existing
    "Before"/"After" chrome label, defined earlier in this file) to avoid a
    same-name collision between two unrelated rules -- this one is the
@@ -441,16 +459,12 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .anim__state-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
 }
 
-/* Unlike .anim__state-machine above (width: 100%, which stretches a wide
-   viewBox across the full column and shrinks its text proportionally --
-   illegible once a 6-stage pipeline or a wide transform gap
-   pushes the viewBox past ~1000px), these three carry explicit width/height
-   presentation attributes in the markup (see _pipeline_html/_layer_stack_html/
-   _transform_html) so the SVG renders at its own natural, legible size by
-   default. max-width keeps a narrow one from overflowing its column, and the
-   wrapper's overflow-x below -- the same pattern .mermaid already uses for the
-   same reason -- takes over once natural size exceeds the column instead of
-   scaling text down to fit. */
+/* Every animated SVG carries explicit width/height presentation attributes in
+   the markup (see each renderer) so it renders at its own natural, legible size
+   by default. max-width keeps a narrow one from overflowing its column, and the
+   wrapper's overflow-x -- the same pattern .mermaid already uses for the same
+   reason -- takes over once natural size exceeds the column, instead of scaling
+   the text down to fit. */
 .anim__pipeline,
 .anim__layer-stack,
 .anim__transform {
@@ -694,7 +708,7 @@ everyone gets a fixed number of seconds and then hands the tap on.</p></aside>
 back of the queue. A short quantum makes the machine feel responsive but spends more time
 switching between processes. A long quantum reduces that overhead and makes interactive
 programs feel sluggish.</p>
-<div class="anim anim--state-machine"><svg class="anim__state-machine" dir="ltr" viewBox="0 0 670 122"><defs><marker id="anim-arrowhead-29" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path class="anim__state-arrowhead" d="M0,0 L8,4 L0,8 Z"></path></marker></defs><line class="anim__state-arrow" x1="135" y1="68" x2="335" y2="68" marker-end="url(#anim-arrowhead-29)"></line><line class="anim__state-arrow" x1="335" y1="68" x2="535" y2="68" marker-end="url(#anim-arrowhead-29)"></line><path class="anim__state-arrow anim__state-arrow--back" d="M 535 40 C 535 10, 135 10, 135 40" marker-end="url(#anim-arrowhead-29)"></path><circle class="anim__state-marker" id="anim-state-marker-29" cx="135" cy="68" r="9"></circle><g class="anim__state-box" id="anim-state-box-29-0"><rect id="anim-state-rect-29-0" x="70" y="40" width="130" height="56" rx="8" fill="var(--anim-state-idle)"></rect><text id="anim-state-text-29-0" x="135" y="73" fill="var(--color-fg)">Ready</text></g><g class="anim__state-box" id="anim-state-box-29-1"><rect id="anim-state-rect-29-1" x="270" y="40" width="130" height="56" rx="8" fill="var(--anim-state-idle)"></rect><text id="anim-state-text-29-1" x="335" y="73" fill="var(--color-fg)">Running</text></g><g class="anim__state-box" id="anim-state-box-29-2"><rect id="anim-state-rect-29-2" x="470" y="40" width="130" height="56" rx="8" fill="var(--anim-state-idle)"></rect><text id="anim-state-text-29-2" x="535" y="73" fill="var(--color-fg)">Waiting</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-0"><rect class="anim__state-transition-label-bg" x="162.2" y="4" width="145.6" height="18" rx="4"></rect><text class="anim__state-transition-label" x="235" y="18">scheduler picks it</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-1"><rect class="anim__state-transition-label-bg" x="380.2" y="4" width="109.6" height="18" rx="4"></rect><text class="anim__state-transition-label" x="435" y="18">blocks on I/O</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-2"><rect class="anim__state-transition-label-bg" x="280.2" y="-8" width="109.6" height="18" rx="4"></rect><text class="anim__state-transition-label" x="335" y="6">I/O completes</text></g></svg><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 800, "steps": [{"targets": ["#anim-state-label-29-0"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29", "from": [135.0, 68.0], "to": [335.0, 68.0], "duration": 900, "ease": "inOutQuad", "position": null}, {"targets": ["#anim-state-label-29-0"], "props": {"opacity": [1, 0]}, "duration": 200}, {"targets": ["#anim-state-rect-29-1"], "props": {"fill": ["var(--anim-state-idle)", "var(--anim-state-current)"]}, "duration": 300, "position": "-=1100"}, {"targets": ["#anim-state-text-29-1"], "props": {"fill": ["var(--color-fg)", "var(--color-accent-contrast)"]}, "duration": 300, "position": "\u003c"}, {"targets": ["#anim-state-label-29-1"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29", "from": [335.0, 68.0], "to": [535.0, 68.0], "duration": 900, "ease": "inOutQuad", "position": null}, {"targets": ["#anim-state-label-29-1"], "props": {"opacity": [1, 0]}, "duration": 200}, {"targets": ["#anim-state-rect-29-2"], "props": {"fill": ["var(--anim-state-idle)", "var(--anim-state-current)"]}, "duration": 300, "position": "-=1100"}, {"targets": ["#anim-state-text-29-2"], "props": {"fill": ["var(--color-fg)", "var(--color-accent-contrast)"]}, "duration": 300, "position": "\u003c"}, {"targets": ["#anim-state-rect-29-1"], "props": {"fill": ["var(--anim-state-current)", "var(--anim-state-idle)"]}, "duration": 300, "position": "-=300"}, {"targets": ["#anim-state-text-29-1"], "props": {"fill": ["var(--color-accent-contrast)", "var(--color-fg)"]}, "duration": 300, "position": "\u003c"}, {"targets": ["#anim-state-label-29-2"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29", "from": [535.0, 40], "to": [135.0, 40], "duration": 900, "ease": "inOutQuad", "position": null, "via1": [535.0, 10], "via2": [135.0, 10]}, {"targets": ["#anim-state-label-29-2"], "props": {"opacity": [1, 0]}, "duration": 200}, {"targets": ["#anim-state-rect-29-0"], "props": {"fill": ["var(--anim-state-idle)", "var(--anim-state-current)"]}, "duration": 300, "position": "-=1100"}, {"targets": ["#anim-state-text-29-0"], "props": {"fill": ["var(--color-fg)", "var(--color-accent-contrast)"]}, "duration": 300, "position": "\u003c"}, {"targets": ["#anim-state-rect-29-2"], "props": {"fill": ["var(--anim-state-current)", "var(--anim-state-idle)"]}, "duration": 300, "position": "-=300"}, {"targets": ["#anim-state-text-29-2"], "props": {"fill": ["var(--color-accent-contrast)", "var(--color-fg)"]}, "duration": 300, "position": "\u003c"}, {"kind": "set", "targets": ["#anim-state-rect-29-0"], "props": {"fill": "var(--anim-state-idle)"}}, {"kind": "set", "targets": ["#anim-state-text-29-0", "#anim-state-text-29-1", "#anim-state-text-29-2"], "props": {"fill": "var(--color-fg)"}}, {"kind": "set", "targets": ["#anim-state-label-29-0", "#anim-state-label-29-1", "#anim-state-label-29-2"], "props": {"opacity": 0}}]}</script><ol class="anim__state-steps-static"><li>Ready — scheduler picks it — Running</li><li>Running — blocks on I/O — Waiting</li><li>Waiting — I/O completes — Ready</li></ol></div>
+<div class="anim anim--state-machine"><svg class="anim__state-machine" dir="ltr" width="528" height="292" viewBox="-248.0 -140.2 527.5 292.2"><path class="anim__state-track" fill="none" d="M 0.0 -76.0 C 37.1 -76.0, 65.3 -50.6, 73.6 -19.1" marker-end="url(#anim-arrowhead-29)"></path><path class="anim__state-track" fill="none" d="M 65.8 38.0 C 47.3 70.1, 11.2 81.9, -20.3 73.3" marker-end="url(#anim-arrowhead-29)"></path><path class="anim__state-track" fill="none" d="M -65.8 38.0 C -79.4 14.5, -79.4 -14.5, -65.8 -38.0 C -61.7 -45.1, -56.6 -51.3, -50.7 -56.6" marker-end="url(#anim-arrowhead-29)"></path><g class="anim__state-marker"><circle id="anim-state-marker-29" class="anim__state-marker-dot" cx="0.0" cy="-76.0" r="7"></circle><circle id="anim-state-marker-29-glow" class="anim__state-marker-glow" cx="0.0" cy="-76.0" r="14"></circle></g><g class="anim__state-box"><rect class="anim__state-base" x="-48.0" y="-98.0" width="96.0" height="44" rx="10"></rect><rect class="anim__state-rect anim__visited" id="anim-state-rect-29-0" x="-48.0" y="-98.0" width="96.0" height="44" rx="10" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__state-name" id="anim-state-text-29-0" x="0.0" y="-71.0" fill="var(--color-fg)">Ready</text></g><g class="anim__state-box"><rect class="anim__state-base" x="15.2" y="16.0" width="101.2" height="44" rx="10"></rect><rect class="anim__state-rect anim__visited" id="anim-state-rect-29-1" x="15.2" y="16.0" width="101.2" height="44" rx="10" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__state-name" id="anim-state-text-29-1" x="65.8" y="43.0" fill="var(--color-fg)">Running</text></g><g class="anim__state-box"><rect class="anim__state-base" x="-116.4" y="16.0" width="101.2" height="44" rx="10"></rect><rect class="anim__state-rect anim__visited" id="anim-state-rect-29-2" x="-116.4" y="16.0" width="101.2" height="44" rx="10" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__state-name" id="anim-state-text-29-2" x="-65.8" y="43.0" fill="var(--color-fg)">Waiting</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-0" opacity="0"><rect class="anim__state-transition-label-bg" x="105.9" y="-112.2" width="145.6" height="18.0" rx="4"></rect><text class="anim__state-transition-label" x="178.7" y="-99.2">scheduler picks it</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-1" opacity="0"><rect class="anim__state-transition-label-bg" x="-54.8" y="106.0" width="109.6" height="18.0" rx="4"></rect><text class="anim__state-transition-label" x="0.0" y="119.0">blocks on I/O</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-2" opacity="0"><rect class="anim__state-transition-label-bg" x="-220.0" y="-104.4" width="109.6" height="18.0" rx="4"></rect><text class="anim__state-transition-label" x="-165.2" y="-91.4">I/O completes</text></g></svg><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 800, "steps": [{"targets": ["#anim-state-label-29-0"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29, #anim-state-marker-29-glow", "from": [0.0, -76.0], "to": [65.8, 38.0], "via1": [58.5, -76.0], "via2": [95.1, -12.7], "duration": 900, "ease": "inOutQuad", "position": null}, {"targets": ["#anim-state-rect-29-1"], "props": {"fillOpacity": [0, 1]}, "duration": 300, "position": "-=260"}, {"targets": ["#anim-state-text-29-1"], "props": {"fill": ["var(--color-fg)", "var(--color-accent-contrast)"]}, "duration": 300, "position": "\u003c"}, {"targets": ["#anim-state-rect-29-1"], "props": {"fillOpacity": 0.14}, "duration": 500}, {"targets": ["#anim-state-text-29-1"], "props": {"fill": "var(--color-fg)"}, "duration": 200, "position": "\u003c"}, {"targets": ["#anim-state-label-29-0"], "props": {"opacity": [1, 0]}, "duration": 200, "position": "\u003c"}, {"targets": ["#anim-state-label-29-1"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29, #anim-state-marker-29-glow", "from": [65.8, 38.0], "to": [-65.8, 38.0], "via1": [36.6, 88.7], "via2": [-36.6, 88.7], "duration": 900, "ease": "inOutQuad", "position": null}, {"targets": ["#anim-state-rect-29-2"], "props": {"fillOpacity": [0, 1]}, "duration": 300, "position": "-=260"}, {"targets": ["#anim-state-text-29-2"], "props": {"fill": ["var(--color-fg)", "var(--color-accent-contrast)"]}, "duration": 300, "position": "\u003c"}, {"targets": ["#anim-state-rect-29-2"], "props": {"fillOpacity": 0.14}, "duration": 500}, {"targets": ["#anim-state-text-29-2"], "props": {"fill": "var(--color-fg)"}, "duration": 200, "position": "\u003c"}, {"targets": ["#anim-state-label-29-1"], "props": {"opacity": [1, 0]}, "duration": 200, "position": "\u003c"}, {"targets": ["#anim-state-label-29-2"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29, #anim-state-marker-29-glow", "from": [-65.8, 38.0], "to": [-65.8, -38.0], "via1": [-79.4, 14.5], "via2": [-79.4, -14.5], "duration": 450, "ease": "inQuad", "position": null}, {"kind": "path-segment", "marker": "#anim-state-marker-29, #anim-state-marker-29-glow", "from": [-65.8, -38.0], "to": [-0.0, -76.0], "via1": [-52.2, -61.5], "via2": [-27.2, -76.0], "duration": 450, "ease": "outQuad", "position": null}, {"targets": ["#anim-state-rect-29-0"], "props": {"fillOpacity": [0, 1]}, "duration": 300, "position": "-=260"}, {"targets": ["#anim-state-text-29-0"], "props": {"fill": ["var(--color-fg)", "var(--color-accent-contrast)"]}, "duration": 300, "position": "\u003c"}, {"targets": ["#anim-state-rect-29-0"], "props": {"fillOpacity": 0.14}, "duration": 500}, {"targets": ["#anim-state-text-29-0"], "props": {"fill": "var(--color-fg)"}, "duration": 200, "position": "\u003c"}, {"targets": ["#anim-state-label-29-2"], "props": {"opacity": [1, 0]}, "duration": 200, "position": "\u003c"}, {"kind": "set", "targets": ["#anim-state-rect-29-0", "#anim-state-rect-29-1", "#anim-state-rect-29-2"], "props": {"fillOpacity": 0}}, {"kind": "set", "targets": ["#anim-state-text-29-0", "#anim-state-text-29-1", "#anim-state-text-29-2"], "props": {"fill": "var(--color-fg)"}}, {"kind": "set", "targets": ["#anim-state-label-29-0", "#anim-state-label-29-1", "#anim-state-label-29-2"], "props": {"opacity": 0}}]}</script><ol class="anim__state-steps-static"><li>Ready — scheduler picks it — Running</li><li>Running — blocks on I/O — Waiting</li><li>Waiting — I/O completes — Ready</li></ol></div>
 <div class="anim anim--state-toggle"><div class="anim__state anim__state--before" id="anim-state-before-210"><span class="anim__state-label">Before</span>First-come, first-served</div><div class="anim__state anim__state--after" id="anim-state-after-210"><span class="anim__state-label">After</span>Round robin</div><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 0, "steps": [{"targets": ["#anim-state-before-210"], "props": {"opacity": [1, 0]}, "duration": 4000, "ease": "inOutQuad"}, {"targets": ["#anim-state-after-210"], "props": {"opacity": [0, 1]}, "duration": 4000, "ease": "inOutQuad", "position": "\u003c"}, {"kind": "set", "targets": ["#anim-state-before-210"], "props": {"opacity": 1}}, {"kind": "set", "targets": ["#anim-state-after-210"], "props": {"opacity": 0}}]}</script></div>
 <details class="quiz" data-quiz="round-robin-q1" open>
 <summary class="quiz__q">Halving the quantum on an interactive system usually has which effect?</summary>
@@ -1173,7 +1187,10 @@ var anime=function(t){"use strict";const e="undefined"!=typeof window,s=e?window
         // the marker's position from a cubic Bezier evaluated at t, which is not
         // expressible as a direct attribute tween.
         if (step.kind === "path-segment") {
-          var marker = document.querySelector(step.marker);
+          // querySelectorAll, not querySelector: a marker may be several stacked
+          // circles (a dot plus a halo) that must travel together. One selector
+          // moving all of them keeps the step contract to a single "marker" key.
+          var markers = document.querySelectorAll(step.marker);
           var fromX = step.from[0];
           var fromY = step.from[1];
           var toX = step.to[0];
@@ -1221,9 +1238,9 @@ var anime=function(t){"use strict";const e="undefined"!=typeof window,s=e?window
                 x = state.x;
                 y = state.y;
               }
-              if (marker) {
-                marker.setAttribute("cx", x);
-                marker.setAttribute("cy", y);
+              for (var m = 0; m < markers.length; m++) {
+                markers[m].setAttribute("cx", x);
+                markers[m].setAttribute("cy", y);
               }
             },
           };

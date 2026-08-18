@@ -253,12 +253,12 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .figure figcaption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
 
 .anim { margin: var(--space-6) 0; }
-.anim--state-machine { text-align: center; }
-.anim__state-machine {
-  width: 100%; height: auto;
-  --anim-state-idle: var(--color-surface);
-  --anim-state-current: var(--color-accent);
-}
+.anim--state-machine { text-align: center; overflow-x: auto; }
+/* max-width rather than width: 100%. Stretching a fixed viewBox across the full
+   column scales its text down with it, which is what made a 5-state machine
+   illegible; capping instead lets the ring render at its natural size and hands
+   overflow to the wrapper's own scroll, the same approach .mermaid uses. */
+.anim__state-machine { max-width: 100%; height: auto; }
 /* Tokens for the pipeline, layer-stack, and transform patterns (Tasks 2-4),
    referenced via a fill="var(...)" attribute directly on the SVG's own rects
    -- same reasoning as .anim__state-box above: an author `fill` declaration
@@ -298,32 +298,50 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
    slightly more presence to read as "visited". Themes may override
    --anim-visited-strength; the fallback here keeps the rule working for a
    theme that does not. layout.css deliberately carries no dark-mode block of
-   its own -- themes own that three-state (media query + [data-theme]) dance. */
+   its own -- themes own that three-state (media query + [data-theme]) dance.
+
+   Only `fill` is declared here, never `fill-opacity`: a stylesheet declaration
+   of any kind outranks an inline PRESENTATION attribute, so declaring it would
+   override the renderer's fill-opacity="0" and paint every box pre-tinted
+   before the timeline ever runs. The wash strength is applied by the timeline's
+   own fillOpacity target instead, and the token is read by the reduced-motion
+   and print blocks below, where there is no timeline to do it. */
 .anim__visited {
   fill: var(--color-accent);
-  fill-opacity: var(--anim-visited-strength, .12);
 }
 
-/* No `fill` here on purpose: the rect carries fill="var(--anim-state-idle)" as
-   its own attribute (see _state_machine_html). A stylesheet `fill` declaration
-   would be an author declaration that overrides the attribute, so the
-   arrival-highlight animation's interpolated fill would never reach a rendered
-   pixel. */
-.anim__state-box rect {
-  stroke: var(--color-border); stroke-width: 1.5;
-}
-/* No `fill` here, for the same reason as the rect above: the <text> carries
-   fill="var(--color-fg)" as its own attribute so the timeline can interpolate it
-   to --color-accent-contrast while its box holds the accent. A stylesheet
-   `fill` would outrank the attribute and the inversion would never render. */
-.anim__state-box text {
-  font-size: 13px; text-anchor: middle; dominant-baseline: middle;
-}
-.anim__state-arrow {
+/* The track the marker rides: one arc per authored transition. Drawn at reduced
+   contrast so it reads as the path between states rather than as another
+   element competing with them. */
+.anim__state-track {
   stroke: var(--color-border); stroke-width: 1.5; fill: none;
 }
-.anim__state-arrow--back { stroke-dasharray: 4, 3; }
 .anim__state-arrowhead { fill: var(--color-border); }
+
+/* Each state box is two stacked rects. The base is opaque so the track and the
+   marker passing behind it are hidden; the wash above it is what the timeline
+   tints. Animating a single rect's opacity would fade the whole box out and
+   show the track through it. */
+.anim__state-base {
+  fill: var(--color-surface); stroke: var(--color-border); stroke-width: 1.5;
+}
+/* No `fill-opacity` here: see .anim__visited above. The renderer's inline
+   fill-opacity="0" must win at rest, and a stylesheet declaration of any kind
+   would outrank it. */
+.anim__state-rect { stroke: none; }
+/* No `fill` here either: the <text> carries fill="var(--color-fg)" as its own
+   attribute so the timeline can interpolate it to --color-accent-contrast while
+   its box holds the accent flash. */
+.anim__state-name {
+  font-size: 13px; font-weight: 600; text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+/* The travelling marker: a solid dot with a soft halo behind it. Both circles
+   are moved by one timeline step (they share a selector), and both are emitted
+   BEFORE the boxes so they pass behind them. */
+.anim__state-marker-dot { fill: var(--color-accent); }
+.anim__state-marker-glow { fill: var(--color-accent); opacity: .16; }
 /* Named distinctly from .anim__state-label (state-toggle's existing
    "Before"/"After" chrome label, defined earlier in this file) to avoid a
    same-name collision between two unrelated rules -- this one is the
@@ -372,16 +390,12 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .anim__state-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
 }
 
-/* Unlike .anim__state-machine above (width: 100%, which stretches a wide
-   viewBox across the full column and shrinks its text proportionally --
-   illegible once a 6-stage pipeline or a wide transform gap
-   pushes the viewBox past ~1000px), these three carry explicit width/height
-   presentation attributes in the markup (see _pipeline_html/_layer_stack_html/
-   _transform_html) so the SVG renders at its own natural, legible size by
-   default. max-width keeps a narrow one from overflowing its column, and the
-   wrapper's overflow-x below -- the same pattern .mermaid already uses for the
-   same reason -- takes over once natural size exceeds the column instead of
-   scaling text down to fit. */
+/* Every animated SVG carries explicit width/height presentation attributes in
+   the markup (see each renderer) so it renders at its own natural, legible size
+   by default. max-width keeps a narrow one from overflowing its column, and the
+   wrapper's overflow-x -- the same pattern .mermaid already uses for the same
+   reason -- takes over once natural size exceeds the column, instead of scaling
+   the text down to fit. */
 .anim__pipeline,
 .anim__layer-stack,
 .anim__transform {

@@ -1062,7 +1062,7 @@ def test_timeline_island_position_tokens_are_not_html_escaped(block):
     assert "<" in positions, positions
 
 
-def test_state_machine_renders_boxes_arrows_and_a_timeline_island():
+def test_state_machine_renders_boxes_track_arcs_and_a_timeline_island():
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
         '```animate\npattern: state-machine\nstates:\n  - Ready\n  - Running\n  - Done\n'
@@ -1077,8 +1077,8 @@ def test_state_machine_renders_boxes_arrows_and_a_timeline_island():
     assert '>Ready<' in rendered.html_body
     assert '>Running<' in rendered.html_body
     assert '>Done<' in rendered.html_body
-    # Two static arrows (one per transition) -- always visible, not hidden.
-    assert rendered.html_body.count('class="anim__state-arrow"') == 2
+    # Two drawn track arcs (one per transition) -- always visible, not hidden.
+    assert rendered.html_body.count('class="anim__state-track"') == 2
     # Two transition-label texts, both initially hidden (opacity driven to 0 by
     # CSS default, not inline -- see the CSS assertions below); their TEXT must
     # already be present in the markup (for reduced-motion/print and for the
@@ -1145,9 +1145,19 @@ def test_state_machine_with_a_back_edge_animates_it_as_a_real_transition():
     )
     steps = json.loads(match.group(1))["steps"]
     marker_travels = [s for s in steps if s.get("kind") == "path-segment"]
-    # Both transitions (A->B and the authored B->A back-edge) are real,
-    # animated marker travels -- exactly 2, not 1 plus an invisible reset.
-    assert len(marker_travels) == 2
+    # Both transitions (A->B and the authored B->A back-edge) are real, animated
+    # marker travels -- not one travel plus an invisible reset. A wide sweep is
+    # split into several cubics, so assert on the journey the steps describe
+    # rather than on their count: the marker must start at A, reach B, and come
+    # back to A entirely through animated segments.
+    assert len(marker_travels) >= 2
+    for previous, following in zip(marker_travels, marker_travels[1:]):
+        assert previous["to"] == following["from"], "marker teleports between segments"
+    assert marker_travels[0]["from"] == marker_travels[-1]["to"], (
+        "a cycle's marker must end the lap where it began"
+    )
+    waypoints = [tuple(s["from"]) for s in marker_travels] + [tuple(marker_travels[-1]["to"])]
+    assert len(set(waypoints)) >= 2, "marker never actually leaves its starting state"
     # No trailing invisible "kind": "set" reset of the marker's position back to
     # state A's box -- that reset only happens when there is NO authored
     # back-edge (see test_state_machine_without_a_back_edge_resets_invisibly).
@@ -1206,9 +1216,11 @@ def test_state_machine_box_highlight_targets_the_rect_not_the_group():
     )
     rendered = render_course(md)
     assert rendered.errors == []
-    # The rect carries the idle fill as its own attribute (array-ops's convention),
-    # so it renders correctly before JS runs and under reduced-motion/print.
-    assert 'fill="var(--anim-state-idle)"' in rendered.html_body
+    # The wash rect carries its fill and a zero fill-opacity as its own
+    # attributes, so it renders correctly (fully idle) before JS runs and under
+    # reduced-motion/print, with nothing in the stylesheet competing with the
+    # value the timeline interpolates.
+    assert 'fill="var(--color-accent)" fill-opacity="0"' in rendered.html_body
     assert 'id="anim-state-rect-' in rendered.html_body
     match = re.search(
         r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
@@ -1226,7 +1238,7 @@ def test_state_machine_box_highlight_targets_the_rect_not_the_group():
             )
 
 
-def test_state_machine_draws_no_arrow_for_an_unauthored_state_pair():
+def test_state_machine_draws_no_track_arc_for_an_unauthored_state_pair():
     """Only AUTHORED transitions are ever drawn as edges (design spec's standing
     rule, and this renderer's own docstring). A chain of three states with only
     ONE authored transition must draw exactly one arrow -- not one per adjacent
@@ -1244,17 +1256,16 @@ def test_state_machine_draws_no_arrow_for_an_unauthored_state_pair():
     # Three boxes are still drawn (states are structure), but only the one
     # authored A -> B edge gets an arrow; B -> C was never authored.
     assert rendered.html_body.count('class="anim__state-box"') == 3
-    assert rendered.html_body.count('class="anim__state-arrow"') == 1
+    assert rendered.html_body.count('class="anim__state-track"') == 1
 
 
-def test_state_machine_marker_and_arrow_paint_before_the_boxes():
-    """The traveling marker and every forward arrow sit at the boxes' own
-    vertical center (a real flowchart line entering/exiting each box at its
-    edge) -- but they must be emitted BEFORE the boxes in the SVG's document
-    order, so a box's opaque rect visually covers the marker/arrow-end
-    whenever either is at/behind it (SVG paints later elements on top). A
-    marker painted AFTER the boxes would float in front of the diagram's
-    structure and could obscure a box's own text.
+def test_state_machine_marker_and_track_paint_before_the_boxes():
+    """The track and the traveling marker must be emitted BEFORE the boxes in
+    document order, so each box's opaque base rect covers them whenever either
+    passes behind it (SVG has no z-index; it paints later elements on top). A
+    marker painted AFTER the boxes floats in front of the diagram's structure
+    and covers each state's own label as it goes by -- the exact bug this
+    ordering prevents.
     """
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
@@ -1266,20 +1277,24 @@ def test_state_machine_marker_and_arrow_paint_before_the_boxes():
     rendered = render_course(md)
     assert rendered.errors == []
     body = rendered.html_body
+    track_index = body.index('class="anim__state-track"')
     marker_index = body.index('class="anim__state-marker"')
-    arrow_index = body.index('class="anim__state-arrow"')
     first_box_index = body.index('class="anim__state-box"')
-    assert arrow_index < first_box_index
+    assert track_index < first_box_index
     assert marker_index < first_box_index
-    # The marker and the arrow travel/sit at the SAME y as the box's own
-    # vertical center -- not a separate lane -- since the boxes painting on
-    # top is what keeps them from visually crossing the box's text.
-    box_match = re.search(r'<rect id="anim-state-rect-\S+" x="\S+" y="(\S+)"', body)
-    box_center_y = float(box_match.group(1)) + _STATE_BOX_HEIGHT / 2
-    marker_match = re.search(r'class="anim__state-marker"[^>]*cy="(\S+)"', body)
-    assert float(marker_match.group(1)) == box_center_y
-    arrow_match = re.search(r'class="anim__state-arrow"[^>]*y1="(\S+)"', body)
-    assert float(arrow_match.group(1)) == box_center_y
+    # The marker starts at the first state's own centre, so it reads as sitting
+    # in that box rather than floating somewhere on the track.
+    box_match = re.search(
+        r'<rect class="anim__state-base" x="(\S+)" y="(\S+)" width="(\S+)"', body
+    )
+    box_x, box_y, box_w = (float(box_match.group(i)) for i in (1, 2, 3))
+    marker_match = re.search(
+        r'class="anim__state-marker-dot"[^>]*cx="(\S+)" cy="(\S+)"', body
+    )
+    assert float(marker_match.group(1)) == pytest.approx(box_x + box_w / 2, abs=0.05)
+    assert float(marker_match.group(2)) == pytest.approx(
+        box_y + _STATE_BOX_HEIGHT / 2, abs=0.05
+    )
 
 
 def test_state_machine_labels_paint_after_the_boxes_with_a_background_chip():
@@ -1314,14 +1329,16 @@ def test_state_machine_labels_paint_after_the_boxes_with_a_background_chip():
     assert chip_width > len("a moderately long action description") * 4
 
 
-def test_state_machine_back_edge_marker_follows_the_drawn_arc_not_a_straight_line():
-    """Bug: the back-edge's marker travel step used a plain straight-line tween
-    through the lane, ignoring the curved arc actually drawn for it -- the
-    marker cut straight across underneath the boxes instead of visibly
-    following the dashed arc above them. The back-edge's own path-segment step
-    must carry via1/via2 control points matching the drawn <path>'s own cubic
-    Bezier control points exactly, so the traveling marker traces that same
-    curve. No other path-segment step (a forward transition) has via1/via2.
+def test_state_machine_marker_follows_the_drawn_track_not_a_straight_line():
+    """Every transition is an arc on the ring, so every path-segment step must
+    carry via1/via2 cubic controls -- a straight tween between two states would
+    visibly cut across the middle of the ring instead of riding the drawn track.
+
+    The drawn <path> is TRIMMED short of its destination so the arrowhead lands
+    on the box's edge rather than hidden under the box, while the marker travels
+    the FULL arc to the box's centre. So the step's controls are deliberately
+    not the drawn path's controls; what must match is the curve they describe.
+    This checks the marker's own arc stays on the ring.
     """
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
@@ -1332,13 +1349,6 @@ def test_state_machine_back_edge_marker_follows_the_drawn_arc_not_a_straight_lin
     )
     rendered = render_course(md)
     assert rendered.errors == []
-    back_edge_match = re.search(
-        r'<path class="anim__state-arrow anim__state-arrow--back" '
-        r'd="M (\S+) (\S+) C (\S+) (\S+), (\S+) (\S+), (\S+) (\S+)"',
-        rendered.html_body,
-    )
-    assert back_edge_match, "no back-edge <path> found"
-    x_from, y_top, cx1, cy1, cx2, cy2, x_to, y_top2 = (float(g) for g in back_edge_match.groups())
     match = re.search(
         r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
         rendered.html_body,
@@ -1346,14 +1356,181 @@ def test_state_machine_back_edge_marker_follows_the_drawn_arc_not_a_straight_lin
     )
     steps = json.loads(match.group(1))["steps"]
     marker_travels = [s for s in steps if s.get("kind") == "path-segment"]
-    assert len(marker_travels) == 2
-    forward_step, back_step = marker_travels
-    assert "via1" not in forward_step
-    assert "via2" not in forward_step
-    assert back_step["via1"] == [cx1, cy1]
-    assert back_step["via2"] == [cx2, cy2]
-    assert back_step["from"] == [x_from, y_top]
-    assert back_step["to"] == [x_to, y_top2]
+    # A wide sweep is split into several cubics, so there are at least as many
+    # path-segment steps as transitions, and they chain end-to-start.
+    assert len(marker_travels) >= 2
+    for previous, following in zip(marker_travels, marker_travels[1:]):
+        assert previous["to"] == following["from"], "marker teleports between segments"
+
+    # Every state centre lies on one circle; recover it from the box positions.
+    boxes = re.findall(
+        r'<rect class="anim__state-base" x="(\S+)" y="(\S+)" width="(\S+)" height="(\S+)"',
+        rendered.html_body,
+    )
+    centres = [
+        (float(x) + float(w) / 2, float(y) + float(h) / 2) for x, y, w, h in boxes
+    ]
+    ring_cx = sum(p[0] for p in centres) / len(centres)
+    ring_cy = sum(p[1] for p in centres) / len(centres)
+    radius = math.hypot(centres[0][0] - ring_cx, centres[0][1] - ring_cy)
+
+    def cubic(p0, c1, c2, p3, t):
+        mt = 1 - t
+        return (
+            mt ** 3 * p0[0] + 3 * mt ** 2 * t * c1[0] + 3 * mt * t ** 2 * c2[0] + t ** 3 * p3[0],
+            mt ** 3 * p0[1] + 3 * mt ** 2 * t * c1[1] + 3 * mt * t ** 2 * c2[1] + t ** 3 * p3[1],
+        )
+
+    for step in marker_travels:
+        assert "via1" in step and "via2" in step, "a segment tweens in a straight line"
+        for i in range(21):
+            point = cubic(step["from"], step["via1"], step["via2"], step["to"], i / 20)
+            offset = math.hypot(point[0] - ring_cx, point[1] - ring_cy)
+            # A straight chord between two ring points would dip far inside the
+            # ring; the arc must stay on it within sub-pixel tolerance.
+            assert abs(offset - radius) < 1.0, (
+                f"marker leaves the ring: {offset:.2f} vs radius {radius:.2f}"
+            )
+
+
+def _dialectic():
+    return parse_animate(
+        "pattern: state-machine\n"
+        "states:\n  - Thesis\n  - Antithesis\n  - Synthesis\n"
+        "transitions:\n"
+        "  - Thesis -> Antithesis: provokes\n"
+        "  - Antithesis -> Synthesis: resolves\n"
+        "  - Synthesis -> Thesis: becomes the next thesis\n"
+    )
+
+
+def test_state_machine_paints_marker_behind_boxes():
+    """SVG has no z-index: document order IS paint order. A marker emitted after
+    the boxes covers each label as it passes. Correct order is
+    track -> marker -> boxes -> labels.
+    """
+    out = _state_machine_html(_dialectic(), "ANIMTOKEN1")
+    svg = out[out.index("<svg"):out.index("</svg>")]
+    track = svg.index("anim__state-track")
+    marker = svg.index("anim__state-marker")
+    first_box = svg.index("anim__state-box")
+    first_label = svg.index("anim__state-transition-label")
+    assert track < marker < first_box < first_label
+
+
+def test_state_machine_box_width_grows_with_its_label():
+    """A fixed 130px box clipped any state name longer than ~16 characters.
+    Width must derive from the authored text so long names stay readable.
+    """
+    short = parse_animate(
+        "pattern: state-machine\nstates:\n  - A\n  - B\ntransitions:\n  - A -> B: x\n"
+    )
+    long = parse_animate(
+        "pattern: state-machine\n"
+        "states:\n  - A state with a considerably longer name\n  - B\n"
+        "transitions:\n  - A state with a considerably longer name -> B: x\n"
+    )
+
+    def widest(html_text):
+        return max(
+            float(w)
+            for w in re.findall(r'anim__state-rect[^>]*width="([\d.]+)"', html_text)
+        )
+
+    assert widest(_state_machine_html(long, "ANIMTOKEN2")) > widest(
+        _state_machine_html(short, "ANIMTOKEN3")
+    )
+
+
+def test_state_machine_visited_states_hold_their_tint():
+    """A visited state keeps a faint accent wash instead of reverting to idle,
+    so the path travelled so far is readable at any moment. The wash is a
+    fill-opacity animation (see .anim__visited), not a fill swap.
+    """
+    out = _state_machine_html(_dialectic(), "ANIMTOKEN1")
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    assert any(
+        "fillOpacity" in str(key)
+        for step in data["steps"]
+        for key in (step.get("props") or {})
+    )
+
+
+def test_state_machine_label_windows_do_not_overlap():
+    """Each transition label must be hidden again before the next one shows.
+    When labels ran on a period that did not divide the lap evenly, every label
+    the marker had already passed kept blinking over the current one.
+    """
+    anim = _dialectic()
+    out = _state_machine_html(anim, "ANIMTOKEN1")
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    shows = [
+        s for s in data["steps"]
+        if "opacity" in (s.get("props") or {}) and "label" in str(s.get("targets"))
+    ]
+    # One fade-in and one fade-out per transition, at minimum.
+    assert len(shows) >= 2 * len(anim.transitions)
+
+
+def _svg_rects(markup, class_name):
+    return [
+        (float(x), float(y), float(w), float(h))
+        for x, y, w, h in re.findall(
+            rf'{class_name}" x="(\S+)" y="(\S+)" width="(\S+)" height="(\S+)"', markup
+        )
+    ]
+
+
+def _boxes_overlap(a, b):
+    return not (
+        a[0] + a[2] <= b[0] or b[0] + b[2] <= a[0]
+        or a[1] + a[3] <= b[1] or b[1] + b[3] <= a[1]
+    )
+
+
+@pytest.mark.parametrize("count", range(2, 13))
+def test_state_machine_geometry_never_collides_or_clips(count):
+    """The ring's radius and every label's push distance are computed, not fixed.
+    A fixed radius looked right at three states and overlapped badly at six; a
+    label pushed a constant distance past the ring sat on top of the boxes,
+    which straddle it. This sweeps the whole plausible range and asserts nothing
+    overlaps anything and nothing escapes the viewBox.
+    """
+    names = tuple(f"State {i}" for i in range(count))
+    transitions = "".join(
+        f"  - {names[i]} -> {names[(i + 1) % count]}: transition {i}\n"
+        for i in range(count)
+    )
+    anim = parse_animate(
+        "pattern: state-machine\nstates:\n"
+        + "".join(f"  - {n}\n" for n in names)
+        + "transitions:\n"
+        + transitions
+    )
+    out = _state_machine_html(anim, "ANIMTOKEN1")
+    boxes = _svg_rects(out, "anim__state-base")
+    chips = _svg_rects(out, "anim__state-transition-label-bg")
+    assert len(boxes) == count
+
+    view_x, view_y, width, height = (
+        float(v) for v in re.search(r'viewBox="(\S+) (\S+) (\S+) (\S+)"', out).groups()
+    )
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            assert not _boxes_overlap(boxes[i], boxes[j]), f"boxes {i} and {j} overlap"
+    for box in boxes:
+        for chip in chips:
+            assert not _boxes_overlap(box, chip), "a transition label sits on a state box"
+    for i in range(len(chips)):
+        for j in range(i + 1, len(chips)):
+            assert not _boxes_overlap(chips[i], chips[j]), "two labels overlap"
+    for x, y, w, h in boxes + chips:
+        assert x >= view_x - 0.5 and y >= view_y - 0.5
+        assert x + w <= view_x + width + 0.5 and y + h <= view_y + height + 0.5
 
 
 def _state_machine_timeline(transitions):

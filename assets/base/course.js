@@ -423,7 +423,10 @@
         // the marker's position from a cubic Bezier evaluated at t, which is not
         // expressible as a direct attribute tween.
         if (step.kind === "path-segment") {
-          var marker = document.querySelector(step.marker);
+          // querySelectorAll, not querySelector: a marker may be several stacked
+          // circles (a dot plus a halo) that must travel together. One selector
+          // moving all of them keeps the step contract to a single "marker" key.
+          var markers = document.querySelectorAll(step.marker);
           var fromX = step.from[0];
           var fromY = step.from[1];
           var toX = step.to[0];
@@ -471,9 +474,9 @@
                 x = state.x;
                 y = state.y;
               }
-              if (marker) {
-                marker.setAttribute("cx", x);
-                marker.setAttribute("cy", y);
+              for (var m = 0; m < markers.length; m++) {
+                markers[m].setAttribute("cx", x);
+                markers[m].setAttribute("cy", y);
               }
             },
           };
