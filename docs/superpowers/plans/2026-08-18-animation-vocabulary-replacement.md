@@ -14,7 +14,8 @@ motion, geometry, and timing are the spec for Tasks 3–7.
 
 ## Global Constraints
 
-- **Baseline:** the branch `feature/animation-coverage` at `7ba2595`, suite `573 passed, 4 skipped`. **Not merged to main.**
+- **Baseline:** `main` at `c8f3d8d` (PR #12, released as `v1.3.1`), suite `573 passed, 4 skipped`. Work happens on `feature/animation-vocabulary-replacement`.
+- **`array-ops` and `path-trace` shipped in `v1.3.1`, so removing them is a user-facing breaking change.** This is accepted deliberately: the patterns never worked well. Remove them outright — no deprecation shim, no compatibility alias, no migration warning.
 - **Interpreter:** `/home/roneng/Presntation2Course/.venv/bin/python`. `python` is NOT on PATH.
 - **Final vocabulary is exactly eight patterns:** `state-machine`, `state-toggle`, `pipeline`, `layer-stack`, `transform`, `build-up`, `compare`, `split-merge`. No others parse.
 - **New layout constants divisible by 4.** Derived values (baselines, centres, midpoints) exempt.
