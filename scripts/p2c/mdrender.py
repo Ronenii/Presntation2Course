@@ -487,6 +487,7 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     # nothing competes with the interpolated value while still rendering
     # correctly before JS runs and under reduced-motion/print.
     rect_ids = [f"anim-state-rect-{token_seed}-{i}" for i in range(len(anim.states))]
+    text_ids = [f"anim-state-text-{token_seed}-{i}" for i in range(len(anim.states))]
     label_ids = [f"anim-state-label-{token_seed}-{i}" for i in range(len(anim.transitions))]
     marker_id = f"anim-state-marker-{token_seed}"
 
@@ -524,13 +525,19 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     boxes_html = []
     for i, label in enumerate(anim.states):
         x = box_x(i)
+        # The label carries its own id so it can invert to
+        # --color-accent-contrast in step with its rect taking the accent fill.
+        # --color-fg on --color-accent measures 1.82:1 to 3.83:1 across the three
+        # themes, well under the 4.5:1 floor, so an active state's label was
+        # briefly unreadable every lap.
         boxes_html.append(
             f'<g class="anim__state-box" id="{box_ids[i]}">'
             f'<rect id="{rect_ids[i]}" x="{x}" y="{row_y}" '
             f'width="{_STATE_BOX_WIDTH}" height="{_STATE_BOX_HEIGHT}" rx="8" '
             f'fill="var(--anim-state-idle)"></rect>'
-            f'<text x="{x + _STATE_BOX_WIDTH / 2:g}" '
-            f'y="{row_y + _STATE_BOX_HEIGHT / 2 + 5:g}">'
+            f'<text id="{text_ids[i]}" x="{x + _STATE_BOX_WIDTH / 2:g}" '
+            f'y="{row_y + _STATE_BOX_HEIGHT / 2 + 5:g}" '
+            f'fill="var(--color-fg)">'
             f"{html.escape(label)}</text>"
             "</g>"
         )
@@ -682,12 +689,25 @@ def _state_machine_html(anim: Animate, token: str) -> str:
             "props": {"fill": ["var(--anim-state-idle)", "var(--anim-state-current)"]},
             "duration": 300, "position": "-=1100",
         })
+        # Invert the arriving state's label on the SAME clock as its fill, so the
+        # text is never --color-fg on a solid accent (1.82:1 to 3.83:1 across the
+        # themes -- unreadable). "<" starts it with the fill step above.
+        steps_json.append({
+            "targets": [f"#{text_ids[to_i]}"],
+            "props": {"fill": ["var(--color-fg)", "var(--color-accent-contrast)"]},
+            "duration": 300, "position": "<",
+        })
         if i > 0:
-            from_of_prev = anim.states.index(anim.transitions[i - 1][0])
+            previous_to_i = anim.states.index(anim.transitions[i - 1][1])
             steps_json.append({
-                "targets": [f"#{rect_ids[anim.states.index(anim.transitions[i - 1][1])]}"],
+                "targets": [f"#{rect_ids[previous_to_i]}"],
                 "props": {"fill": ["var(--anim-state-current)", "var(--anim-state-idle)"]},
                 "duration": 300, "position": "-=300",
+            })
+            steps_json.append({
+                "targets": [f"#{text_ids[previous_to_i]}"],
+                "props": {"fill": ["var(--color-accent-contrast)", "var(--color-fg)"]},
+                "duration": 300, "position": "<",
             })
 
     has_back_edge = back_edge is not None
@@ -704,6 +724,10 @@ def _state_machine_html(anim: Animate, token: str) -> str:
             "props": {"fill": "var(--anim-state-idle)"},
         })
         steps_json.append({
+            "kind": "set", "targets": [f"#{t}" for t in text_ids],
+            "props": {"fill": "var(--color-fg)"},
+        })
+        steps_json.append({
             "kind": "set", "targets": [f"#{l}" for l in label_ids],
             "props": {"opacity": 0},
         })
@@ -716,6 +740,20 @@ def _state_machine_html(anim: Animate, token: str) -> str:
         steps_json.append({
             "kind": "set", "targets": [f"#{rect_ids[last_to_i]}"],
             "props": {"fill": "var(--anim-state-idle)"},
+        })
+        # Every text that was inverted during the lap resets too: without this the
+        # accent-contrast fill persists into the next lap, where the box beneath
+        # it is idle again -- dark-on-dark.
+        steps_json.append({
+            "kind": "set", "targets": [f"#{t}" for t in text_ids],
+            "props": {"fill": "var(--color-fg)"},
+        })
+        # Transition labels reset here as well. The no-back-edge branch above
+        # already did this; this branch did not, so on a looping cycle every
+        # label kept whatever opacity it ended the lap on.
+        steps_json.append({
+            "kind": "set", "targets": [f"#{l}" for l in label_ids],
+            "props": {"opacity": 0},
         })
 
     timeline = {"loop": True, "loopDelay": 800, "steps": steps_json}

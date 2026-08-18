@@ -21,6 +21,7 @@ from p2c.mdrender import (
     _XFORM_GAP,
     _XFORM_STEP_BG_HEIGHT,
     _XFORM_TOP_MARGIN,
+    _state_machine_html,
     Animate,
     AnimateError,
     FigureError,
@@ -1188,12 +1189,13 @@ def test_state_machine_without_a_back_edge_resets_invisibly():
 
 
 def test_state_machine_box_highlight_targets_the_rect_not_the_group():
-    """The only visible shape in a state box is its child <rect>; animating `fill`
-    on the wrapping <g> never reaches a rendered pixel (the rect carries its own
-    fill). Every fill-animating step -- arrival highlight, settle-back-to-idle,
-    and both trailing kind:"set" resets -- must therefore target the RECT ids
-    (anim-state-rect-*), never the group ids (anim-state-box-*). Mirrors
-    _array_ops_html, which already targets its rect_ids for exactly this reason.
+    """A state box is a <g> wrapping a <rect> and a <text>, and both children
+    carry their own `fill` attribute. Animating `fill` on the wrapping <g> never
+    reaches a rendered pixel, because a child's own fill outranks anything
+    inherited from the group. Every fill-animating step -- arrival highlight,
+    settle-back-to-idle, the label inversion, and the trailing kind:"set" resets
+    -- must therefore target a rect or text id, never a group id
+    (anim-state-box-*).
     """
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
@@ -1218,9 +1220,9 @@ def test_state_machine_box_highlight_targets_the_rect_not_the_group():
     assert fill_steps, "no fill-animating steps found"
     for step in fill_steps:
         for target in step["targets"]:
-            assert target.startswith("#anim-state-rect-"), (
+            assert target.startswith(("#anim-state-rect-", "#anim-state-text-")), (
                 f"fill step targets {target!r}; animating fill on the <g> group is "
-                "overridden by the rect's own fill and never renders"
+                "overridden by the child's own fill and never renders"
             )
 
 
@@ -1352,6 +1354,80 @@ def test_state_machine_back_edge_marker_follows_the_drawn_arc_not_a_straight_lin
     assert back_step["via2"] == [cx2, cy2]
     assert back_step["from"] == [x_from, y_top]
     assert back_step["to"] == [x_to, y_top2]
+
+
+def _state_machine_timeline(transitions):
+    anim = parse_animate(
+        "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+        f"transitions:\n{transitions}"
+    )
+    out = _state_machine_html(anim, "ANIMTOKEN1")
+    island = re.search(r'class="anim__timeline"[^>]*>(.*?)</script>', out, re.S)
+    return out, json.loads(island.group(1))
+
+
+@pytest.mark.parametrize(
+    "transitions",
+    (
+        "  - A -> B: go\n  - B -> C: next\n",                     # no back-edge
+        "  - A -> B: go\n  - B -> C: next\n  - C -> A: back\n",   # with back-edge
+    ),
+    ids=("no-back-edge", "with-back-edge"),
+)
+def test_state_machine_resets_every_animated_property(transitions):
+    """anime.js loop invariant: a property animated on a looping timeline that is
+    never reset by a trailing `set` compounds across laps. The back-edge branch
+    used to reset `fill` but not `opacity`, so on a cycle every transition label
+    kept whatever opacity it ended the previous lap on.
+    """
+    _, data = _state_machine_timeline(transitions)
+    animated = {
+        prop
+        for step in data["steps"] if step.get("kind") != "set"
+        for prop in (step.get("props") or {})
+    }
+    reset = {
+        prop
+        for step in data["steps"] if step.get("kind") == "set"
+        for prop in (step.get("props") or {})
+    }
+    assert animated, "timeline animates nothing at all"
+    assert animated <= reset, f"never reset: {sorted(animated - reset)}"
+
+
+@pytest.mark.parametrize(
+    "transitions",
+    (
+        "  - A -> B: go\n  - B -> C: next\n",
+        "  - A -> B: go\n  - B -> C: next\n  - C -> A: back\n",
+    ),
+    ids=("no-back-edge", "with-back-edge"),
+)
+def test_state_machine_inverts_active_label_text_and_restores_it(transitions):
+    """A state's label sits on a rect the timeline fills with --color-accent.
+    --color-fg on that fill measures 1.82:1 to 3.83:1 across the three themes,
+    below the 4.5:1 floor, so the label must invert to --color-accent-contrast
+    on the same clock -- and every inverted target must be restored, or the
+    inversion persists onto an idle box next lap.
+    """
+    out, data = _state_machine_timeline(transitions)
+    # The stylesheet must not declare a competing fill, or the attribute the
+    # timeline interpolates would never win.
+    assert 'fill="var(--color-fg)"' in out, "label carries no inline base fill"
+    inverted = {
+        target
+        for step in data["steps"] if step.get("kind") != "set"
+        and "accent-contrast" in str(step.get("props", ""))
+        for target in step["targets"]
+    }
+    restored = {
+        target
+        for step in data["steps"] if step.get("kind") == "set"
+        and "color-fg" in str(step.get("props", ""))
+        for target in step["targets"]
+    }
+    assert inverted, "no label ever inverts on the accent fill"
+    assert inverted <= restored, f"never restored: {sorted(inverted - restored)}"
 
 
 def test_state_toggle_renders_before_and_after_with_a_timeline_island():

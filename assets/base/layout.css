@@ -275,16 +275,49 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   --anim-xform-idle: var(--color-surface);
   --anim-xform-active: var(--color-accent);
 }
+/* Text sitting on a box the timeline fills with --color-accent must invert to
+   the accent's own contrast colour, in step with the fill. Measured across all
+   three themes: --color-fg on accent scores 1.82:1 to 3.83:1 and --color-muted
+   scores 1.04:1 to 1.34:1 -- both fail the 4.5:1 body-text floor and the muted
+   case is effectively invisible, which is why a highlighted state's label
+   disappeared. --color-accent-contrast scores 4.16:1 to 8.66:1 instead.
+   A box holding the faint accent wash below must NOT invert. */
+.anim__text-on-accent { fill: var(--color-accent-contrast); }
+
+/* A visited element holds a faint accent wash rather than reverting to idle, so
+   the path travelled so far stays readable. Kept light on purpose: at ~12% the
+   label still clears the contrast floor against the surface beneath, whereas a
+   solid accent fill would force the inversion rule above. Deliberately NOT
+   color-mix(): it appears nowhere else in this codebase, the project sets no
+   browser-target config, and a generated course is standalone HTML a student
+   may open in any browser. Renderers emit fill="var(--color-accent)" with
+   fill-opacity="0" so the element starts idle, and the timeline animates
+   fillOpacity -- so every trailing reset must restore it to 0.
+
+   The strength is a token because a dark theme's accent is lighter and needs
+   slightly more presence to read as "visited". Themes may override
+   --anim-visited-strength; the fallback here keeps the rule working for a
+   theme that does not. layout.css deliberately carries no dark-mode block of
+   its own -- themes own that three-state (media query + [data-theme]) dance. */
+.anim__visited {
+  fill: var(--color-accent);
+  fill-opacity: var(--anim-visited-strength, .12);
+}
+
 /* No `fill` here on purpose: the rect carries fill="var(--anim-state-idle)" as
-   its own attribute (see _state_machine_html, mirroring _array_ops_html's
-   rects). A stylesheet `fill` declaration would be an author declaration that
-   overrides the attribute, so the arrival-highlight animation's interpolated
-   fill would never reach a rendered pixel. */
+   its own attribute (see _state_machine_html). A stylesheet `fill` declaration
+   would be an author declaration that overrides the attribute, so the
+   arrival-highlight animation's interpolated fill would never reach a rendered
+   pixel. */
 .anim__state-box rect {
   stroke: var(--color-border); stroke-width: 1.5;
 }
+/* No `fill` here, for the same reason as the rect above: the <text> carries
+   fill="var(--color-fg)" as its own attribute so the timeline can interpolate it
+   to --color-accent-contrast while its box holds the accent. A stylesheet
+   `fill` would outrank the attribute and the inversion would never render. */
 .anim__state-box text {
-  fill: var(--color-fg); font-size: 13px; text-anchor: middle; dominant-baseline: middle;
+  font-size: 13px; text-anchor: middle; dominant-baseline: middle;
 }
 .anim__state-arrow {
   stroke: var(--color-border); stroke-width: 1.5; fill: none;
