@@ -1886,7 +1886,7 @@ def _split_merge_html(anim: Animate, token: str) -> str:
     for i in range(count):
         steps_json.append({
             "targets": [f"#{branch_rect_ids[i]}"],
-            "props": {"fillOpacity": [0, 1]},
+            "props": {"fillOpacity": [0, _STATE_VISITED_OPACITY]},
             "duration": 400,
             "ease": "outQuad",
             **({"position": "<<"} if i > 0 else {}),

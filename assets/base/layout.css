@@ -445,6 +445,22 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   font-size: 11px;
 }
 
+/* .anim__layer-adds and .anim__build-contrib are the only two classes the
+   renderer gives text-anchor="end" (a fixed-width row's second column,
+   right-aligned against the SVG's own dir="ltr"). Per the SVG/CSS bidi
+   rules, an "end" anchor resolves against the PARAGRAPH direction -- which
+   these elements inherit as ltr from the SVG root, not from their own
+   Hebrew/Arabic content -- so the Unicode Bidi Algorithm reorders trailing
+   neutral characters (spaces, punctuation) to the wrong side of the anchor
+   and the run spills past the box's edge. unicode-bidi: plaintext makes each
+   element resolve its OWN paragraph direction from its first strong
+   character (Unicode's P2/P3 rules), independent of the SVG's dir and
+   without the renderer needing to know the course's language at all. */
+.anim__layer-adds,
+.anim__build-contrib {
+  unicode-bidi: plaintext;
+}
+
 .anim__xform-step-text {
   fill: var(--color-fg);
 }
