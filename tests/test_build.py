@@ -158,7 +158,7 @@ def test_anime_is_inlined_once_when_an_animate_block_is_present(tmp_path):
         modules.joinpath(name).write_text((MINI / "modules" / name).read_text())
     with modules.joinpath("02-scheduling.md").open("a") as handle:
         handle.write(
-            "\n```animate\npattern: state-toggle\nbefore: Ready\nafter: Running\n```\n"
+            "\n```animate\npattern: pipeline\nstages:\n  - Ready: waiting\n  - Running: executing\n```\n"
         )
     out = tmp_path / "out"
     normalized = out / ".p2c" / "normalized"
@@ -455,7 +455,7 @@ def test_animate_blocks_render_inside_a_built_course(tmp_path):
         modules.joinpath(name).write_text((MINI / "modules" / name).read_text())
     with modules.joinpath("02-scheduling.md").open("a") as handle:
         handle.write(
-            "\n```animate\npattern: state-toggle\nbefore: Ready\nafter: Running\n```\n"
+            "\n```animate\npattern: pipeline\nstages:\n  - Ready: waiting\n  - Running: executing\n```\n"
         )
     out = tmp_path / "out"
     normalized = out / ".p2c" / "normalized"
@@ -466,39 +466,72 @@ def test_animate_blocks_render_inside_a_built_course(tmp_path):
     result = build(MINI / "outline.json", modules, out, ASSETS)
     html = result.course_html.read_text()
     assert re.search(
-        r'<div class="anim__state anim__state--before" id="[^"]+">'
-        r'<span class="anim__state-label">Before</span>Ready</div>',
+        r'<rect class="anim__pipe-box"[^>]*></rect>'
+        r'<rect class="anim__pipe-box anim__pipe-box-active"[^>]*></rect>'
+        r'<text class="anim__pipe-name"[^>]*>Ready</text>',
         html,
     )
 
 
-def test_course_with_new_patterns_builds_and_validates():
-    """End-to-end: a course using all three Task 1-4 patterns (pipeline,
-    layer-stack, transform) renders cleanly through render_course and produces
-    no findings through validate_course. topic-d is justified via <!--
-    no-visual: ... --> and must be excluded from the coverage denominator, so
-    the 3 owing topics (a, b, c) all animating clears the 25% floor with room
-    to spare.
-    """
-    md = (
-        FM + "\n"
-        "# Operating Systems\n\n## Virtual Memory\n\n"
-        "<!-- topic: topic-a -->\n### Topic A\n\n"
+_ALL_SEVEN_TOPIC_BLOCKS = {
+    "topic-a": (
+        "```animate\npattern: state-machine\nstates:\n  - Idle\n  - Running\n  - Done\n"
+        "transitions:\n  - Idle -> Running: start\n  - Running -> Done: finish\n"
+        "  - Done -> Idle: reset\n```"
+    ),
+    "topic-b": (
         "```animate\npattern: pipeline\nstages:\n"
-        "  - Raw: unprocessed input\n  - Done: processed output\n```\n\n"
-        f"{GOOD_QUIZ}\n\n"
-        "<!-- topic: topic-b -->\n### Topic B\n\n"
+        "  - Raw: unprocessed input\n  - Done: processed output\n```"
+    ),
+    "topic-c": (
         "```animate\npattern: layer-stack\nlayers:\n"
-        "  - Base: raw values\n  - Top: assembled shapes\n```\n\n"
-        f"{GOOD_QUIZ}\n\n"
-        "<!-- topic: topic-c -->\n### Topic C\n\n"
+        "  - Base: raw values\n  - Top: assembled shapes\n```"
+    ),
+    "topic-d": (
         "```animate\npattern: transform\nfrom: A form\nto: B form\n"
-        "steps:\n  - Convert it\n```\n\n"
-        f"{GOOD_QUIZ}\n\n"
-        "<!-- topic: topic-d -->\n### Topic D\n\n"
+        "steps:\n  - Convert it\n```"
+    ),
+    "topic-e": (
+        "```animate\npattern: build-up\nwhole: Assembled Whole\nparts:\n"
+        "  - Part A: first piece\n  - Part B: second piece\n```"
+    ),
+    "topic-f": (
+        "```animate\npattern: compare\nleft: Left Track\nright: Right Track\n"
+        "steps:\n  - step one | other step one\n  - step two | other step two\n```"
+    ),
+    "topic-g": (
+        "```animate\npattern: split-merge\nsource: Source\nmerged: Merged\nbranches:\n"
+        "  - Branch A: a\n  - Branch B: b\n```"
+    ),
+}
+
+
+def test_course_with_all_seven_patterns_builds_and_validates():
+    """End-to-end: a course using all seven animate patterns (state-machine,
+    pipeline, layer-stack, transform, build-up, compare, split-merge) renders
+    cleanly through render_course and produces no findings through
+    validate_course. topic-h is justified via <!-- no-visual: ... --> and
+    must be excluded from the coverage denominator, so the 7 owing topics
+    all animating clears the 25% floor with room to spare.
+    """
+    topic_titles = {
+        "topic-a": "Topic A", "topic-b": "Topic B", "topic-c": "Topic C",
+        "topic-d": "Topic D", "topic-e": "Topic E", "topic-f": "Topic F",
+        "topic-g": "Topic G", "topic-h": "Topic H",
+    }
+    sections = []
+    for topic_id, block in _ALL_SEVEN_TOPIC_BLOCKS.items():
+        title = topic_titles[topic_id]
+        sections.append(
+            f"<!-- topic: {topic_id} -->\n### {title}\n\n{block}\n\n{GOOD_QUIZ}\n"
+        )
+    sections.append(
+        "<!-- topic: topic-h -->\n### Topic H\n\n"
         "<!-- no-visual: administrative topic -->\n\nProse.\n\n"
         f"{GOOD_QUIZ}\n"
     )
+    md = FM + "\n# Operating Systems\n\n## Virtual Memory\n\n" + "\n".join(sections)
+
     outline = {
         "title": "Operating Systems",
         "subject_domain": "systems",
@@ -509,14 +542,9 @@ def test_course_with_new_patterns_builds_and_validates():
                 "title": "Virtual Memory",
                 "prerequisites": [],
                 "topics": [
-                    {"id": "topic-a", "title": "Topic A", "slide_refs": [],
-                     "jargon": [], "diagrams": [], "gaps": []},
-                    {"id": "topic-b", "title": "Topic B", "slide_refs": [],
-                     "jargon": [], "diagrams": [], "gaps": []},
-                    {"id": "topic-c", "title": "Topic C", "slide_refs": [],
-                     "jargon": [], "diagrams": [], "gaps": []},
-                    {"id": "topic-d", "title": "Topic D", "slide_refs": [],
-                     "jargon": [], "diagrams": [], "gaps": []},
+                    {"id": topic_id, "title": title, "slide_refs": [],
+                     "jargon": [], "diagrams": [], "gaps": []}
+                    for topic_id, title in topic_titles.items()
                 ],
             }
         ],
@@ -525,13 +553,15 @@ def test_course_with_new_patterns_builds_and_validates():
     rendered = render_course(md)
     assert rendered.errors == []
     assert rendered.uses_animate is True
-    # 3 of 3 owing topics animate; topic-d is justified and out of the denominator.
-    assert rendered.animations_per_topic["topic-a"] == 1
-    assert rendered.animations_per_topic["topic-b"] == 1
-    assert rendered.animations_per_topic["topic-c"] == 1
-    assert rendered.animations_per_topic["topic-d"] == 0
-    assert "topic-d" in rendered.topics_visual_justified
-    for pattern_class in ("anim--pipeline", "anim--layer-stack", "anim--transform"):
+    # 7 of 7 owing topics animate; topic-h is justified and out of the denominator.
+    for topic_id in _ALL_SEVEN_TOPIC_BLOCKS:
+        assert rendered.animations_per_topic[topic_id] == 1
+    assert rendered.animations_per_topic["topic-h"] == 0
+    assert "topic-h" in rendered.topics_visual_justified
+    for pattern_class in (
+        "anim--state-machine", "anim--pipeline", "anim--layer-stack",
+        "anim--transform", "anim--build-up", "anim--compare", "anim--split-merge",
+    ):
         assert pattern_class in rendered.html_body
 
     findings = validate_course(rendered, outline, "<html><body>ok</body></html>")

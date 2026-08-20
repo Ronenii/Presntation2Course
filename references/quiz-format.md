@@ -88,14 +88,6 @@ transitions:
 ```
 ````
 
-````
-```animate
-pattern: state-toggle
-before: Cache line marked Shared
-after: Cache line marked Modified after a local write
-```
-````
-
 `state-machine` needs at least 2 `states:` entries and at least 1
 `transitions:` line, each written as `<from> -> <to>: <action>`. Every
 transition must connect two *consecutive* entries in `states:` (in the order
@@ -103,44 +95,6 @@ you listed them) — except one optional final transition, listed last, from
 the last state back to any earlier one, for a genuinely cyclic process. No
 branching: a state may have only one outgoing transition (aside from that
 one permitted trailing back-edge case).
-
-`array-ops` visualizes an array operation sequence (e.g. one pass of a sort):
-
-````
-```animate
-pattern: array-ops
-array:
-  - 5
-  - 3
-  - 8
-  - 1
-ops:
-  - compare 0 1
-  - swap 0 1
-  - highlight 2
-```
-````
-
-`array:` needs at least 2 integer values. `ops:` needs at least one line, each one
-of `compare i j`, `swap i j`, or `highlight i` (indices into `array`, 0-based).
-
-`path-trace` visualizes a point moving along a plotted line or curve (also usable
-for a tree/graph edge being traced):
-
-````
-```animate
-pattern: path-trace
-points:
-  - 0, 10
-  - 5, 2
-  - 10, 8
-  - 15, 0
-caption: Gradient descent converging toward the minimum
-```
-````
-
-`points:` needs at least 2 `x, y` pairs (plain numbers, not a function
-expression). `caption:` is required.
 
 `pipeline` visualizes an input flowing through named stages, each transforming it:
 
@@ -188,17 +142,68 @@ steps:
 ```
 ````
 
-`from:` and `to:` are both required; `steps:` needs 1–4 entries. Use this instead of
-`state-toggle` when the change has intermediate steps worth naming.
+`from:` and `to:` are both required; `steps:` needs 1–4 entries. Each step lands as its
+own rung on a spine and stays, so the whole derivation is visible at once by the end.
+
+`build-up` visualizes a whole assembling from its parts:
+
+````
+```animate
+pattern: build-up
+whole: A valid syllogism
+parts:
+  - Major premise: all men are mortal
+  - Minor premise: Socrates is a man
+  - Conclusion: Socrates is mortal
+```
+````
+
+`whole:` is required; `parts:` needs 2–6 entries, each written `<name>: <what it
+contributes>`. Each part fades in and stays lit once it joins the whole, so the
+accumulated structure is readable at any moment — unlike `layer-stack`, where only one
+tier is highlighted at a time.
+
+`compare` visualizes two tracks advancing in lockstep, so a contrast lands row by row:
+
+````
+```animate
+pattern: compare
+left: Continuity editing
+right: Montage
+steps:
+  - Cut on action to hide the join | Cut on collision to expose it
+  - Viewer forgets the camera | Viewer is confronted by it
+```
+````
+
+`left:` and `right:` are both required; `steps:` needs 1–5 entries, each written
+`<left text> | <right text>` — both halves required, since a row with only one side is
+a `build-up`, not a comparison.
+
+`split-merge` visualizes one thing dividing into parallel branches, then recombining:
+
+````
+```animate
+pattern: split-merge
+source: Proof by cases
+branches:
+  - Case n even: divide by two
+  - Case n odd: apply 3n + 1
+merged: Both cases reach 1, so the claim holds
+```
+````
+
+`source:` and `merged:` are both required; `branches:` needs 2–4 entries, each written
+`<name>: <what it does>`. This is the only pattern covering branching — `state-machine`
+explicitly rejects a state with two outgoing transitions.
 
 Each pattern rejects the keys it does not use, so a typo'd block (e.g. `stages:` on
 a `transform`) fails loudly instead of being silently ignored. `caption:` is one such
-key: only `path-trace` renders a caption, so it is the only pattern that accepts
-one — `pipeline`, `layer-stack`, and `transform` all reject it.
+key: no pattern renders a caption, so every pattern rejects it.
 
-Seven patterns exist: `state-machine`, `state-toggle`, `array-ops`, `path-trace`,
-`pipeline`, `layer-stack`, `transform` — no others. This is a deliberately bounded
-set, not a general animation authoring tool.
+Seven patterns exist: `state-machine`, `pipeline`, `layer-stack`, `transform`,
+`build-up`, `compare`, `split-merge` — no others. This is a deliberately bounded set, not
+a general animation authoring tool.
 
 All patterns respect `prefers-reduced-motion` and render fully static (every
 step/state/frame shown at once, not a single frozen frame) in print.

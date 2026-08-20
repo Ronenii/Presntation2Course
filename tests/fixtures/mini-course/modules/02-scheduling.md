@@ -27,16 +27,12 @@ transitions:
 ```
 
 ```animate
-pattern: array-ops
-array:
-  - 5
-  - 3
-  - 8
-  - 1
-ops:
-  - compare 0 1
-  - swap 0 1
-  - highlight 2
+pattern: compare
+left: First-come, first-served
+right: Round robin
+steps:
+  - A long job blocks everything behind it | Each job gets a fixed slice
+  - Short jobs wait for the whole queue | Short jobs finish early
 ```
 
 ```quiz

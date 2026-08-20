@@ -144,12 +144,6 @@ not just decoration. Concretely, prefer `animate` when the topic is:
   line": an optional final transition from the last state back to an earlier one, for a
   genuinely cyclic process (e.g. a retry loop) — write it as the last line under
   `transitions:`.
-- A single entity's before/after contrast (`state-toggle`) — one object, one state
-  change, no third state and no other actors worth drawing.
-- One pass of an array/list transformation you can express as compare/swap/highlight
-  steps (`array-ops`) — a sort pass, a partition step, a two-pointer scan.
-- A point moving along a plotted path (`path-trace`) — convergence, a traversal, a
-  value sliding along a curve — where you can supply literal `(x, y)` coordinates.
 - An input flowing through named stages that each change it (`pipeline`) — a
   processing chain, an encode/decode path, a request being progressively enriched.
   This is the most common sequence shape; reach for it before `state-machine`
@@ -157,8 +151,20 @@ not just decoration. Concretely, prefer `animate` when the topic is:
 - Abstraction tiers that build on each other (`layer-stack`) — a protocol stack,
   levels of representation, a hierarchy of features.
 - One entity becoming another through named intermediate steps (`transform`) —
-  a conversion, a normalization, a change of units or representation. Use it
-  instead of `state-toggle` whenever the middles are worth naming.
+  a conversion, a normalization, a change of units or representation.
+- A whole assembling from parts that each combine into it (`build-up`) — a proof
+  built term by term, a sentence's clauses nesting together, a system's components.
+  Distinct from `layer-stack`: a layer stack's tiers *rest on* each other (a
+  hierarchy); a build-up's parts *combine into* a whole (a composition).
+- Two things advancing in parallel so a contrast lands row by row (`compare`) —
+  two proof strategies on one theorem, two algorithms on one input, two
+  translations of a line. Needs at least two tracks shown at once; a single
+  entity's own before/after is a `transform` if it has named intermediate steps,
+  or better expressed as `build-up`/`pipeline` if it doesn't.
+- One thing dividing into parallel branches, then recombining (`split-merge`) —
+  a proof by cases, fork/join, a compound word's morphemes, parallel storylines
+  converging. This is the only pattern covering branching — `state-machine`
+  explicitly rejects a state with two outgoing transitions.
 
 **At least 25% of the topics that need a visual must use an `animate` block.**
 The build fails below that floor and tells you which diagrams to convert. The
@@ -179,18 +185,18 @@ transitions:
   - TLB miss triggers a page-table walk -> Page table entry is cached back into the TLB: walk completes
 ```
 
-```animate
-pattern: state-toggle
-before: Cache line marked Shared
-after: Cache line marked Modified after a local write
-```
-
 `state-machine` needs at least 2 states and at least 1 transition, and every transition
 must connect consecutive states in the order you listed them under `states:` — except one
-optional final transition from the last state back to an earlier one. `state-toggle` needs
-both `before:` and `after:`. See `references/quiz-format.md` for the full grammar of all
-seven patterns, including `array-ops`, `path-trace`, `pipeline`, `layer-stack`, and
-`transform`.
+optional final transition from the last state back to an earlier one. See
+`references/quiz-format.md` for the full grammar of all seven patterns: `state-machine`,
+`pipeline`, `layer-stack`, `transform`, `build-up`, `compare`, and `split-merge`.
+
+The two closest pairs are easy to pick wrong:
+- `pipeline` vs `transform`: a pipeline's stages each *do something to* what passes
+  through; a transform's steps *change one thing into another*. If the endpoints matter
+  more than the stages, use `transform`.
+- `build-up` vs `layer-stack`: a layer stack's tiers *rest on* each other (a hierarchy);
+  a build-up's parts *combine into* a whole (a composition).
 
 Stay with `mermaid` when the topic is a structure with more than one relationship to
 show at once (a branching flow, several components connected to each other, a

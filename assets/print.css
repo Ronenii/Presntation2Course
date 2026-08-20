@@ -13,12 +13,6 @@
   .quiz, .callout, .mermaid, table, pre { break-inside: avoid; page-break-inside: avoid; }
   .figure, .anim { break-inside: avoid; page-break-inside: avoid; }
   .anim__step { opacity: 1 !important; font-weight: 400 !important; }
-  .anim__state { opacity: 1 !important; }
-  /* Both states are shown at once in print (no animation on paper), labeled and
-     side-by-side rather than sharing the animated view's stacked grid cell. */
-  .anim--state-toggle { grid-template-columns: 1fr 1fr !important; gap: 0.5em; }
-  .anim__state { grid-area: auto !important; }
-  .anim__state-label { display: block !important; font-weight: 600; margin-block-end: 0.25em; }
 
   /* In print every question is immediately followed by its answer and explanation. */
   .quiz__answer, .quiz__why { display: block !important; }
@@ -38,44 +32,55 @@
   .mermaid svg { max-width: 100% !important; }
   /* Same reasoning as the reduced-motion rule: an infinite animation has no
      defined "final" frame to freeze on paper, so print shows the static step
-     list instead of the animated bars. */
-  .anim__array { display: none !important; }
-  /* Scoped to array-ops: that caption is generated "Step N of M" narration, which
-     is meaningless frozen on paper. Path-trace's caption is the course author's
-     own written text and must print. */
-  .anim--array-ops .anim__caption { display: none !important; }
-  .anim__array-legend { display: none !important; }
-  .anim__array-steps-static {
-    display: block !important; list-style: decimal !important;
-    padding-inline-start: 1.5em !important; margin: 0 !important;
-  }
-  /* The marker/trail print at their static resting position (same reasoning as
-     reduced motion); the step list is what actually conveys the sequence on paper. */
-  .anim__path-trail { opacity: 1 !important; }
-  .anim__path-steps-static {
-    display: block !important; list-style: decimal !important;
-    padding-inline-start: 1.5em !important; margin-block-start: 0.5em !important;
-  }
+     list instead of the animated diagram. */
   .anim__state-machine { display: none !important; }
   .anim__state-steps-static {
     display: block !important; list-style: decimal !important;
     padding-inline-start: 1.5em !important; margin: 0 !important;
   }
 
-  /* Same reasoning as the reduced-motion rule in layout.css: the timeline never
-     runs on paper, so pipeline/layer-stack/transform's animated elements would
-     otherwise print blank -- inline opacity="0" and stroke-dashoffset override. */
+  /* Same reasoning as the reduced-motion rule in layout.css: the timeline
+     never runs on paper, so pipeline/layer-stack/transform/split-merge's
+     animated elements would otherwise print blank -- inline opacity="0" and
+     stroke-dashoffset override. */
   .anim--pipeline .anim__pipe-line,
-  .anim--transform .anim__xform-line {
+  .anim--transform .anim__xform-line,
+  .anim--split-merge .anim__split-line {
     stroke-dashoffset: 0 !important;
   }
-  .anim--layer-stack .anim__layer-box,
-  .anim--transform .anim__xform-step {
+  /* :not(.anim__layer-box-active) excludes the accent highlight overlay --
+     same reasoning as layout.css's reduced-motion rule: only one layer is
+     ever highlighted during playback, so printing every one "active" would
+     misrepresent the sequence the static list already narrates. compare's
+     flash and split-merge's merged-active overlay get the same exclusion for
+     the same reason: neither is a lasting state. build-up's wash DOES persist
+     (every part stays lit once it joins the whole), so its rect gets no such
+     exclusion, just the fill-opacity fallback used elsewhere on paper. */
+  .anim--layer-stack .anim__layer-box:not(.anim__layer-box-active),
+  .anim--transform .anim__xform-step,
+  .anim--compare .anim__cmp-box-active,
+  .anim--split-merge .anim__split-box-active {
     opacity: 1 !important;
+  }
+  /* .anim__layer-row and .anim__build-part are the WHOLE-row/part reveal
+     group (box, name, and description together) -- each starts at
+     opacity="0" on the <g> itself, not on any child rect, so it needs its
+     own force-reveal line here or the printed page renders every row blank. */
+  .anim--layer-stack .anim__layer-row,
+  .anim--build-up .anim__build-part,
+  .anim--split-merge .anim__split-box:not(.anim__split-box-active) {
+    opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-rect,
+  .anim--split-merge .anim__split-box.anim__visited {
+    fill-opacity: .12 !important;
   }
   .anim--pipeline .anim__pipeline-static,
   .anim--layer-stack .anim__layer-static,
-  .anim--transform .anim__xform-static {
+  .anim--transform .anim__xform-static,
+  .anim--build-up .anim__build-static,
+  .anim--compare .anim__cmp-static,
+  .anim--split-merge .anim__split-static {
     display: block !important; list-style: decimal !important;
     padding-inline-start: 1.5em !important; margin: 0 !important;
   }

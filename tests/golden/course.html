@@ -35,6 +35,7 @@
     --color-border: #2c343d;
     --color-accent: #6ea8ff;
     --color-accent-contrast: #0b0f14;
+    --anim-visited-strength: .18;
     --color-analogy: #a08cff;
     --color-prereq: #3fbfae;
     --color-warn: #e0a24a;
@@ -54,6 +55,7 @@
   --color-border: #2c343d;
   --color-accent: #6ea8ff;
   --color-accent-contrast: #0b0f14;
+  --anim-visited-strength: .18;
   --color-analogy: #a08cff;
   --color-prereq: #3fbfae;
   --color-warn: #e0a24a;
@@ -320,12 +322,12 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .figure figcaption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
 
 .anim { margin: var(--space-6) 0; }
-.anim--state-machine { text-align: center; }
-.anim__state-machine {
-  width: 100%; height: auto;
-  --anim-state-idle: var(--color-surface);
-  --anim-state-current: var(--color-accent);
-}
+.anim--state-machine { text-align: center; overflow-x: auto; }
+/* max-width rather than width: 100%. Stretching a fixed viewBox across the full
+   column scales its text down with it, which is what made a 5-state machine
+   illegible; capping instead lets the ring render at its natural size and hands
+   overflow to the wrapper's own scroll, the same approach .mermaid uses. */
+.anim__state-machine { max-width: 100%; height: auto; }
 /* Tokens for the pipeline, layer-stack, and transform patterns (Tasks 2-4),
    referenced via a fill="var(...)" attribute directly on the SVG's own rects
    -- same reasoning as .anim__state-box above: an author `fill` declaration
@@ -342,26 +344,81 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   --anim-xform-idle: var(--color-surface);
   --anim-xform-active: var(--color-accent);
 }
-/* No `fill` here on purpose: the rect carries fill="var(--anim-state-idle)" as
-   its own attribute (see _state_machine_html, mirroring _array_ops_html's
-   rects). A stylesheet `fill` declaration would be an author declaration that
-   overrides the attribute, so the arrival-highlight animation's interpolated
-   fill would never reach a rendered pixel. */
-.anim__state-box rect {
-  stroke: var(--color-border); stroke-width: 1.5;
+.anim__compare {
+  --anim-cmp-active: var(--color-accent);
 }
-.anim__state-box text {
-  fill: var(--color-fg); font-size: 13px; text-anchor: middle; dominant-baseline: middle;
+.anim__split-merge {
+  --anim-split-idle: var(--color-surface);
+  --anim-split-active: var(--color-accent);
 }
-.anim__state-arrow {
+/* Text sitting on a box the timeline fills with --color-accent must invert to
+   the accent's own contrast colour, in step with the fill. Measured across all
+   three themes: --color-fg on accent scores 1.82:1 to 3.83:1 and --color-muted
+   scores 1.04:1 to 1.34:1 -- both fail the 4.5:1 body-text floor and the muted
+   case is effectively invisible, which is why a highlighted state's label
+   disappeared. --color-accent-contrast scores 4.16:1 to 8.66:1 instead.
+   A box holding the faint accent wash below must NOT invert. */
+.anim__text-on-accent { fill: var(--color-accent-contrast); }
+
+/* A visited element holds a faint accent wash rather than reverting to idle, so
+   the path travelled so far stays readable. Kept light on purpose: at ~12% the
+   label still clears the contrast floor against the surface beneath, whereas a
+   solid accent fill would force the inversion rule above. Deliberately NOT
+   color-mix(): it appears nowhere else in this codebase, the project sets no
+   browser-target config, and a generated course is standalone HTML a student
+   may open in any browser. Renderers emit fill="var(--color-accent)" with
+   fill-opacity="0" so the element starts idle, and the timeline animates
+   fillOpacity -- so every trailing reset must restore it to 0.
+
+   The strength is a token because a dark theme's accent is lighter and needs
+   slightly more presence to read as "visited". Themes may override
+   --anim-visited-strength; the fallback here keeps the rule working for a
+   theme that does not. layout.css deliberately carries no dark-mode block of
+   its own -- themes own that three-state (media query + [data-theme]) dance.
+
+   Only `fill` is declared here, never `fill-opacity`: a stylesheet declaration
+   of any kind outranks an inline PRESENTATION attribute, so declaring it would
+   override the renderer's fill-opacity="0" and paint every box pre-tinted
+   before the timeline ever runs. The wash strength is applied by the timeline's
+   own fillOpacity target instead, and the token is read by the reduced-motion
+   and print blocks below, where there is no timeline to do it. */
+.anim__visited {
+  fill: var(--color-accent);
+}
+
+/* The track the marker rides: one arc per authored transition. Drawn at reduced
+   contrast so it reads as the path between states rather than as another
+   element competing with them. */
+.anim__state-track {
   stroke: var(--color-border); stroke-width: 1.5; fill: none;
 }
-.anim__state-arrow--back { stroke-dasharray: 4, 3; }
 .anim__state-arrowhead { fill: var(--color-border); }
-/* Named distinctly from .anim__state-label (state-toggle's existing
-   "Before"/"After" chrome label, defined earlier in this file) to avoid a
-   same-name collision between two unrelated rules -- this one is the
-   transition's action text inside the new state-machine SVG. The opacity
+
+/* Each state box is two stacked rects. The base is opaque so the track and the
+   marker passing behind it are hidden; the wash above it is what the timeline
+   tints. Animating a single rect's opacity would fade the whole box out and
+   show the track through it. */
+.anim__state-base {
+  fill: var(--color-surface); stroke: var(--color-border); stroke-width: 1.5;
+}
+/* No `fill-opacity` here: see .anim__visited above. The renderer's inline
+   fill-opacity="0" must win at rest, and a stylesheet declaration of any kind
+   would outrank it. */
+.anim__state-rect { stroke: none; }
+/* No `fill` here either: the <text> carries fill="var(--color-fg)" as its own
+   attribute so the timeline can interpolate it to --color-accent-contrast while
+   its box holds the accent flash. */
+.anim__state-name {
+  font-size: 13px; font-weight: 600; text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+/* The travelling marker: a solid dot with a soft halo behind it. Both circles
+   are moved by one timeline step (they share a selector), and both are emitted
+   BEFORE the boxes so they pass behind them. */
+.anim__state-marker-dot { fill: var(--color-accent); }
+.anim__state-marker-glow { fill: var(--color-accent); opacity: .16; }
+/* The transition's action text inside the state-machine SVG. The opacity
    animation targets the GROUP (chip + text together, see
    _state_machine_html), invisible at rest and faded in only during its own
    transition's step, so the background chip never sits there empty when its
@@ -375,224 +432,190 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .anim__state-marker { fill: var(--color-accent); }
 /* Hidden during normal animated playback; shown only under the static
    print/reduced-motion presentation below, same toggle-pair pattern as
-   .anim__array-steps-static/.anim__path-steps-static. */
+   .anim__pipeline-static/.anim__layer-static/.anim__xform-static. */
 .anim__state-steps-static { display: none; }
-/* display: grid + a shared grid-area (rather than position: absolute) sizes the
-   container to the tallest state's content, so realistic caption-length text that
-   wraps to 2-3 lines doesn't overflow into whatever follows -- an absolutely
-   positioned child never contributes to its parent's size. */
-.anim--state-toggle { display: grid; min-block-size: 3em; }
-.anim__state {
-  grid-area: 1 / 1;
-  opacity: 0; /* wireAnimations() drives visibility once JS runs; the "before"
-                state is shown before JS via the reduced-motion/print override
-                below, so this 0 is only the JS-enabled resting default */
-}
-.anim__state--before { opacity: 1; }
-/* Literal English UI chrome (see mdrender._animate_html), language-agnostic like the
-   "Analogy" callout label. Hidden during normal animated playback; shown only under
-   the static print/reduced-motion presentation below and in print.css. */
-.anim__state-label { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .anim__state { opacity: 1; }
-  /* Both states are shown at once (no animation to convey them over time), so lay
-     them out labeled side-by-side instead of stacked on top of each other. */
-  .anim--state-toggle { grid-template-columns: 1fr 1fr; gap: var(--space-4); }
-  .anim__state { grid-area: auto; }
-  .anim__state-label { display: block; font-weight: 600; margin-block-end: var(--space-1); }
   .anim__state-machine { display: none; }
   .anim__state-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
 }
 
-.anim--array-ops { text-align: center; }
-/* Live step narration, rewritten by each timeline step's onBegin (see
-   wireAnimations in course.js). Rendered with the pre-JS "Step 1 of N" text so
-   the slot never collapses to zero height and shift the bars when JS lands. */
-.anim__caption {
-  text-align: center; font-weight: 600; font-size: 1rem; color: var(--color-fg);
-  margin: 0 0 var(--space-3);
-}
-.anim__array {
-  width: 100%; height: auto;
-  /* Bar fill for each of the three op verbs, plus the resting/idle color -- named
-     by the anime.js timeline island's per-step `fill` keyframes and by the initial
-     fill attribute on every rect. Those keyframes carry these var() references
-     verbatim, which anime.js cannot interpolate as colors, so each step swaps the
-     fill instantly at the keyframe boundary rather than fading between the two
-     colors. That is deliberate: it keeps the bars theme-aware (each theme defines
-     these tokens differently in light and dark mode) at the cost of a hard cut.
-     compare/swap/highlight reuse the same semantic
-     colors quiz feedback already uses (warn/accent/correct), so a reader doesn't
-     have to learn a second color vocabulary for the same ideas ("being
-     inspected", "in motion", "settled/done"). */
-  --anim-array-idle: var(--color-border);
-  --anim-array-compare: var(--color-warn);
-  --anim-array-swap: var(--color-accent);
-  --anim-array-highlight: var(--color-correct);
-}
-.anim__array-axis { stroke: var(--color-fg); stroke-width: 1.5; }
-.anim__array-gridline { stroke: var(--color-border); stroke-width: 1; stroke-dasharray: 3,3; }
-.anim__array-label {
-  font-size: 15px;
-  fill: var(--color-fg);
-  text-anchor: middle;
-}
-.anim__array-legend {
-  display: flex; gap: var(--space-4); justify-content: center;
-  margin-block-start: var(--space-2); font-size: 0.75rem; color: var(--color-muted);
-}
-.anim__array-legend-swatch {
-  display: inline-block; inline-size: 10px; block-size: 10px; border-radius: 2px;
-  margin-inline-end: var(--space-1);
-}
-.anim__array-legend-swatch--idle { background: var(--color-border); }
-.anim__array-legend-swatch--compare { background: var(--color-warn); }
-.anim__array-legend-swatch--swap { background: var(--color-accent); }
-.anim__array-legend-swatch--highlight { background: var(--color-correct); }
-/* Hidden during normal animated playback; shown only under the static
-   print/reduced-motion presentation below, same toggle-pair pattern as
-   .anim__state-label. */
-.anim__array-steps-static { display: none; }
-
-.anim--path-trace { text-align: center; }
-.anim__path { width: 100%; height: auto; max-block-size: 16rem; }
-.anim__path-axis {
-  stroke: var(--color-border);
-  stroke-width: 1;
-}
-.anim__path-tick {
-  font-size: 6px;
-  fill: var(--color-muted);
-}
-.anim__path-line {
-  fill: none;
-  stroke: var(--color-border);
-  stroke-width: 2;
-}
-/* The trail is drawn by wireAnimations() appending to this path's "d" as the
-   marker advances; the reduced opacity keeps it reading as a motion wake behind
-   the marker rather than a second data series competing with .anim__path-line. */
-.anim__path-trail {
-  fill: none;
-  stroke: var(--color-accent);
-  stroke-width: 1.2;
-  stroke-linecap: round;
-  opacity: 0.6;
-}
-.anim__path-marker { fill: var(--color-accent); }
-/* Path-trace's caption carries the course author's own written text (anim.caption),
-   not the generated "Step N of M" chrome array-ops shows -- which is why the
-   print/reduced-motion hiding rules below are scoped to .anim--array-ops and
-   leave this one visible. It otherwise inherits .anim__caption's styling
-   (full-contrast --color-fg at 1rem, margin BELOW it since it renders above the
-   plot); the earlier muted/0.9rem/margin-block-start declarations here fought
-   that and are gone. Authored prose wraps, so keep it readable at any width. */
-.anim__path-caption { text-wrap: balance; }
-/* Hidden during animated playback; shown only under the static
-   print/reduced-motion presentation below, same toggle pair as array-ops. */
-.anim__path-steps-static { display: none; }
-
-/* Unlike .anim__state-machine/.anim__path/.anim__array above (width: 100%,
-   which stretches a wide viewBox across the full column and shrinks its text
-   proportionally -- illegible once a 6-stage pipeline or a wide transform gap
-   pushes the viewBox past ~1000px), these three carry explicit width/height
-   presentation attributes in the markup (see _pipeline_html/_layer_stack_html/
-   _transform_html) so the SVG renders at its own natural, legible size by
-   default. max-width keeps a narrow one from overflowing its column, and the
-   wrapper's overflow-x below -- the same pattern .mermaid already uses for the
-   same reason -- takes over once natural size exceeds the column instead of
-   scaling text down to fit. */
+/* Every animated SVG carries explicit width/height presentation attributes in
+   the markup (see each renderer) so it renders at its own natural, legible size
+   by default. max-width keeps a narrow one from overflowing its column, and the
+   wrapper's overflow-x -- the same pattern .mermaid already uses for the same
+   reason -- takes over once natural size exceeds the column, instead of scaling
+   the text down to fit. */
 .anim__pipeline,
 .anim__layer-stack,
-.anim__transform {
+.anim__transform,
+.anim__build-up,
+.anim__compare,
+.anim__split-merge {
   max-width: 100%;
   height: auto;
 }
 .anim--pipeline,
 .anim--layer-stack,
-.anim--transform {
+.anim--transform,
+.anim--build-up,
+.anim--compare,
+.anim--split-merge {
   overflow-x: auto;
 }
 
 .anim__pipe-box,
 .anim__layer-box,
-.anim__xform-box {
+.anim__xform-box,
+.anim__build-base,
+.anim__cmp-box,
+.anim__split-box {
   stroke: var(--color-border);
   stroke-width: 1;
 }
 
 .anim__pipe-line,
-.anim__xform-line {
+.anim__xform-line,
+.anim__split-line {
   stroke: var(--color-muted);
   stroke-width: 2;
   fill: none;
 }
 
+/* No `fill` in these rules: pipeline/layer-stack/transform/build-up/compare/
+   split-merge each flash a box to a solid --color-accent fill, and the label
+   sitting on it must invert to --color-accent-contrast while that flash is
+   active (--color-fg scores 1.82:1-3.83:1 against accent across the themes,
+   --color-muted 1.04:1-1.34:1 -- both fail the 4.5:1 floor). A stacked,
+   pre-inverted copy of each label is the ONLY thing whose OPACITY the
+   timeline animates -- never a `fill` tween between two var() tokens, which
+   animejs's colour detector cannot interpolate (see .anim__text-on-accent
+   above) -- so the base colour must come from each element's own inline
+   fill="..." attribute, which a stylesheet `fill` declaration here would
+   outrank and permanently override. */
 .anim__pipe-name,
 .anim__layer-name,
-.anim__xform-label {
+.anim__xform-label,
+.anim__build-name,
+.anim__cmp-text,
+.anim__split-name {
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 600;
-  fill: var(--color-fg);
 }
 
 .anim__pipe-change,
 .anim__layer-adds,
-.anim__xform-step-text {
+.anim__xform-step-text,
+.anim__build-contrib,
+.anim__split-what {
   font-family: var(--font-body);
   font-size: 11px;
-  fill: var(--color-muted);
 }
 
-.anim__xform-step-bg {
-  fill: var(--color-bg);
+/* .anim__layer-adds and .anim__build-contrib are the only two classes the
+   renderer gives text-anchor="end" (a fixed-width row's second column,
+   right-aligned against the SVG's own dir="ltr"). Per the SVG/CSS bidi
+   rules, an "end" anchor resolves against the PARAGRAPH direction -- which
+   these elements inherit as ltr from the SVG root, not from their own
+   Hebrew/Arabic content -- so the Unicode Bidi Algorithm reorders trailing
+   neutral characters (spaces, punctuation) to the wrong side of the anchor
+   and the run spills past the box's edge. unicode-bidi: plaintext makes each
+   element resolve its OWN paragraph direction from its first strong
+   character (Unicode's P2/P3 rules), independent of the SVG's dir and
+   without the renderer needing to know the course's language at all. */
+.anim__layer-adds,
+.anim__build-contrib {
+  unicode-bidi: plaintext;
+}
+
+.anim__xform-step-text {
+  fill: var(--color-fg);
+}
+
+.anim__xform-step-dot {
+  fill: var(--color-accent);
+}
+
+.anim__cmp-heading {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  fill: var(--color-muted);
+}
+.anim__cmp-divider {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
 }
 
 /* The static <ol> lists are the print/reduced-motion presentation only; during
    normal animated playback the SVG carries the meaning. Same toggle-pair
-   pattern as .anim--array-ops. */
+   pattern as .anim__state-steps-static. */
 .anim__pipeline-static,
 .anim__layer-static,
-.anim__xform-static {
+.anim__xform-static,
+.anim__build-static,
+.anim__cmp-static,
+.anim__split-static {
   display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .anim__array { display: none; }
-  /* The caption and legend only mean anything while the timeline is playing --
-     wireAnimations() bails out entirely under reduced motion, so both would
-     otherwise sit there frozen on the pre-JS "Step 1 of N" text. Scoped to
-     array-ops on purpose: path-trace's caption is the course author's own
-     written text, real content that must stay visible without motion. */
-  .anim--array-ops .anim__caption { display: none; }
-  .anim__array-legend { display: none; }
-  .anim__array-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
-  /* No CSS animation left to disable -- wireAnimations() bails out entirely under
-     reduced motion, so the marker/trail simply stay at their rendered starting
-     position. The step list carries the sequence information instead, exactly as
-     it does for array-ops -- but unlike array-ops the caption stays visible here,
-     since it holds the author's own text rather than live step narration. */
-  .anim__path-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
-
   /* The timeline never runs here, so every element it would have revealed must
      be forced visible -- inline opacity="0" and stroke-dashoffset would
      otherwise leave these diagrams blank. Every stage/layer/step shows at once. */
   .anim--pipeline .anim__pipe-line,
-  .anim--transform .anim__xform-line {
+  .anim--transform .anim__xform-line,
+  .anim--split-merge .anim__split-line {
     stroke-dashoffset: 0 !important;
   }
 
-  .anim--layer-stack .anim__layer-box,
-  .anim--transform .anim__xform-step {
+  /* :not(.anim__layer-box-active) excludes the accent highlight overlay: only
+     ONE layer is ever highlighted at a time during playback, so forcing every
+     layer's highlight to opacity 1 here would show every row as
+     simultaneously "active" -- the reduced-motion picture should be the plain
+     revealed stack the static <ol> narrates, not every accent flash
+     overlapping at once. The inverted text pair needs no matching exclusion:
+     it inherits visibility from its own opacity="0", which this rule never
+     touches, and only the plain (always-shown) copy is targeted here anyway.
+     compare's active overlay and split-merge's merged-active overlay get the
+     same exclusion: a comparison's flash is a momentary contrast, not a
+     lasting state, and the merged box's "solid accent" look is the animated
+     PAYOFF once every branch has landed -- neither belongs in a static
+     picture that shows every element at once. build-up's wash IS meant to
+     persist (every part stays lit once it joins the whole, unlike a layer's
+     single active tier), so .anim__build-rect gets no such exclusion. */
+  .anim--layer-stack .anim__layer-box:not(.anim__layer-box-active),
+  .anim--transform .anim__xform-step,
+  .anim--compare .anim__cmp-box-active,
+  .anim--split-merge .anim__split-box-active {
     opacity: 1 !important;
+  }
+  /* .anim__layer-row and .anim__build-part are the WHOLE-row/part reveal
+     group (box, name, and description together) -- each starts at
+     opacity="0" on the <g> itself, not on any child rect, so it needs its
+     own force-reveal line here or the static picture renders every row blank. */
+  .anim--layer-stack .anim__layer-row,
+  .anim--build-up .anim__build-part,
+  .anim--split-merge .anim__split-box:not(.anim__split-box-active) {
+    opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-rect {
+    fill-opacity: var(--anim-visited-strength, .12) !important;
+  }
+  .anim--split-merge .anim__split-box.anim__visited {
+    fill-opacity: var(--anim-visited-strength, .12) !important;
   }
 
   .anim--pipeline .anim__pipeline-static,
   .anim--layer-stack .anim__layer-static,
-  .anim--transform .anim__xform-static {
+  .anim--transform .anim__xform-static,
+  .anim--build-up .anim__build-static,
+  .anim--compare .anim__cmp-static,
+  .anim--split-merge .anim__split-static {
     display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0;
   }
 }
@@ -612,12 +635,6 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .quiz, .callout, .mermaid, table, pre { break-inside: avoid; page-break-inside: avoid; }
   .figure, .anim { break-inside: avoid; page-break-inside: avoid; }
   .anim__step { opacity: 1 !important; font-weight: 400 !important; }
-  .anim__state { opacity: 1 !important; }
-  /* Both states are shown at once in print (no animation on paper), labeled and
-     side-by-side rather than sharing the animated view's stacked grid cell. */
-  .anim--state-toggle { grid-template-columns: 1fr 1fr !important; gap: 0.5em; }
-  .anim__state { grid-area: auto !important; }
-  .anim__state-label { display: block !important; font-weight: 600; margin-block-end: 0.25em; }
 
   /* In print every question is immediately followed by its answer and explanation. */
   .quiz__answer, .quiz__why { display: block !important; }
@@ -637,44 +654,55 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .mermaid svg { max-width: 100% !important; }
   /* Same reasoning as the reduced-motion rule: an infinite animation has no
      defined "final" frame to freeze on paper, so print shows the static step
-     list instead of the animated bars. */
-  .anim__array { display: none !important; }
-  /* Scoped to array-ops: that caption is generated "Step N of M" narration, which
-     is meaningless frozen on paper. Path-trace's caption is the course author's
-     own written text and must print. */
-  .anim--array-ops .anim__caption { display: none !important; }
-  .anim__array-legend { display: none !important; }
-  .anim__array-steps-static {
-    display: block !important; list-style: decimal !important;
-    padding-inline-start: 1.5em !important; margin: 0 !important;
-  }
-  /* The marker/trail print at their static resting position (same reasoning as
-     reduced motion); the step list is what actually conveys the sequence on paper. */
-  .anim__path-trail { opacity: 1 !important; }
-  .anim__path-steps-static {
-    display: block !important; list-style: decimal !important;
-    padding-inline-start: 1.5em !important; margin-block-start: 0.5em !important;
-  }
+     list instead of the animated diagram. */
   .anim__state-machine { display: none !important; }
   .anim__state-steps-static {
     display: block !important; list-style: decimal !important;
     padding-inline-start: 1.5em !important; margin: 0 !important;
   }
 
-  /* Same reasoning as the reduced-motion rule in layout.css: the timeline never
-     runs on paper, so pipeline/layer-stack/transform's animated elements would
-     otherwise print blank -- inline opacity="0" and stroke-dashoffset override. */
+  /* Same reasoning as the reduced-motion rule in layout.css: the timeline
+     never runs on paper, so pipeline/layer-stack/transform/split-merge's
+     animated elements would otherwise print blank -- inline opacity="0" and
+     stroke-dashoffset override. */
   .anim--pipeline .anim__pipe-line,
-  .anim--transform .anim__xform-line {
+  .anim--transform .anim__xform-line,
+  .anim--split-merge .anim__split-line {
     stroke-dashoffset: 0 !important;
   }
-  .anim--layer-stack .anim__layer-box,
-  .anim--transform .anim__xform-step {
+  /* :not(.anim__layer-box-active) excludes the accent highlight overlay --
+     same reasoning as layout.css's reduced-motion rule: only one layer is
+     ever highlighted during playback, so printing every one "active" would
+     misrepresent the sequence the static list already narrates. compare's
+     flash and split-merge's merged-active overlay get the same exclusion for
+     the same reason: neither is a lasting state. build-up's wash DOES persist
+     (every part stays lit once it joins the whole), so its rect gets no such
+     exclusion, just the fill-opacity fallback used elsewhere on paper. */
+  .anim--layer-stack .anim__layer-box:not(.anim__layer-box-active),
+  .anim--transform .anim__xform-step,
+  .anim--compare .anim__cmp-box-active,
+  .anim--split-merge .anim__split-box-active {
     opacity: 1 !important;
+  }
+  /* .anim__layer-row and .anim__build-part are the WHOLE-row/part reveal
+     group (box, name, and description together) -- each starts at
+     opacity="0" on the <g> itself, not on any child rect, so it needs its
+     own force-reveal line here or the printed page renders every row blank. */
+  .anim--layer-stack .anim__layer-row,
+  .anim--build-up .anim__build-part,
+  .anim--split-merge .anim__split-box:not(.anim__split-box-active) {
+    opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-rect,
+  .anim--split-merge .anim__split-box.anim__visited {
+    fill-opacity: .12 !important;
   }
   .anim--pipeline .anim__pipeline-static,
   .anim--layer-stack .anim__layer-static,
-  .anim--transform .anim__xform-static {
+  .anim--transform .anim__xform-static,
+  .anim--build-up .anim__build-static,
+  .anim--compare .anim__cmp-static,
+  .anim--split-merge .anim__split-static {
     display: block !important; list-style: decimal !important;
     padding-inline-start: 1.5em !important; margin: 0 !important;
   }
@@ -738,7 +766,7 @@ note is not a copy of the directory — it is a copy of the lookups you keep rep
 the processor can skip walking the <span class="term-wrap"><button type="button" class="term" aria-expanded="false" aria-controls="def-page-table">page table</button><span class="term__def" id="def-page-table" hidden>The full in-memory map from virtual pages to physical frames.</span></span>. On a hit, translation costs almost nothing.
 On a miss, the hardware walks the full structure and installs the result.</p>
 <figure class="figure" data-p2c-topic="tlb"><img alt="The original slide this diagram is redrawn from." src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA8AAAALQCAIAAADQFY7jAAA2XklEQVR4nO3daZhU1YH4/1tLd7PT7CDSLIIgiIAgokYW4woiRiNGnWhcRs0YTSRjJjHBJT5J1PhMNE7UTMRowDULMS6oGBUUDQgmguzNTjd0IztIb1X1f1HPr/893YgcQNbP55XeW3Xr3O433z6cOjeWyWQiAABg98QP9AAAAOBQIqABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAhzsAV1aWnrqqafm5ubm5+dPnDhxd94ye/bsTp065ebmDho0qKSkJIqi119/vUWLFrm5ud/85je/5PHuY4fuyAEADlcHe0C3bNnyrLPOSqVSW7ZsefXVV6uqqr7wLVOmTCkqKkqlUl/96ldbtWoVRVEmk6mqqqqqqkqlUqEDSKVSS5cu3YM37hN7M3IAAL4MB3tAx+Px4cOHt2zZMpPJTJs2bfXq1bt+/bZt2yZNmpRKpZo3bz58+PB4fK9ucP78+Zdeeuktt9xSVla2N9cBAOCwkTzQA/hivXr1GjBgwKRJk5YvXz5jxoxOnTrt4sULFiz45z//GUVR3759TzjhhOzBwYMH//Of/0yn040bN979z507d+7555+/fPnys88+ey+GDwDAYeVgn4GOoqhRo0ajRo1KJpNlZWWTJk3a9SqOt956a926dclkcuTIkdW53KBBgy5dunTt2rVNmza7/7llZWU7duzYq6EDAHDYOQRmoKMoGjp0aMeOHQsLC99///2VK1d26dJlpy/bvHnza6+9lkql2rdv/9WvfjXoIyoqKhYtWhSPx7t27Zqbm7svRr0r27ZtW7FixZYtW5LJZNu2bdu3b7+Xq00+T0lJyapVq5o1a3b00Ufn5eXVPJVOp1esWFFaWtqyZctOnTolEokvvNpnn322evXqjRs3tm3btkOHDrs55lQqtWzZss2bNx911FGtW7eu9UFlZWWFhYU7duwoKCjYnb9w0un0unXr1qxZ07Rp044dO+7mGPbz7xcAOJxlDgWVlZXXXnttLBarV6/e008//XkvmzZtWsuWLWOx2De+8Y2ysrLq4wsWLBg7duxtt902YcKE6oMlJSXDhw/v0KHDNddc89FHH/Xv3z8Wi8Visd69e7/99ttvv/32b3/722bNmkVRdNJJJ7388stvvvnm/Pnzs+8dN27csGHDhg0b9uqrr9YdxsaNG2+44YYhQ4Zccsklq1evrnlq27Ztjz322MCBA2s2XCwWa9269dVXXz1nzpxal5o0aVKTJk1isdhll122Oz+ojz766KabbvqP//iPDz/8cOnSpV/72teqPyg/P//SSy/94IMPMplMKpWaOHHi8ccfn63PWCzWoUOHe++9d9u2bZ935XfeeedrX/ta9aR+LBbr2LHj2LFjS0pKar0ylUo99dRTN9xww9ixYz/99NNXXnmlV69esVgs+64uXbr86Ec/Ki4uzmQyW7duveOOO1q2bJm9ZjKZPPnkk1999dVUKrXTMaxZs+ZHP/pR165dq4edn58/dOjQ8ePH79ixo9aLd/H7ffrpp0eMGDFkyJDrr79+w4YNO/2sFStWjB49etevAQCOTIdGQGcymRdffLFRo0axWOyKK64oLy+v+4JUKnXXXXfF4/H69es/88wzNU/tNEPXrFlz4oknRlF0xhlnnHPOOdnCi6LomGOOefTRRxs1alTrL41YLHbjjTdmP2js2LHxeDyRSPz+97+vO5KSkpKBAwdGUVRQULB48eLq42vXrv3a1762ixnTNm3avPTSS1848l3405/+VL9+/by8vIcffnjIkCHVN1WtWbNmzz777MSJE5s3b17rVCKRuOqqq7Zu3VrrmmVlZWPHjq1fv37dAcdisV69es2YMaPm66uqqrJ/7Rx77LFPPPFE3UnlWCzWv3//Tz755Hvf+14yWfvfQJo0aTJu3Li6t/bWW2917dq17h1lRz5y5Mjly5fXfP0ufr/Tpk076aSTsj+Nt99+e6c/yT/84Q95eXnxePw///M/Py/oAYAj06GxhCOKokGDBh133HEffvjhP/7xj+XLlx977LG1XrBp06Y333wznU4fc8wxp5122u5feebMmeXl5Z07d+7du/eiRYtOPvnkDh06NGrUKJ1Ol5WVpdPpZDJZr169eDxer169PR5/KpW67777/va3v6XT6TZt2vz7v//7ueeee/TRR5eVlc2cOfN///d/33vvvZKSkrvuuqt///7t2rXb4w+KoiidTj/yyCOLFi3q0qXLNddcc8IJJ6xZs+a3v/3tRx99tHHjxttuuy0nJ2fTpk0DBw781re+1bFjx0WLFj366KOLFy9+9tlnBwwY8J3vfKfmpR544IH77ruvoqKifv36F1100QUXXNCqVavCwsJnnnnm3XffnTdv3nXXXffCCy9079691jA+/fTTu+66a/369Wecccbll1/epk2bDz/88NFHH123bt1HH310xRVXLFu2LJlMjh49+oILLqhfv/5bb731+9//fsuWLXffffeJJ57Yt2/f6kvNnDnzmmuuWb58eSwW69ev36233nryySd/+umn77333rhx4xYvXvzyyy9XVFQ89dRTdXu97u93wIABw4cPnzVr1ubNm994443BgwfX+qumvLw8e8FmzZqNHDnyS1pdAwAcqg50we+uVCp1xx13xOPx3NzcJ598su4L3n777WbNmsVisVtuuaWqqqrmqV3PQEdR1K9fv2XLlmUymbKysup/r585c2a2xs4+++yaaxv2bAZ6/vz5nTt3jqKodevWb775Zq23fPrpp2eccUYsFqtfv/6f/vSnXY98F7Iz0NmbOv744+fNm1d9auHChT169Mieisfjl1566caNG6vPfvDBB9lqHzRoUGlpafXxadOmtW3bNoqiFi1aPPfcczXnYsvKyn784x/n5ubG4/Gbb765srIye7x6Bjr7Qddee23NWe3x48c3aNAgO4yGDRs+8sgj1dfM/o2Rk5MTj8dvv/326uNbt2698MILY7FYMpn89re/XWuOfPny5aeffnr27N133139rl3/fqdPn5795Q4cOLDuKpRPPvmkY8eOsVjsrLPO2rJly+785AGAI8chM7UWj8fPO++8li1bVlZWTpo0qby8vObZdDr9xhtvbN68uWnTpiNHjtyd78NVSyQSo0ePzu6Ol5eXl133vM/Nmzdv7dq12SY7/fTTa51t0aJFdnVHeXn5vHnz0un0Xn5cvXr1xowZc9xxx1Uf6dq169ChQ7Nde/TRR99+++35+fnVZ/v27du/f/8oigoLCwsLC7MHU6nUhAkTSkpKksnkTTfddMkll9Sci83Ly7vtttvOPPPMTCbzl7/85ZNPPqk7jC5dunz/+9+vuR5m2LBhxxxzTBRFsVjs7LPPvvLKK6uvmf0Vt27dOp1Of/DBB1u3bs0enzFjxjvvvJPJZPr27Tt27Nhaq2s6duz4i1/8olWrVlVVVU8//fSyZctqjWGnv99evXoNHDgwFostXLjw448/rvWWKVOmFBcXJ5PJUaNGBW19CAAcCQ6ZgI6i6Pjjjx8wYEAURTNmzKjVSZ9++ml2/cbxxx9fPe+4mxo2bNinT599OdCdueiii4qLi2fNmnXPPffsdBeI1q1bJ5PJTCbz6aef7v3HFRQUDB06tOaReDxeUFCQ/SLdwIEDa624yMnJOeqoo2Kx2Pbt24uLi7MHi4qKsuXavn37Sy+9tO5KhqZNm15++eW5ubklJSXTpk2rdTYWi5122mndunWrebBRo0bZbw0mk8nzzz+/YcOGNc/m5+dns37t2rWbN2+OoiidTv/973/fsmVLIpG4+OKLd7q4pX///tkF36tWrZo1a1atszv9/TZs2PDCCy/MycnZunXr66+/XvMvlu3bt7/yyitVVVUdOnQI3csFADgSHEoB3ahRowsuuCCZTK5evfq9996reeqjjz5atGhRIpEYPnx43a/HfeFlO3TosE9HunP5+fn9+vXLLuSoqby8fPr06dk/AKIoqqys3PvP6ty5c+vWrWsdrF+/fjagjzvuuJycnJqnsjucRFGUTqerHxu+dOnStWvXRlHUrVu3goKCnX7Qscce27Rp01QqNWvWrFrPG4/H43379q31NcFkMpn9+6FRo0bZqeidns2uxIiiqKKiYs6cOel0ulGjRtk58rrq1at36qmnZufvZ86cWWv+/vN+v0OHDu3UqVM6nX777bdLS0urj8+fPz/7LJ6hQ4d27dp1p58IABzJDpkvEWYNGzasY8eOS5YsmTRp0r/9279VN9/rr7++ZcuWtm3b7sFTA3Nzc3e6xcSXJJ1OL1iwYOrUqQsWLFi2bNnSpUuXLFlS/cSWne4yESoWi7Vp06buVx6rL964ceO608l1jxQXF2/bti2KomnTplWvn66lqqoqu6q4qKiorKys5oxyMpmsO2GcLfgoinJycqoXQ9c9W2379u3r16+Poqh+/frVG97V1b59+5ycnPLy8qKiomx5V/u832/Hjh2HDRu2ePHixYsXz5o1a8SIEdnjf//730tLSxs2bJh9fM/nfSIAcMQ6xPqgS5cugwcPXrJkycyZM5csWdKrV68oitauXfvOO+9EUTRw4MCaq353U05OTtCa6T1WXl4+fvz4xx577OOPP671PMW8vLw2bdoUFRXt/ernrF1vGLKbmb5169bseHbs2FFUVLTrF2/fvr28vLxmQCcSib1/ZElVVVV2vXsikdjFTdWrVy/7rMqKiopapz7v95tIJC688MJnn31269atr7322rnnnptIJDZt2vT666+nUqmePXsOGjRoLwcPAByWDrGATiaTF1xwwQsvvLBmzZqpU6dmA/rDDz8sLCzMyckZOXJk3UnNA6LWJGgURVu3br311luffPLJ7DqHxo0bH3vssccdd1zPnj1PPPHEk0466Y033rjqqqv2VUDvk5ns7PxrLBY744wzzj///F1fc9dz3nszhuwDFCsrK7PT4TtVVlZWVVUVi8XqbuC9CyeddNLxxx///vvvT5kyZe3ate3bt58zZ87HH3+cSCRGjBixiwlvAOBIdogFdBRFgwYN6tGjx6xZs15//fWrrroqLy9v0qRJ27dv79atW62vzX15qruw1mYg1Qc/++yzWgdfeOGFCRMmZB8zftddd1166aW1tnfYsWPHvqrnfaVJkybZdRFt27a9+eab9888fS3169fP7puxY8eOmiuVa1m9enVFRUUsFmvRosXuV3uzZs1GjBgxffr0pUuXzpgxY9SoUa+//vqmTZvatGkzfPhw2z8DADt16CVCq1atzjvvvFgsNnPmzMLCwtWrV7/77rtRFJ1++ukdO3bcDwOIx+PZhQqZTKa0tLRu9RYVFdVKvc8++2zixInl5eU5OTk/+tGPrrvuulr1nE6nV6xYkb3UwZPRnTp1atKkSSaTWbBgweftDbJmzZrJkyfPnTt3F9PDe6NevXo9evSIx+Pbt2+fMWPGTn84FRUV06dPz2QyiUSi+vnkuyMej59zzjlt2rT57LPPXn311ZKSksmTJ2cymUGDBvXs2XOf3gcAcPg49AI6u1twixYtSktLp0yZMn369GXLljVs2HDkyJH79itfiUQiO5dZVVVVq9sKCgpycnIymcycOXNqbZqRTqcnTZq0YcOGmgervwnXoEGDus9QjKJoy5YtU6dOrd6Fo+4KkAOiU6dOXbp0iaJo4cKFtbY9yUqn0w8//PC5557bu3fvMWPG1NqFY5+Ix+ODBw9u0KBBOp1+8cUXV69eXfc18+bNmzZtWiaTad26deiOhMcdd9zJJ58cRdG0adNee+21hQsX5ubmXnjhhQfJWiAA4CB06AV0FEW9e/ceMGBAVVXVK6+8MnHixLKysu7du+/zr3zl5eVlFy1s2LCh1vRq796927Ztm8lk3n///dmzZ9c8NW3atHHjxtVKyfr162ennCsqKrZs2VLrg9Lp9B/+8Id//OMf2f/dvHnzQRLQrVq1uvDCC5PJ5Pbt2++7774VK1bUesGUKVOefPLJdDrdtGnTiy+++Eta43HKKaeccMIJURR98sknv/jFL7Zv317z7NatW++7776ioqJYLHb66aeHzhw3aNDgwgsvzM3NXbp06X333bdly5Zjjjlm8ODB+/IGAIDDyyEZ0NUbQk+ZMuWll16KxWLnnHNOq1at9u2nNGjQILtUY/78+WPHjn344YcXLFiQPdW9e/fzzjsvHo8XFxffdNNNU6dOTaVS69at+81vfnP55ZeXlpa2bNmy5krcBg0aDBkyJLtNxBNPPJHdXDmKonQ6PWvWrOuvv/6HP/xhdie77H5wGzdu3Lf3sseuvPLKk046KYqimTNnXnzxxa+++mpZWVkURdu3b3/88cevvPLKNWvWxOPx0aNHDxky5EsaQ6tWrb7//e83adIklUr97ne/GzlyZHYtR/an981vfvOPf/xj9mkvt956a/Ybh0EGDx7cpUuX8vLyhQsXRlF05pln7p99wQGAQ9Sh9yXCrDPOOKOgoGDJkiVRFLVs2fLL+MpX27ZtTzzxxMWLF5eXl48bNy4nJ+exxx7LboecTCZvu+22WbNmzZw588MPP8zGcfbZH4lE4uqrr47H47/73e+qLxWPx6+88spXX331gw8+mDRp0nHHHdetW7dYLLZy5crsKuqWLVv+8Ic//POf/zx79uzCwsKFCxfu878H9ky7du1+/etfX3XVVfPnz89ully/fv1WrVpt2LBh+/btmUwmHo+PGjXqnnvu2fXGeXtp1KhRd999909+8pPt27e//fbbp556avPmzSsrK6tn61u1avXAAw8MHDhwDy7eoUOHM888c8GCBZlMpmnTpqNGjTogX5cEAA4Vh+QMdPT/NoTOPnejX79+2X/i37fy8vLuvPPOoUOHZnMqlUple716AM8999zXv/717CP9qqqqMplMw4YNx4wZc//999etyQ4dOjz99NOjR4/Ozc3dtGnThx9+OGPGjLVr1+bl5V166aVvvvnmHXfcccstt9SrV2/9+vXjxo3LTvQeDAYMGPDKK69Uf/Fxx44dK1euzK5pKSgouP/++8ePH1/3qYf7ViKRuOWWW1588cWvfOUrOTk52fn+TZs2ZTKZ3NzcESNGvPzyy5deeukeX3zkyJFNmjSJoqhv3779+vXbp2MHAA43sYNkue1BK51Or1q1qqioqH79+t27d6/73bLCwsKpU6euWbMmPz//nHPO+cKHPy9ZsuS9995bvXp1PB7v3Lnz4MGDjzrqqOypqqqq0tLSqqqq3NzcVq1aHWzzoBs3bpw6deqyZcu2bduWn59/wgknDBw48EudeN6pwsLCmTNnrl27Nh6PH3XUUaecckr79u338povvPDCt771raqqql/96lc33XTTPhknAHC4EtAc6SoqKq6//vo//OEPvXv3fumllwoKCg70iACAg9qhuoQD9pW5c+e++eabiURi9OjRRx999IEeDgBwsBPQHNHWrl3705/+tLi4uEePHldccYWnDwIAX+hQ3YUD9sbMmTNvvPHGVCq1fPnyTZs25ebm3nDDDZ06dTrQ4wIADgECmiNRs2bN1q9fv3z58iiKksnklVdeefXVVx/oQQEAhwYBzZGoRYsWZ5555vvvv9+hQ4dvfOMbl1122R48gQUAODLZhQMAAAL4yhQAAAQQ0AAAEEBAAwBAAAENAAABBDQAAAQQ0AAAEEBAAwBAAAENAAABBDQAAAQ42AP6lVdeadasWW6gvLy8e++9N4qi4uLiE088MTc3t02bNu++++5ufuiyZcu6d+9e97L16tVr167dCSeccN555911111z5sz5Mm8dAICDUfJAD+ALZDKZqqqqysrKoHfF4/F0Op397+zbq6qqgq6QSqV2+qFr165du3btnDlzXnvttXvvvfeSSy65995727dvH3RxAAAOXQd7QLdo0eIrX/nKjh07ah0vKipasmRJFEXt2rXr1q1brbPxeLygoGDvPz03N/eEE05o2LBh9n8zmUxlZeW2bdtWrVq1efPm8vLyp59+urCw8Pnnn98nHwcAwMHvYA/oU045ZdKkSXWP33fffbfffnsmkznnnHN+97vfJRKJL+PTmzVr9thjj/Xv37/W8bKyspdeeun2228vLCycMWPGL37xi4cffjiZPNh/mAAA7L2DfQ30walevXqXXHLJww8/nJ+fn06nJ0+evHz58gM9KAAA9gcBvedOPPHE7OqR9evXr1ix4kAPBwCA/UFA77m8vLxGjRpFUZRKpcrKyg70cAAA2B8E9J5bt27d6tWroyhq3LixjTgAAI4QAnoPbd269YEHHli2bFksFvvqV7/ao0ePAz0iAAD2BxtH7Ep5eflbb71VWFhYfSSdTn/66aezZ8+eMmVK9vipp556991316tX78ANEwCA/UdA78qmTZt+8IMffN7ZnJycK6+88uc//3nr1q3356gAADiALOHYc5WVlS+88MJPfvKTlStXHuixAACwn5iB3pUmTZp8+9vfbteuXfWRqqqqTZs2zZs3b86cOUuXLt26devjjz/+3nvvjR8/vu7zVgAAOPwI6F2pX7/+JZdcstMyTqfTU6ZMue222z766KMFCxZ897vf/dOf/tS2bdv9P0gAAPYnSzj2UDweHzZs2PPPP9+rV69MJjNjxoy//e1vB3pQAAB86QT0XuncufPw4cPj8XhVVdWUKVMO9HAAAPjSCei9Eo/HW7ZsGUVRJpPZvHnzgR4OAABfOgG9V6qqqhYuXJjJZGKxWH5+/oEeDgAAXzoBvVdeffXVv/3tb5lMJpFIDBw48EAPBwCAL51dOPZERUXF7NmzJ0yY8OSTT2ZXbnTr1m3EiBEHelwAAHzpjpSA3rp165gxY5o0abKL13Tv3v2RRx6peWTjxo033XRTw4YNq4+k0+mNGzcuWbJk27Zt1Qdbt2597733HnPMMft82AAAHGyOlICurKycOXPmrl9T91uAFRUV06dP38VbksnkmWee+fOf/7xfv357O0QAAA4FR0pA7xOxWCyZTDZq1KhNmzbdunU76aSTRo0adfzxx8fjlpIDABwpYplM5kCPAQAADhmmTgEAIICABgCAAAIaAAACCGgAAAggoAEAIICABgCAAAIaAAACCGgAAAggoAEAIICABgCAAAIaAAACCGgAAAggoAEAIICABgCAAAIaAAACJA/0ANgtZWVln3zySWlpaceOHXv06JFIJA70iAAAjlCHxgz0qlWr+vTpk7szeXl5bdq06dOnz/Dhw++8887Zs2cf6MHuY6lU6umnn+7Ro8fAgQNHjBhx0UUXrV69en8OIJ1O33bbbXl5eQ0bNnz22Wf350cDAByEDo2AjqKoqqqqcmcqKipKS0tnz549adKkn/70pyeffPI111xTUlJyoMe7z0yePPnmm29esWJFJpOJoqh9+/b5+fn7eQzpdDr780+n07VOpVKppUuXplKp/TwkAIAD5RBbwpGTk9O7d+/GjRtXH8lkMmVlZSUlJUVFRVVVVWVlZU8++eSqVasmTJjQpk2bAzjUfaKqquqZZ57ZtGlTLBY78cQTb7zxxs6dO9e8/QNr/vz5Y8eOLSsre/755xs2bHighwMAsD8cYgHduHHjBx988PTTT697qrCw8Fe/+tUTTzxRVlb2zjvvPPLII3feeWc8fshMse/U5s2bCwsLM5lMfn7+/ffff8YZZxzoEf3/5s6de/755y9fvvzss88+0GMBANh/Du2+rKlr164PPfTQd77znUQiUVVV9dJLLx0GCzkqKip27NgRRVHr1q27dOlyoIfzf5SVlWXHBgBwRDnEZqB3LZlMjh49evz48SUlJStWrCgsLGzXrl3dl5WUlKxevbqioqJBgwYFBQXNmjXbnYtv2rRpxYoVsVjs2GOPrVev3m4OacOGDatXr66srOzcuXPz5s0DbiaKoijKZDLZ5cXJZHLXO2/s2U0BABDqsAroKIpat26dn59fUlJSUVGxadOmmqeWL1/+8MMPT5w4ccWKFdVfhkskEscee+w3v/nNG2+8cafRmUqlJk6c+OCDD06fPr2qqiqKovz8/Msuu+y//uu/5s+ff8cdd2Qymbvvvnv48OE131VWVvbUU089/vjj//rXv7LvysnJGTBgwE033XTJJZfk5uZ+4Y1s3rz517/+9eLFi4uLi6MoWrt27Y9//OP69es3bdr0u9/9bvv27ffspp544okJEyZEUXTbbbedd955tT5006ZNP/zhDxcsWNC6detf/epX1Z9Sy/r16+fMmbNo0aKKioooijZu3PjOO+/Uq1evffv2PXr0+MJbAwA4tGUOBStXruzZs2cURc2bN586deouXrl48eJOnTpFUdS4ceNXXnml+vjUqVOPOeaYz/shxGKxwYMHL1++vNbVtm3bNmbMmLy8vLqv79u37913352bm5uTkzNhwoSa78ouC97p8utkMnn55ZevX7/+C2+5uLi4b9++da/Qrl27f/3rX3t2U6lUauzYsfF4PJFI/P73v6/7oSUlJQMHDoyiqKCgYPHixdXvGjNmTDwer77Tl156qVGjRnU/7sYbb/zC+wIAONQdbjPQ8+bNW79+fRRFjRo1Ouqoo7IHi4uLx4wZs2TJkuxeFjfccMPJJ5+cn5+/bt26yZMnP/LII6tWrXrvvfceeuihX/7yl9UrJVKp1K9//ev/+Z//qaioaNOmza233jp8+PDi4uJnn332ueee+/jjj+fNm1dZWZlM/p+f4bp162644YbJkydnMpn27dtfffXVp556ajwenz59+pNPPrl8+fLnn3++QYMGDz30UIMGDXZxI/Xr17/gggt69OjxxhtvbNiwoVmzZuecc052Bjo7qbxnN7VPJJPJRo0apdPpsrKydDqdTCbr1asXj8d3f2ULAMAh7EAX/G7ZzRno4uLiM844IxaLxWKxs88+e8uWLdnj48aNy83NjcViQ4YMWbNmTa13TZ06Nbvh3XHHHZfdbjlr5syZ2TUMbdu2zQZxVmVl5WOPPVa9GXPNGehUKvWzn/0sJycnFouddNJJCxcurPlBK1asGDZsWCwWa9KkyV//+tfdufGioqLevXtHUdSzZ8+VK1fWPLUHN7WvZqCrfz7Zjzj77LO3bdu2O7cDAHAYOBx24SgvL589e/Yvf/nLM8888+23385kMg0bNvzWt76V3S85lUp98MEHlZWVubm51157bdu2bWu9vX///gMGDIiiqLS0dNWqVdmD6XR6woQJxcXFiUTi+uuvr7l/XDKZvO66626++eZac89RFBUVFT333HOVlZUtWrS4//77jz322JpnCwoK7rvvvqOOOmrr1q2PP/74tm3b9viW9+ymAADYe4dYQG/YsGHw4MGx/6tevXp9+vT5wQ9+MG/evEwmk5eX973vfe+iiy7KviWRSPz2t79dvXr11KlTR44cWfeaeXl5LVu2jMViNb93WFJS8s4772QymbZt21500UW1FjQnEokrrrgiu9i6phkzZhQWFmYXHw8aNKjuZ/Xr12/YsGFRFP3zn/9cunTpHv8c9uymAADYe4dYQO9aLBY7/vjjn3zyybvuuqvmN//i8fhRRx01cODAug/BXr9+/auvvrpgwYIoitLpdPUjqZcuXZqduO3evftON2Du3Llz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QEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAECA/w9ejZSZJFeLTQAAAABJRU5ErkJggg=="><figcaption>The original slide this diagram is redrawn from.</figcaption></figure>
-<div class="anim anim--path-trace"><p class="anim__caption anim__path-caption" id="anim-caption-23" data-anim-id="anim-caption-23">TLB hit rate rising as the working set warms up</p><svg class="anim__path" dir="ltr" viewBox="-10 -10 35 30"><line class="anim__path-axis" x1="-10" y1="10" x2="25" y2="10"></line><line class="anim__path-axis" x1="0" y1="-10" x2="0" y2="20"></line><text class="anim__path-tick" x="0" y="19">0</text><text class="anim__path-tick" x="15" y="19">15</text><text class="anim__path-tick" x="-2" y="0">0</text><text class="anim__path-tick" x="-2" y="10">10</text><polyline class="anim__path-line" points="0,10 5,2 10,8 15,0"></polyline><path class="anim__path-trail" id="anim-trail-23" d="M 0,10"></path><circle class="anim__path-marker" id="anim-marker-23" r="1.2" cx="0" cy="10"></circle></svg><script type="application/json" class="anim__timeline" data-anim-id="anim-caption-23">{"loop": true, "loopDelay": 1200, "steps": [{"kind": "path-segment", "marker": "#anim-marker-23", "trail": "#anim-trail-23", "from": [0.0, 10.0], "to": [5.0, 2.0], "duration": 849, "ease": "inOutSine", "position": null, "caption": "Moving from (0, 10) to (5, 2)"}, {"kind": "path-segment", "marker": "#anim-marker-23", "trail": "#anim-trail-23", "from": [5.0, 2.0], "to": [10.0, 8.0], "duration": 703, "ease": "inOutSine", "position": "+=150", "caption": "Moving from (5, 2) to (10, 8)"}, {"kind": "path-segment", "marker": "#anim-marker-23", "trail": "#anim-trail-23", "from": [10.0, 8.0], "to": [15.0, 0.0], "duration": 849, "ease": "inOutSine", "position": "+=150", "caption": "Moving from (10, 8) to (15, 0)"}, {"kind": "set", "targets": ["#anim-marker-23"], "props": {"cx": 0.0, "cy": 10.0}}, {"kind": "set-attr", "targets": ["#anim-trail-23"], "props": {"d": "M 0,10"}}]}</script><ol class="anim__path-steps-static"><li>from (0, 10) to (5, 2)</li><li>from (5, 2) to (10, 8)</li><li>from (10, 8) to (15, 0)</li></ol></div>
+<div class="anim anim--transform"><svg class="anim__transform" dir="ltr" width="480.8" height="200" viewBox="0 0 480.8 200"><line class="anim__xform-line" id="anim-xform-line-23" x1="100" y1="52" x2="100" y2="148" stroke-dasharray="96" stroke-dashoffset="96"></line><g class="anim__xform-endpoint"><rect class="anim__xform-box" id="anim-xform-from-23" x="0" y="12" width="200" height="40" rx="8" fill="var(--anim-xform-idle)"></rect><text class="anim__xform-label" x="100" y="36" text-anchor="middle" fill="var(--color-fg)">A virtual address</text></g><g class="anim__xform-step" id="anim-xform-step-23-0" opacity="0"><circle class="anim__xform-step-dot" cx="100" cy="84" r="5"></circle><text class="anim__xform-step-text" x="224" y="88" text-anchor="start">Split into page number and offset</text></g><g class="anim__xform-step" id="anim-xform-step-23-1" opacity="0"><circle class="anim__xform-step-dot" cx="100" cy="116" r="5"></circle><text class="anim__xform-step-text" x="224" y="120" text-anchor="start">Look the page number up in the TLB</text></g><g class="anim__xform-endpoint"><rect class="anim__xform-box" id="anim-xform-to-23" x="0" y="148" width="200" height="40" rx="8" fill="var(--anim-xform-idle)"></rect><text class="anim__xform-label" x="100" y="172" text-anchor="middle" fill="var(--color-fg)">A physical address</text><rect class="anim__xform-box anim__xform-box-active" id="anim-xform-to-active-23" x="0" y="148" width="200" height="40" rx="8" fill="var(--anim-xform-active)" opacity="0"></rect><text class="anim__xform-label anim__text-on-accent" id="anim-xform-to-inverted-23" x="100" y="172" text-anchor="middle" opacity="0">A physical address</text></g></svg><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 400, "steps": [{"targets": ["#anim-xform-line-23"], "props": {"strokeDashoffset": [96, 0]}, "duration": 1200, "ease": "inOutQuad"}, {"targets": ["#anim-xform-step-23-0"], "props": {"opacity": [0, 1]}, "duration": 400, "ease": "outQuad"}, {"targets": ["#anim-xform-step-23-0"], "props": {"opacity": 1}, "duration": 700}, {"targets": ["#anim-xform-step-23-1"], "props": {"opacity": [0, 1]}, "duration": 400, "ease": "outQuad"}, {"targets": ["#anim-xform-step-23-1"], "props": {"opacity": 1}, "duration": 700}, {"targets": ["#anim-xform-to-active-23", "#anim-xform-to-inverted-23"], "props": {"opacity": [0, 1]}, "duration": 500, "ease": "outQuad"}, {"targets": ["#anim-xform-to-active-23"], "props": {"opacity": 1}, "duration": 900}, {"kind": "set", "targets": ["#anim-xform-step-23-0", "#anim-xform-step-23-1"], "props": {"opacity": 0}}, {"kind": "set", "targets": ["#anim-xform-line-23"], "props": {"strokeDashoffset": 96}}, {"kind": "set", "targets": ["#anim-xform-to-active-23", "#anim-xform-to-inverted-23"], "props": {"opacity": 0}}]}</script><ol class="anim__xform-static"><li>Split into page number and offset</li><li>Look the page number up in the TLB</li></ol></div>
 <details class="quiz" data-quiz="what-a-tlb-caches-q1" open>
 <summary class="quiz__q">What does a TLB actually cache?</summary>
 <ol class="quiz__options">
@@ -780,8 +808,8 @@ everyone gets a fixed number of seconds and then hands the tap on.</p></aside>
 back of the queue. A short quantum makes the machine feel responsive but spends more time
 switching between processes. A long quantum reduces that overhead and makes interactive
 programs feel sluggish.</p>
-<div class="anim anim--state-machine"><svg class="anim__state-machine" dir="ltr" viewBox="0 0 670 122"><defs><marker id="anim-arrowhead-29" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path class="anim__state-arrowhead" d="M0,0 L8,4 L0,8 Z"></path></marker></defs><line class="anim__state-arrow" x1="135" y1="68" x2="335" y2="68" marker-end="url(#anim-arrowhead-29)"></line><line class="anim__state-arrow" x1="335" y1="68" x2="535" y2="68" marker-end="url(#anim-arrowhead-29)"></line><path class="anim__state-arrow anim__state-arrow--back" d="M 535 40 C 535 10, 135 10, 135 40" marker-end="url(#anim-arrowhead-29)"></path><circle class="anim__state-marker" id="anim-state-marker-29" cx="135" cy="68" r="9"></circle><g class="anim__state-box" id="anim-state-box-29-0"><rect id="anim-state-rect-29-0" x="70" y="40" width="130" height="56" rx="8" fill="var(--anim-state-idle)"></rect><text x="135" y="73">Ready</text></g><g class="anim__state-box" id="anim-state-box-29-1"><rect id="anim-state-rect-29-1" x="270" y="40" width="130" height="56" rx="8" fill="var(--anim-state-idle)"></rect><text x="335" y="73">Running</text></g><g class="anim__state-box" id="anim-state-box-29-2"><rect id="anim-state-rect-29-2" x="470" y="40" width="130" height="56" rx="8" fill="var(--anim-state-idle)"></rect><text x="535" y="73">Waiting</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-0"><rect class="anim__state-transition-label-bg" x="162.2" y="4" width="145.6" height="18" rx="4"></rect><text class="anim__state-transition-label" x="235" y="18">scheduler picks it</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-1"><rect class="anim__state-transition-label-bg" x="380.2" y="4" width="109.6" height="18" rx="4"></rect><text class="anim__state-transition-label" x="435" y="18">blocks on I/O</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-2"><rect class="anim__state-transition-label-bg" x="280.2" y="-8" width="109.6" height="18" rx="4"></rect><text class="anim__state-transition-label" x="335" y="6">I/O completes</text></g></svg><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 800, "steps": [{"targets": ["#anim-state-label-29-0"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29", "from": [135.0, 68.0], "to": [335.0, 68.0], "duration": 900, "ease": "inOutQuad", "position": null}, {"targets": ["#anim-state-label-29-0"], "props": {"opacity": [1, 0]}, "duration": 200}, {"targets": ["#anim-state-rect-29-1"], "props": {"fill": ["var(--anim-state-idle)", "var(--anim-state-current)"]}, "duration": 300, "position": "-=1100"}, {"targets": ["#anim-state-label-29-1"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29", "from": [335.0, 68.0], "to": [535.0, 68.0], "duration": 900, "ease": "inOutQuad", "position": null}, {"targets": ["#anim-state-label-29-1"], "props": {"opacity": [1, 0]}, "duration": 200}, {"targets": ["#anim-state-rect-29-2"], "props": {"fill": ["var(--anim-state-idle)", "var(--anim-state-current)"]}, "duration": 300, "position": "-=1100"}, {"targets": ["#anim-state-rect-29-1"], "props": {"fill": ["var(--anim-state-current)", "var(--anim-state-idle)"]}, "duration": 300, "position": "-=300"}, {"targets": ["#anim-state-label-29-2"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29", "from": [535.0, 40], "to": [135.0, 40], "duration": 900, "ease": "inOutQuad", "position": null, "via1": [535.0, 10], "via2": [135.0, 10]}, {"targets": ["#anim-state-label-29-2"], "props": {"opacity": [1, 0]}, "duration": 200}, {"targets": ["#anim-state-rect-29-0"], "props": {"fill": ["var(--anim-state-idle)", "var(--anim-state-current)"]}, "duration": 300, "position": "-=1100"}, {"targets": ["#anim-state-rect-29-2"], "props": {"fill": ["var(--anim-state-current)", "var(--anim-state-idle)"]}, "duration": 300, "position": "-=300"}, {"kind": "set", "targets": ["#anim-state-rect-29-0"], "props": {"fill": "var(--anim-state-idle)"}}]}</script><ol class="anim__state-steps-static"><li>Ready — scheduler picks it — Running</li><li>Running — blocks on I/O — Waiting</li><li>Waiting — I/O completes — Ready</li></ol></div>
-<div class="anim anim--array-ops"><p class="anim__caption" id="anim-caption-210" data-anim-id="anim-caption-210">Step 1 of 3</p><svg class="anim__array" dir="ltr" viewBox="0 0 234 200"><line class="anim__array-axis" x1="0" y1="36" x2="0" y2="160"></line><line class="anim__array-axis" x1="0" y1="160" x2="234" y2="160"></line><line class="anim__array-gridline" x1="0" y1="100" x2="234" y2="100"></line><g class="anim__array-bar" id="anim-bar-210-0" style="transform-box: fill-box; transform-origin: center;"><rect id="anim-rect-210-0" x="18" y="85.0" width="36" height="75.0" rx="4" fill="var(--anim-array-idle)"></rect><text class="anim__array-label" x="36" y="180">5</text></g><g class="anim__array-bar" id="anim-bar-210-1" style="transform-box: fill-box; transform-origin: center;"><rect id="anim-rect-210-1" x="72" y="115.0" width="36" height="45.0" rx="4" fill="var(--anim-array-idle)"></rect><text class="anim__array-label" x="90" y="180">3</text></g><g class="anim__array-bar" id="anim-bar-210-2" style="transform-box: fill-box; transform-origin: center;"><rect id="anim-rect-210-2" x="126" y="40.0" width="36" height="120.0" rx="4" fill="var(--anim-array-idle)"></rect><text class="anim__array-label" x="144" y="180">8</text></g><g class="anim__array-bar" id="anim-bar-210-3" style="transform-box: fill-box; transform-origin: center;"><rect id="anim-rect-210-3" x="180" y="145.0" width="36" height="15.0" rx="4" fill="var(--anim-array-idle)"></rect><text class="anim__array-label" x="198" y="180">1</text></g></svg><div class="anim__array-legend"><span class="anim__array-legend-item"><span class="anim__array-legend-swatch anim__array-legend-swatch--idle"></span>idle</span><span class="anim__array-legend-item"><span class="anim__array-legend-swatch anim__array-legend-swatch--compare"></span>compare</span><span class="anim__array-legend-item"><span class="anim__array-legend-swatch anim__array-legend-swatch--swap"></span>swap</span><span class="anim__array-legend-item"><span class="anim__array-legend-swatch anim__array-legend-swatch--highlight"></span>highlight</span></div><script type="application/json" class="anim__timeline" data-anim-id="anim-caption-210">{"loop": true, "loopDelay": 1200, "steps": [{"targets": ["#anim-rect-210-0", "#anim-rect-210-1"], "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-compare)", "var(--anim-array-idle)"]}, "duration": 700, "position": null, "caption": "comparing index 0 and 1"}, {"targets": ["#anim-bar-210-0", "#anim-bar-210-1"], "props": {"scale": [1, 1.08, 1]}, "duration": 700, "ease": "inOutQuad", "position": "\u003c"}, {"targets": ["#anim-rect-210-0", "#anim-rect-210-1"], "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-swap)", "var(--anim-array-idle)"]}, "duration": 750, "position": "+=300", "caption": "swapping index 0 and 1"}, {"targets": ["#anim-bar-210-0"], "props": {"translateX": 54}, "duration": 650, "ease": "inOutBack", "position": "\u003c"}, {"targets": ["#anim-bar-210-1"], "props": {"translateX": -54}, "duration": 650, "ease": "inOutBack", "position": "\u003c"}, {"targets": ["#anim-rect-210-2"], "props": {"fill": ["var(--anim-array-idle)", "var(--anim-array-highlight)", "var(--anim-array-highlight)"]}, "duration": 900, "position": "+=300", "caption": "highlighting index 2"}, {"targets": ["#anim-bar-210-2"], "props": {"scale": [1, 1.15, 1]}, "duration": 900, "ease": "outElastic(1, .6)", "position": "\u003c"}, {"targets": ["#anim-bar-210-0"], "props": {}, "duration": 900}, {"kind": "set", "targets": ["#anim-bar-210-0", "#anim-bar-210-1", "#anim-bar-210-2", "#anim-bar-210-3"], "props": {"translateX": 0, "scale": 1}}, {"kind": "set", "targets": ["#anim-rect-210-0", "#anim-rect-210-1", "#anim-rect-210-2", "#anim-rect-210-3"], "props": {"fill": "var(--anim-array-idle)"}}]}</script><ol class="anim__array-steps-static"><li>compare index 0 and 1</li><li>swap index 0 and 1</li><li>highlight index 2</li></ol></div>
+<div class="anim anim--state-machine"><svg class="anim__state-machine" dir="ltr" width="410" height="258" viewBox="-185.9 -126.0 410.5 258.0"><path class="anim__state-track" fill="none" d="M 0.0 -76.0 C 48.0 -76.0, 81.3 -33.3, 75.5 10.0" marker-end="url(#anim-arrowhead-29)"></path><path class="anim__state-track" fill="none" d="M 65.8 38.0 C 43.7 76.3, -3.6 85.7, -37.9 66.0" marker-end="url(#anim-arrowhead-29)"></path><path class="anim__state-track" fill="none" d="M -65.8 38.0 C -79.4 14.5, -79.4 -14.5, -65.8 -38.0 C -62.5 -43.7, -58.5 -48.9, -54.0 -53.5" marker-end="url(#anim-arrowhead-29)"></path><g class="anim__state-marker"><circle id="anim-state-marker-29" class="anim__state-marker-dot" cx="0.0" cy="-76.0" r="7"></circle><circle id="anim-state-marker-29-glow" class="anim__state-marker-glow" cx="0.0" cy="-76.0" r="14"></circle></g><g class="anim__state-box"><rect class="anim__state-base" x="-48.0" y="-98.0" width="96.0" height="44" rx="10"></rect><rect class="anim__state-rect anim__visited" id="anim-state-rect-29-0" x="-48.0" y="-98.0" width="96.0" height="44" rx="10" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__state-name" x="0.0" y="-71.0" fill="var(--color-fg)">Ready</text><text class="anim__state-name anim__state-name-inverted" id="anim-state-text-29-0" x="0.0" y="-71.0" opacity="0" fill="var(--color-accent-contrast)">Ready</text></g><g class="anim__state-box"><rect class="anim__state-base" x="15.2" y="16.0" width="101.2" height="44" rx="10"></rect><rect class="anim__state-rect anim__visited" id="anim-state-rect-29-1" x="15.2" y="16.0" width="101.2" height="44" rx="10" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__state-name" x="65.8" y="43.0" fill="var(--color-fg)">Running</text><text class="anim__state-name anim__state-name-inverted" id="anim-state-text-29-1" x="65.8" y="43.0" opacity="0" fill="var(--color-accent-contrast)">Running</text></g><g class="anim__state-box"><rect class="anim__state-base" x="-116.4" y="16.0" width="101.2" height="44" rx="10"></rect><rect class="anim__state-rect anim__visited" id="anim-state-rect-29-2" x="-116.4" y="16.0" width="101.2" height="44" rx="10" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__state-name" x="-65.8" y="43.0" fill="var(--color-fg)">Waiting</text><text class="anim__state-name anim__state-name-inverted" id="anim-state-text-29-2" x="-65.8" y="43.0" opacity="0" fill="var(--color-accent-contrast)">Waiting</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-0" opacity="0"><rect class="anim__state-transition-label-bg" x="51.0" y="-80.5" width="145.6" height="18.0" rx="4"></rect><text class="anim__state-transition-label" x="123.8" y="-67.5">scheduler picks it</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-1" opacity="0"><rect class="anim__state-transition-label-bg" x="-54.8" y="86.0" width="109.6" height="18.0" rx="4"></rect><text class="anim__state-transition-label" x="0.0" y="99.0">blocks on I/O</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-2" opacity="0"><rect class="anim__state-transition-label-bg" x="-157.9" y="-68.5" width="109.6" height="18.0" rx="4"></rect><text class="anim__state-transition-label" x="-103.1" y="-55.5">I/O completes</text></g></svg><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 800, "steps": [{"targets": ["#anim-state-label-29-0"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29, #anim-state-marker-29-glow", "from": [0.0, -76.0], "to": [65.8, 38.0], "via1": [58.5, -76.0], "via2": [95.1, -12.7], "duration": 900, "ease": "inOutQuad", "position": null}, {"targets": ["#anim-state-rect-29-1"], "props": {"fillOpacity": [0, 1]}, "duration": 300, "position": "-=260"}, {"targets": ["#anim-state-text-29-1"], "props": {"opacity": [0, 1]}, "duration": 300, "position": "\u003c\u003c"}, {"targets": ["#anim-state-rect-29-1"], "props": {"fillOpacity": 0.14}, "duration": 500}, {"targets": ["#anim-state-text-29-1"], "props": {"opacity": 0}, "duration": 200, "position": "\u003c\u003c"}, {"targets": ["#anim-state-label-29-0"], "props": {"opacity": [1, 0]}, "duration": 200, "position": "\u003c\u003c"}, {"targets": ["#anim-state-label-29-1"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29, #anim-state-marker-29-glow", "from": [65.8, 38.0], "to": [-65.8, 38.0], "via1": [36.6, 88.7], "via2": [-36.6, 88.7], "duration": 900, "ease": "inOutQuad", "position": null}, {"targets": ["#anim-state-rect-29-2"], "props": {"fillOpacity": [0, 1]}, "duration": 300, "position": "-=260"}, {"targets": ["#anim-state-text-29-2"], "props": {"opacity": [0, 1]}, "duration": 300, "position": "\u003c\u003c"}, {"targets": ["#anim-state-rect-29-2"], "props": {"fillOpacity": 0.14}, "duration": 500}, {"targets": ["#anim-state-text-29-2"], "props": {"opacity": 0}, "duration": 200, "position": "\u003c\u003c"}, {"targets": ["#anim-state-label-29-1"], "props": {"opacity": [1, 0]}, "duration": 200, "position": "\u003c\u003c"}, {"targets": ["#anim-state-label-29-2"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29, #anim-state-marker-29-glow", "from": [-65.8, 38.0], "to": [-65.8, -38.0], "via1": [-79.4, 14.5], "via2": [-79.4, -14.5], "duration": 450, "ease": "inQuad", "position": null}, {"kind": "path-segment", "marker": "#anim-state-marker-29, #anim-state-marker-29-glow", "from": [-65.8, -38.0], "to": [-0.0, -76.0], "via1": [-52.2, -61.5], "via2": [-27.2, -76.0], "duration": 450, "ease": "outQuad", "position": null}, {"targets": ["#anim-state-rect-29-0"], "props": {"fillOpacity": [0, 1]}, "duration": 300, "position": "-=260"}, {"targets": ["#anim-state-text-29-0"], "props": {"opacity": [0, 1]}, "duration": 300, "position": "\u003c\u003c"}, {"targets": ["#anim-state-rect-29-0"], "props": {"fillOpacity": 0.14}, "duration": 500}, {"targets": ["#anim-state-text-29-0"], "props": {"opacity": 0}, "duration": 200, "position": "\u003c\u003c"}, {"targets": ["#anim-state-label-29-2"], "props": {"opacity": [1, 0]}, "duration": 200, "position": "\u003c\u003c"}, {"kind": "set", "targets": ["#anim-state-rect-29-0", "#anim-state-rect-29-1", "#anim-state-rect-29-2"], "props": {"fillOpacity": 0}}, {"kind": "set", "targets": ["#anim-state-text-29-0", "#anim-state-text-29-1", "#anim-state-text-29-2"], "props": {"opacity": 0}}, {"kind": "set", "targets": ["#anim-state-label-29-0", "#anim-state-label-29-1", "#anim-state-label-29-2"], "props": {"opacity": 0}}]}</script><ol class="anim__state-steps-static"><li>Ready — scheduler picks it — Running</li><li>Running — blocks on I/O — Waiting</li><li>Waiting — I/O completes — Ready</li></ol></div>
+<div class="anim anim--compare"><svg class="anim__compare" dir="ltr" width="663.2" height="160" viewBox="0 0 663.2 160"><text class="anim__cmp-heading" x="164.8" y="26" text-anchor="middle">First-come, first-served</text><text class="anim__cmp-heading" x="498.4" y="26" text-anchor="middle">Round robin</text><line class="anim__cmp-divider" x1="331.6" y1="12" x2="331.6" y2="148"></line><g class="anim__cmp-row"><rect class="anim__cmp-box" id="anim-cmp-left-210-0" x="12" y="36" width="305.6" height="52" rx="8"></rect><rect class="anim__cmp-box anim__cmp-box-active" id="anim-cmp-left-active-210-0" x="12" y="36" width="305.6" height="52" rx="8" fill="var(--anim-cmp-active)" opacity="0"></rect><text class="anim__cmp-text" x="164.8" y="66" text-anchor="middle" fill="var(--color-fg)">A long job blocks everything behind it</text><text class="anim__cmp-text anim__text-on-accent" id="anim-cmp-left-inverted-210-0" x="164.8" y="66" text-anchor="middle" opacity="0">A long job blocks everything behind it</text><rect class="anim__cmp-box" id="anim-cmp-right-210-0" x="345.6" y="36" width="305.6" height="52" rx="8"></rect><rect class="anim__cmp-box anim__cmp-box-active" id="anim-cmp-right-active-210-0" x="345.6" y="36" width="305.6" height="52" rx="8" fill="var(--anim-cmp-active)" opacity="0"></rect><text class="anim__cmp-text" x="498.4" y="66" text-anchor="middle" fill="var(--color-fg)">Each job gets a fixed slice</text><text class="anim__cmp-text anim__text-on-accent" id="anim-cmp-right-inverted-210-0" x="498.4" y="66" text-anchor="middle" opacity="0">Each job gets a fixed slice</text></g><g class="anim__cmp-row"><rect class="anim__cmp-box" id="anim-cmp-left-210-1" x="12" y="96" width="305.6" height="52" rx="8"></rect><rect class="anim__cmp-box anim__cmp-box-active" id="anim-cmp-left-active-210-1" x="12" y="96" width="305.6" height="52" rx="8" fill="var(--anim-cmp-active)" opacity="0"></rect><text class="anim__cmp-text" x="164.8" y="126" text-anchor="middle" fill="var(--color-fg)">Short jobs wait for the whole queue</text><text class="anim__cmp-text anim__text-on-accent" id="anim-cmp-left-inverted-210-1" x="164.8" y="126" text-anchor="middle" opacity="0">Short jobs wait for the whole queue</text><rect class="anim__cmp-box" id="anim-cmp-right-210-1" x="345.6" y="96" width="305.6" height="52" rx="8"></rect><rect class="anim__cmp-box anim__cmp-box-active" id="anim-cmp-right-active-210-1" x="345.6" y="96" width="305.6" height="52" rx="8" fill="var(--anim-cmp-active)" opacity="0"></rect><text class="anim__cmp-text" x="498.4" y="126" text-anchor="middle" fill="var(--color-fg)">Short jobs finish early</text><text class="anim__cmp-text anim__text-on-accent" id="anim-cmp-right-inverted-210-1" x="498.4" y="126" text-anchor="middle" opacity="0">Short jobs finish early</text></g></svg><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 400, "steps": [{"targets": ["#anim-cmp-left-active-210-0", "#anim-cmp-left-inverted-210-0", "#anim-cmp-right-active-210-0", "#anim-cmp-right-inverted-210-0"], "props": {"opacity": [0, 1]}, "duration": 350, "ease": "outQuad"}, {"targets": ["#anim-cmp-left-active-210-0", "#anim-cmp-left-inverted-210-0", "#anim-cmp-right-active-210-0", "#anim-cmp-right-inverted-210-0"], "props": {"opacity": 1}, "duration": 500}, {"targets": ["#anim-cmp-left-active-210-0", "#anim-cmp-left-inverted-210-0", "#anim-cmp-right-active-210-0", "#anim-cmp-right-inverted-210-0"], "props": {"opacity": 0}, "duration": 350, "ease": "outQuad"}, {"targets": ["#anim-cmp-left-active-210-0", "#anim-cmp-left-inverted-210-0", "#anim-cmp-right-active-210-0", "#anim-cmp-right-inverted-210-0"], "props": {"opacity": 0}, "duration": 500}, {"targets": ["#anim-cmp-left-active-210-1", "#anim-cmp-left-inverted-210-1", "#anim-cmp-right-active-210-1", "#anim-cmp-right-inverted-210-1"], "props": {"opacity": [0, 1]}, "duration": 350, "ease": "outQuad"}, {"targets": ["#anim-cmp-left-active-210-1", "#anim-cmp-left-inverted-210-1", "#anim-cmp-right-active-210-1", "#anim-cmp-right-inverted-210-1"], "props": {"opacity": 1}, "duration": 500}, {"targets": ["#anim-cmp-left-active-210-1", "#anim-cmp-left-inverted-210-1", "#anim-cmp-right-active-210-1", "#anim-cmp-right-inverted-210-1"], "props": {"opacity": 0}, "duration": 350, "ease": "outQuad"}, {"targets": ["#anim-cmp-left-active-210-1", "#anim-cmp-left-inverted-210-1", "#anim-cmp-right-active-210-1", "#anim-cmp-right-inverted-210-1"], "props": {"opacity": 0}, "duration": 500}, {"kind": "set", "targets": ["#anim-cmp-left-active-210-0", "#anim-cmp-left-active-210-1", "#anim-cmp-right-active-210-0", "#anim-cmp-right-active-210-1", "#anim-cmp-left-inverted-210-0", "#anim-cmp-left-inverted-210-1", "#anim-cmp-right-inverted-210-0", "#anim-cmp-right-inverted-210-1"], "props": {"opacity": 0}}]}</script><ol class="anim__cmp-static"><li>A long job blocks everything behind it — Each job gets a fixed slice</li><li>Short jobs wait for the whole queue — Short jobs finish early</li></ol></div>
 <details class="quiz" data-quiz="round-robin-q1" open>
 <summary class="quiz__q">Halving the quantum on an interactive system usually has which effect?</summary>
 <ol class="quiz__options">
@@ -1251,22 +1279,18 @@ var anime=function(t){"use strict";const e="undefined"!=typeof window,s=e?window
       } catch (err) {
         return; // malformed data island: leave the static fallback visible
       }
-      var animId = island.getAttribute("data-anim-id");
-      var caption = animId
-        ? document.querySelector('.anim__caption[data-anim-id="' + animId + '"]')
-        : null;
       var tl = anime.createTimeline({ loop: !!data.loop, loopDelay: data.loopDelay || 0 });
       (data.steps || []).forEach(function (step) {
         // A plain {x, y} state object is tweened rather than the marker's cx/cy
-        // directly (anime.js CAN animate SVG attributes) because the trail is not
-        // a tween at all: its "d" must ACCUMULATE an "L x,y" command per frame, so
-        // onUpdate needs the live interpolated coordinates as numbers. Reading them
-        // off a state object gives both the marker position and the trail growth
-        // from a single animation.
+        // directly (anime.js CAN animate SVG attributes) because onUpdate needs
+        // the live interpolated coordinates as numbers: a curved segment derives
+        // the marker's position from a cubic Bezier evaluated at t, which is not
+        // expressible as a direct attribute tween.
         if (step.kind === "path-segment") {
-          var marker = document.querySelector(step.marker);
-          var trail = step.trail ? document.querySelector(step.trail) : null;
-          var stepCaption = step.caption;
+          // querySelectorAll, not querySelector: a marker may be several stacked
+          // circles (a dot plus a halo) that must travel together. One selector
+          // moving all of them keeps the step contract to a single "marker" key.
+          var markers = document.querySelectorAll(step.marker);
           var fromX = step.from[0];
           var fromY = step.from[1];
           var toX = step.to[0];
@@ -1275,10 +1299,9 @@ var anime=function(t){"use strict";const e="undefined"!=typeof window,s=e?window
           // cubic Bezier arcing above the row) carries the SAME two control
           // points its <path>'s "C x1 y1, x2 y2, x y" already uses, so the
           // traveling marker visibly follows the drawn arc instead of cutting a
-          // straight line underneath it. Every other segment (path-trace, and
-          // state-machine's own forward transitions) has no "via" and keeps the
-          // original plain linear x/y tween -- unchanged from before curves
-          // existed, since a straight segment's Bezier-with-zero-curvature form
+          // straight line underneath it. Every other segment (state-machine's
+          // own forward transitions) has no "via" and keeps the plain linear
+          // x/y tween: a straight segment's Bezier-with-zero-curvature form
           // would be equivalent but is needless extra math for the common case.
           var via1 = step.via1;
           var via2 = step.via2;
@@ -1304,7 +1327,6 @@ var anime=function(t){"use strict";const e="undefined"!=typeof window,s=e?window
                 state.x = fromX;
                 state.y = fromY;
               }
-              if (stepCaption && caption) { caption.textContent = stepCaption; }
             },
             onUpdate: function () {
               var x, y;
@@ -1316,12 +1338,9 @@ var anime=function(t){"use strict";const e="undefined"!=typeof window,s=e?window
                 x = state.x;
                 y = state.y;
               }
-              if (marker) {
-                marker.setAttribute("cx", x);
-                marker.setAttribute("cy", y);
-              }
-              if (trail) {
-                trail.setAttribute("d", trail.getAttribute("d") + " L " + x + "," + y);
+              for (var m = 0; m < markers.length; m++) {
+                markers[m].setAttribute("cx", x);
+                markers[m].setAttribute("cy", y);
               }
             },
           };
@@ -1338,15 +1357,14 @@ var anime=function(t){"use strict";const e="undefined"!=typeof window,s=e?window
           }
           return;
         }
-        // Instant attribute write for a non-interpolatable value: the trail's "d"
-        // is a path-data string ("M 0,10"), so it is assigned outright rather than
+        // Instant attribute write for a value anime.js cannot interpolate --
+        // a path-data string ("M 0,10"), say -- assigned outright rather than
         // routed through tl.set()'s tween machinery.
         //
         // It must be SCHEDULED on the timeline (a zero-duration step whose onBegin
-        // does the write), not executed here during wiring. Writing it inline would
-        // run it exactly once at page load, so on a looping timeline the trail's
-        // "d" -- which grows by one "L x,y" per frame -- would never rewind and
-        // would instead accumulate without bound across every lap.
+        // does the write), not executed here during wiring: writing it inline would
+        // run it exactly once at page load, so on a looping timeline the value
+        // would never be re-applied on the second and later laps.
         if (step.kind === "set-attr") {
           var attrTargets = step.targets || [];
           var attrProps = step.props || {};
@@ -1368,9 +1386,6 @@ var anime=function(t){"use strict";const e="undefined"!=typeof window,s=e?window
         Object.keys(step.props || {}).forEach(function (key) { props[key] = step.props[key]; });
         if (step.duration != null) { props.duration = step.duration; }
         if (step.ease) { props.ease = step.ease; }
-        if (step.caption && caption) {
-          props.onBegin = function () { caption.textContent = step.caption; };
-        }
         if (step.kind === "set") {
           tl.set(step.targets, props);
         } else if (step.position) {

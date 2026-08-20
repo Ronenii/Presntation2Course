@@ -655,6 +655,39 @@ If the element also needs to *scale* in place, add
 transforms around the SVG viewport's `(0,0)` origin (not the element's own visual
 center), which throws it toward/past the edge of the viewBox on any noticeable scale.
 
+### SVG has no `z-index` — a travelling marker drawn last covers every label it passes
+
+A classic "token flows through the pipeline" animation puts a moving `<circle>` on a
+connector between cards. If that circle is appended to the SVG **after** the cards, it
+paints **on top of them**, so it sits over each card's title/description text as it
+passes — the animation reads as a dot smearing across the words instead of a token
+sliding behind the card. `z-index` does not fix this: it has no effect on SVG elements.
+**Document order IS paint order**, and it is the only control you have.
+
+```javascript
+// WRONG: marker emitted after the boxes -> it paints over their text
+svg += connectorLines + boxesWithLabels;
+svg += '<circle class="token" .../>';       // covers every label it travels over
+
+// RIGHT: structure first, marker next, boxes last -> the boxes' opaque fill
+// occludes the marker, so it reads as passing BEHIND each card
+svg += connectorLines;
+svg += '<circle class="token" .../>';
+svg += boxesWithLabels;                     // painted last = on top of the token
+```
+
+Two things make this fail even with the right order:
+
+1. **The card must be opaque.** If the box `<rect>` is semi-transparent (a reveal that
+   starts at `opacity: .25`, or a `fill` with alpha), the marker ghosts through it. When
+   the boxes fade in as the marker advances, make each box reach full opacity *before*
+   the marker arrives at it, not after.
+2. **A label that must stay readable goes after everything**, including the marker and
+   the boxes — authored prose is not diagram structure, and it should never be occluded.
+
+The general rule for this family of diagrams: **connectors → travelling marker → boxes →
+labels.**
+
 ### Absolute (non-returning) keyframe values compound across `loop: true`
 
 `.add(target, { translateX: 54 })` animates *to* `54` starting from whatever the

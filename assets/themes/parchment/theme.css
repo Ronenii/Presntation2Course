@@ -28,6 +28,7 @@
     --color-border: #362e26;
     --color-accent: #d99a55;
     --color-accent-contrast: #191512;
+    --anim-visited-strength: .18;
     --color-analogy: #b79ae0;
     --color-prereq: #78bd8c;
     --color-warn: #e0a860;
@@ -47,6 +48,7 @@
   --color-border: #362e26;
   --color-accent: #d99a55;
   --color-accent-contrast: #191512;
+  --anim-visited-strength: .18;
   --color-analogy: #b79ae0;
   --color-prereq: #78bd8c;
   --color-warn: #e0a860;

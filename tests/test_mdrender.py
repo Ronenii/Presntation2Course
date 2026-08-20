@@ -18,14 +18,18 @@ from p2c.mdrender import (
     _STATE_LABEL_CHIP_PAD_X,
     _XFORM_BOX_HEIGHT,
     _XFORM_BOX_WIDTH,
-    _XFORM_GAP,
-    _XFORM_STEP_BG_HEIGHT,
+    _XFORM_RUNG_GAP,
     _XFORM_TOP_MARGIN,
+    _state_machine_html,
     Animate,
     AnimateError,
     FigureError,
+    _animate_html,
+    _build_up_html,
+    _compare_html,
     _layer_stack_html,
     _pipeline_html,
+    _split_merge_html,
     _transform_html,
     mermaid_problem,
     parse_animate,
@@ -205,7 +209,7 @@ def test_mermaid_blocks_become_divs_and_set_the_flag():
 def test_an_animate_block_sets_the_uses_animate_flag():
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: state-toggle\nbefore: Ready\nafter: Running\n```\n\n'
+        '```animate\npattern: pipeline\nstages:\n  - Ready: waiting\n  - Running: executing\n```\n\n'
         '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
         '```glossary\nTLB: definition\n```\n'
     )
@@ -500,16 +504,17 @@ def test_parse_animate_state_machine_with_a_trailing_back_edge():
     )
 
 
-def test_parse_animate_state_toggle():
-    anim = parse_animate(
-        "pattern: state-toggle\nbefore: Marked Shared\nafter: Marked Modified"
-    )
-    assert anim == Animate(pattern="state-toggle", before="Marked Shared", after="Marked Modified")
-
-
 def test_parse_animate_rejects_an_unknown_pattern():
     with pytest.raises(AnimateError, match="animate pattern must be"):
         parse_animate("pattern: spin\nstates:\n  - a\n  - b")
+
+
+def test_removed_patterns_are_rejected():
+    for pattern in ("array-ops", "path-trace"):
+        with pytest.raises(AnimateError, match="animate pattern must be"):
+            parse_animate(
+                f"pattern: {pattern}\narray:\n  - 1\n  - 2\nops:\n  - swap 0 1\n"
+            )
 
 
 def test_parse_animate_rejects_a_state_machine_with_one_state():
@@ -584,11 +589,24 @@ def test_parse_animate_state_machine_rejects_a_malformed_transition_line():
         )
 
 
-def test_parse_animate_state_machine_rejects_array_and_points_fields():
+def test_parse_animate_state_machine_rejects_a_stray_before_key():
     with pytest.raises(
         AnimateError,
-        match="state-machine does not use 'before:'/'after:'/'array:'/'ops:'/'points:'/'caption:'",
+        match="state-machine does not use 'before:'/'after:'/'caption:'",
     ):
+        parse_animate(
+            "pattern: state-machine\nstates:\n  - A\n  - B\n"
+            "transitions:\n  - A -> B: go\nbefore: something\n"
+        )
+
+
+def test_a_removed_patterns_key_is_no_longer_a_list_header():
+    """`array:`/`ops:`/`points:` died with array-ops and path-trace, so they are
+    not list headers any more. A block still carrying one is rejected as an
+    unrecognised line rather than by a pattern's cross-key guard -- different
+    message, same outcome: it never parses and never gets silently discarded.
+    """
+    with pytest.raises(AnimateError, match="unrecognised line in animate block"):
         parse_animate(
             "pattern: state-machine\nstates:\n  - A\n  - B\n"
             "transitions:\n  - A -> B: go\narray:\n  - 1\n"
@@ -607,91 +625,6 @@ def test_parse_animate_state_machine_rejects_a_stray_stages_key():
         parse_animate(
             "pattern: state-machine\nstates:\n  - A\n  - B\n"
             "transitions:\n  - A -> B: go\nstages:\n  - X: y\n"
-        )
-
-
-def test_parse_animate_rejects_a_state_toggle_missing_after():
-    with pytest.raises(AnimateError, match="needs both 'before:' and 'after:'"):
-        parse_animate("pattern: state-toggle\nbefore: only before")
-
-
-def test_parse_animate_state_toggle_rejects_a_stray_layers_key():
-    with pytest.raises(AnimateError, match="state-toggle does not use"):
-        parse_animate(
-            "pattern: state-toggle\nbefore: Shared\nafter: Modified\n"
-            "layers:\n  - X: y\n"
-        )
-
-
-def test_parse_animate_array_ops():
-    anim = parse_animate(
-        "pattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\n  - 1\n"
-        "ops:\n  - compare 0 1\n  - swap 0 1\n  - highlight 2"
-    )
-    assert anim == Animate(
-        pattern="array-ops",
-        array=[5, 3, 8, 1],
-        ops=[("compare", 0, 1), ("swap", 0, 1), ("highlight", 2, None)],
-    )
-
-
-def test_parse_animate_array_ops_rejects_too_few_values():
-    with pytest.raises(AnimateError, match="at least 2 array values"):
-        parse_animate("pattern: array-ops\narray:\n  - 5\nops:\n  - highlight 0")
-
-
-def test_parse_animate_array_ops_rejects_a_non_integer_value():
-    with pytest.raises(AnimateError, match="array item 'five' is not an integer"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - five\n  - 3\nops:\n  - highlight 0"
-        )
-
-
-def test_parse_animate_array_ops_rejects_no_ops():
-    with pytest.raises(AnimateError, match="at least one op"):
-        parse_animate("pattern: array-ops\narray:\n  - 1\n  - 2\nops:")
-
-
-def test_parse_animate_array_ops_rejects_a_malformed_op():
-    with pytest.raises(AnimateError, match="invalid array-ops operation: 'flip 0'"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - flip 0"
-        )
-
-
-def test_parse_animate_array_ops_rejects_compare_with_one_index():
-    with pytest.raises(AnimateError, match="invalid array-ops operation: 'compare 0'"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - compare 0"
-        )
-
-
-def test_parse_animate_array_ops_rejects_highlight_with_two_indices():
-    with pytest.raises(AnimateError, match="invalid array-ops operation: 'highlight 0 1'"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 0 1"
-        )
-
-
-def test_parse_animate_array_ops_rejects_an_out_of_range_index():
-    with pytest.raises(AnimateError, match=r"index 2 out of range for array of length 2"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 2"
-        )
-
-
-def test_parse_animate_array_ops_rejects_before_after():
-    with pytest.raises(AnimateError, match="array-ops does not use 'before:'/'after:'"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 0\nbefore: x"
-        )
-
-
-def test_parse_animate_array_ops_rejects_a_stray_steps_key():
-    with pytest.raises(AnimateError, match="array-ops does not use"):
-        parse_animate(
-            "pattern: array-ops\narray:\n  - 1\n  - 2\nops:\n  - highlight 0\n"
-            "steps:\n  - a step\n"
         )
 
 
@@ -731,16 +664,16 @@ def test_pipeline_rejects_keys_from_other_patterns():
     with pytest.raises(AnimateError, match="does not use"):
         parse_animate(
             "pattern: pipeline\nstages:\n  - A: does a\n  - B: does b\n"
-            "points:\n  - 0, 1\n"
+            "layers:\n  - X: adds x\n"
         )
 
 
 def test_pipeline_rejects_caption():
-    """Settled convention (verified across all seven patterns): a pattern that
-    does not RENDER a caption REJECTS it -- state-machine/state-toggle/array-ops
-    all reject it already; only path-trace renders and accepts it. pipeline
-    never renders anim.caption (see _pipeline_html), so it must reject the key
-    rather than silently accept-and-discard it.
+    """Settled convention: a pattern that does not RENDER a caption REJECTS it.
+    path-trace was the only pattern that ever rendered one, and it is gone, so
+    no surviving pattern accepts `caption:`. pipeline never renders
+    anim.caption (see _pipeline_html), so it must reject the key rather than
+    silently accept-and-discard it.
     """
     with pytest.raises(AnimateError, match="does not use"):
         parse_animate(
@@ -839,10 +772,6 @@ def test_pipeline_box_width_grows_to_fit_a_long_stage_description():
     assert all(w >= estimated_text_width for w in widths), (
         widths, estimated_text_width,
     )
-
-
-def test_xform_step_bg_height_is_divisible_by_four():
-    assert _XFORM_STEP_BG_HEIGHT % 4 == 0
 
 
 def test_layer_stack_parses_layers_bottom_up_and_defaults_direction_up():
@@ -1065,8 +994,247 @@ def test_transform_timeline_resets_animated_properties():
 
 
 def test_transform_constants_are_divisible_by_four():
-    for value in (_XFORM_BOX_WIDTH, _XFORM_BOX_HEIGHT, _XFORM_GAP, _XFORM_TOP_MARGIN):
+    for value in (_XFORM_BOX_WIDTH, _XFORM_BOX_HEIGHT, _XFORM_RUNG_GAP, _XFORM_TOP_MARGIN):
         assert value % 4 == 0
+
+
+def _xf():
+    return parse_animate(
+        "pattern: transform\nfrom: Latin aqua\nto: French eau\n"
+        "steps:\n  - Intervocalic weakening\n  - Loss of the final vowel\n  - Vowel fronting\n"
+    )
+
+
+def test_transform_steps_accumulate_rather_than_replace():
+    """The old renderer flashed one step label on and off in a single fixed
+    position over a horizontal connector, so only ever one was visible and the
+    sequence itself -- the whole teaching point -- could never be seen at once.
+    The redesign lands each step as its own rung on a vertical spine and never
+    fades it back out: no non-`set` step may animate a step group's opacity
+    down to 0.
+    """
+    out = _transform_html(_xf(), "ANIMTOKEN1")
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    fades = [
+        s for s in data["steps"]
+        if s.get("kind") != "set"
+        and "step" in str(s.get("targets"))
+        and (s.get("props") or {}).get("opacity") == 0
+    ]
+    assert fades == []
+
+
+def test_transform_every_step_has_its_own_position():
+    out = _transform_html(_xf(), "ANIMTOKEN1")
+    ys = re.findall(r'anim__xform-step[^>]*\bcy="([\d.]+)"', out)
+    assert len(set(ys)) == 3, "each rung must sit at its own height on the spine"
+
+
+def test_transform_result_text_inverts_on_accent():
+    """The result box fills with the accent once every rung has landed, so its
+    label must invert to stay legible (--color-fg on solid accent measures
+    1.82:1-3.83:1 across the themes, below the 4.5:1 floor). Per the
+    anim__text-on-accent convention used everywhere else in this file, that is
+    a stacked, pre-inverted <text> whose OPACITY the timeline animates -- never
+    a `fill` tween between two var() tokens, which animejs's colour detector
+    cannot interpolate.
+    """
+    out = _transform_html(_xf(), "ANIMTOKEN1")
+    assert "anim__text-on-accent" in out
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    inverts = [
+        s for s in data["steps"]
+        if "opacity" in (s.get("props") or {})
+        and "inverted" in str(s.get("targets"))
+    ]
+    assert inverts, "the result box fills with accent, so its text must invert"
+
+
+def test_transform_resets_every_animated_property():
+    out = _transform_html(_xf(), "ANIMTOKEN1")
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    animated = {p for s in data["steps"] if s.get("kind") != "set"
+                for p in (s.get("props") or {})}
+    reset = {p for s in data["steps"] if s.get("kind") == "set"
+             for p in (s.get("props") or {})}
+    assert animated <= reset
+
+
+def test_build_up_parses_whole_and_parts():
+    anim = parse_animate(
+        "pattern: build-up\nwhole: A valid syllogism\n"
+        "parts:\n  - Major premise: all men are mortal\n"
+        "  - Minor premise: Socrates is a man\n"
+        "  - Conclusion: Socrates is mortal\n"
+    )
+    assert anim.whole == "A valid syllogism"
+    assert anim.parts[0] == ("Major premise", "all men are mortal")
+    assert len(anim.parts) == 3
+
+
+def test_build_up_rejects_bad_part_counts():
+    with pytest.raises(AnimateError, match="at least 2 parts"):
+        parse_animate("pattern: build-up\nwhole: W\nparts:\n  - Only: one\n")
+    body = "pattern: build-up\nwhole: W\nparts:\n" + "".join(
+        f"  - P{i}: does {i}\n" for i in range(7)
+    )
+    with pytest.raises(AnimateError, match="at most 6 parts"):
+        parse_animate(body)
+
+
+def test_build_up_requires_whole():
+    with pytest.raises(AnimateError, match="needs 'whole:'"):
+        parse_animate("pattern: build-up\nparts:\n  - A: a\n  - B: b\n")
+
+
+def test_build_up_rejects_keys_it_does_not_use():
+    for stray in ("caption: c", "direction: up", "from: X"):
+        with pytest.raises(AnimateError, match="does not use"):
+            parse_animate(
+                f"pattern: build-up\nwhole: W\nparts:\n  - A: a\n  - B: b\n{stray}\n"
+            )
+
+
+def test_build_up_parts_settle_and_stay():
+    anim = parse_animate(
+        "pattern: build-up\nwhole: W\nparts:\n  - A: a\n  - B: b\n  - C: c\n"
+    )
+    out = _build_up_html(anim, "ANIMTOKEN1")
+    assert 'dir="ltr"' in out
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    assert any("fillOpacity" in str(k) for s in data["steps"]
+               for k in (s.get("props") or {}))
+    animated = {p for s in data["steps"] if s.get("kind") != "set"
+                for p in (s.get("props") or {})}
+    reset = {p for s in data["steps"] if s.get("kind") == "set"
+             for p in (s.get("props") or {})}
+    assert animated <= reset
+
+
+def test_compare_parses_two_tracks():
+    anim = parse_animate(
+        "pattern: compare\nleft: First-come\nright: Round robin\n"
+        "steps:\n  - A long job blocks the queue | Each job gets a slice\n"
+        "  - Short jobs wait | Short jobs finish early\n"
+    )
+    assert anim.left == "First-come"
+    assert anim.right == "Round robin"
+    assert anim.rows[0] == ("A long job blocks the queue", "Each job gets a slice")
+
+
+def test_compare_requires_both_sides_of_every_row():
+    with pytest.raises(AnimateError, match="must be written as"):
+        parse_animate(
+            "pattern: compare\nleft: L\nright: R\nsteps:\n  - only one side\n"
+        )
+
+
+def test_compare_requires_both_headers():
+    with pytest.raises(AnimateError, match="needs both 'left:' and 'right:'"):
+        parse_animate("pattern: compare\nleft: L\nsteps:\n  - a | b\n")
+
+
+def test_compare_rejects_bad_row_counts():
+    with pytest.raises(AnimateError, match="at least 1 step"):
+        parse_animate("pattern: compare\nleft: L\nright: R\n")
+    body = "pattern: compare\nleft: L\nright: R\nsteps:\n" + "".join(
+        f"  - l{i} | r{i}\n" for i in range(6)
+    )
+    with pytest.raises(AnimateError, match="at most 5 steps"):
+        parse_animate(body)
+
+
+def test_compare_inverts_text_on_the_accent_flash():
+    anim = parse_animate(
+        "pattern: compare\nleft: L\nright: R\nsteps:\n  - a | b\n  - c | d\n"
+    )
+    out = _compare_html(anim, "ANIMTOKEN1")
+    assert 'dir="ltr"' in out
+    assert "anim__text-on-accent" in out
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    inverts = [
+        s for s in data["steps"]
+        if "opacity" in (s.get("props") or {}) and "inverted" in str(s.get("targets"))
+    ]
+    assert inverts
+
+
+def test_compare_resets_every_animated_property():
+    anim = parse_animate(
+        "pattern: compare\nleft: L\nright: R\nsteps:\n  - a | b\n  - c | d\n"
+    )
+    out = _compare_html(anim, "ANIMTOKEN1")
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    animated = {p for s in data["steps"] if s.get("kind") != "set"
+                for p in (s.get("props") or {})}
+    reset = {p for s in data["steps"] if s.get("kind") == "set"
+             for p in (s.get("props") or {})}
+    assert animated <= reset
+
+
+def _sm2():
+    return parse_animate(
+        "pattern: split-merge\nsource: Proof by cases\n"
+        "branches:\n  - Case n even: divide by two\n  - Case n odd: apply 3n + 1\n"
+        "merged: Both cases reach 1\n"
+    )
+
+
+def test_split_merge_parses_source_branches_and_merge():
+    anim = _sm2()
+    assert anim.source == "Proof by cases"
+    assert anim.merged == "Both cases reach 1"
+    assert anim.branches[0] == ("Case n even", "divide by two")
+
+
+def test_split_merge_requires_source_and_merged():
+    with pytest.raises(AnimateError, match="needs both 'source:' and 'merged:'"):
+        parse_animate(
+            "pattern: split-merge\nsource: S\nbranches:\n  - A: a\n  - B: b\n"
+        )
+
+
+def test_split_merge_rejects_bad_branch_counts():
+    with pytest.raises(AnimateError, match="at least 2 branches"):
+        parse_animate(
+            "pattern: split-merge\nsource: S\nmerged: M\nbranches:\n  - A: a\n"
+        )
+    body = ("pattern: split-merge\nsource: S\nmerged: M\nbranches:\n"
+            + "".join(f"  - B{i}: does {i}\n" for i in range(5)))
+    with pytest.raises(AnimateError, match="at most 4 branches"):
+        parse_animate(body)
+
+
+def test_split_merge_renders_and_resets():
+    out = _split_merge_html(_sm2(), "ANIMTOKEN1")
+    assert 'dir="ltr"' in out
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    animated = {p for s in data["steps"] if s.get("kind") != "set"
+                for p in (s.get("props") or {})}
+    reset = {p for s in data["steps"] if s.get("kind") == "set"
+             for p in (s.get("props") or {})}
+    assert animated <= reset
+    # the merged box goes solid accent, so its label must invert
+    assert "anim__text-on-accent" in out
+    inverts = [
+        s for s in data["steps"]
+        if "opacity" in (s.get("props") or {}) and "inverted" in str(s.get("targets"))
+    ]
+    assert inverts
 
 
 @pytest.mark.parametrize(
@@ -1076,19 +1244,20 @@ def test_transform_constants_are_divisible_by_four():
         # state-machine is deliberately absent too: like the old step-reveal, its
         # transitions play sequentially by design (see
         # test_state_machine_transitions_play_sequentially_not_all_at_once in
-        # this file), so it emits no "<" position for THIS test to check the
-        # escaping of -- its "<" coverage comes from array-ops below instead.
-        'pattern: state-toggle\nbefore: Shared\nafter: Modified',
-        'pattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\nops:\n  - compare 0 1\n  - swap 0 1',
+        # this file), so it emits no "<<" position for THIS test to check the
+        # escaping of.
+        'pattern: pipeline\nstages:\n  - Fetch: read\n  - Decode: parse\n',
     ],
 )
 def test_timeline_island_position_tokens_are_not_html_escaped(block):
     """A <script> is an HTML *raw text* element, so character references inside it
     are never decoded. html.escape()-ing the island would hand JSON.parse the four
     literal characters "&lt;" instead of "<", turning anime.js's
-    "start with the previous step" position token into an unrecognized string and
-    silently making parallel steps play sequentially. The island must therefore
-    contain no "&lt;", and every position that means "<" must parse back to "<".
+    "start together with the previous step" position token ("<<" -- a bare "<"
+    means "start after the previous step ENDS", not alongside it) into an
+    unrecognized string and silently making parallel steps play sequentially.
+    The island must therefore contain no "&lt;", and every position that means
+    "<<" must parse back to "<<".
     """
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
@@ -1110,10 +1279,10 @@ def test_timeline_island_position_tokens_are_not_html_escaped(block):
     # sequence that would break out of the island.
     assert "<" not in raw
     positions = [s.get("position") for s in json.loads(raw)["steps"]]
-    assert "<" in positions, positions
+    assert "<<" in positions, positions
 
 
-def test_state_machine_renders_boxes_arrows_and_a_timeline_island():
+def test_state_machine_renders_boxes_track_arcs_and_a_timeline_island():
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
         '```animate\npattern: state-machine\nstates:\n  - Ready\n  - Running\n  - Done\n'
@@ -1128,8 +1297,8 @@ def test_state_machine_renders_boxes_arrows_and_a_timeline_island():
     assert '>Ready<' in rendered.html_body
     assert '>Running<' in rendered.html_body
     assert '>Done<' in rendered.html_body
-    # Two static arrows (one per transition) -- always visible, not hidden.
-    assert rendered.html_body.count('class="anim__state-arrow"') == 2
+    # Two drawn track arcs (one per transition) -- always visible, not hidden.
+    assert rendered.html_body.count('class="anim__state-track"') == 2
     # Two transition-label texts, both initially hidden (opacity driven to 0 by
     # CSS default, not inline -- see the CSS assertions below); their TEXT must
     # already be present in the markup (for reduced-motion/print and for the
@@ -1196,9 +1365,19 @@ def test_state_machine_with_a_back_edge_animates_it_as_a_real_transition():
     )
     steps = json.loads(match.group(1))["steps"]
     marker_travels = [s for s in steps if s.get("kind") == "path-segment"]
-    # Both transitions (A->B and the authored B->A back-edge) are real,
-    # animated marker travels -- exactly 2, not 1 plus an invisible reset.
-    assert len(marker_travels) == 2
+    # Both transitions (A->B and the authored B->A back-edge) are real, animated
+    # marker travels -- not one travel plus an invisible reset. A wide sweep is
+    # split into several cubics, so assert on the journey the steps describe
+    # rather than on their count: the marker must start at A, reach B, and come
+    # back to A entirely through animated segments.
+    assert len(marker_travels) >= 2
+    for previous, following in zip(marker_travels, marker_travels[1:]):
+        assert previous["to"] == following["from"], "marker teleports between segments"
+    assert marker_travels[0]["from"] == marker_travels[-1]["to"], (
+        "a cycle's marker must end the lap where it began"
+    )
+    waypoints = [tuple(s["from"]) for s in marker_travels] + [tuple(marker_travels[-1]["to"])]
+    assert len(set(waypoints)) >= 2, "marker never actually leaves its starting state"
     # No trailing invisible "kind": "set" reset of the marker's position back to
     # state A's box -- that reset only happens when there is NO authored
     # back-edge (see test_state_machine_without_a_back_edge_resets_invisibly).
@@ -1240,12 +1419,13 @@ def test_state_machine_without_a_back_edge_resets_invisibly():
 
 
 def test_state_machine_box_highlight_targets_the_rect_not_the_group():
-    """The only visible shape in a state box is its child <rect>; animating `fill`
-    on the wrapping <g> never reaches a rendered pixel (the rect carries its own
-    fill). Every fill-animating step -- arrival highlight, settle-back-to-idle,
-    and both trailing kind:"set" resets -- must therefore target the RECT ids
-    (anim-state-rect-*), never the group ids (anim-state-box-*). Mirrors
-    _array_ops_html, which already targets its rect_ids for exactly this reason.
+    """A state box is a <g> wrapping a <rect> and two <text> elements, and every
+    child carries its own `fill` attribute. Animating `fill` on the wrapping <g>
+    never reaches a rendered pixel, because a child's own fill outranks anything
+    inherited from the group. Every fill-animating step -- the arrival highlight
+    and settle-back-to-idle -- must therefore target a rect id, never a group id
+    (anim-state-box-*). (The label inversion no longer animates `fill` at all;
+    see test_state_machine_inverts_active_label_text_and_restores_it for why.)
     """
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
@@ -1256,9 +1436,11 @@ def test_state_machine_box_highlight_targets_the_rect_not_the_group():
     )
     rendered = render_course(md)
     assert rendered.errors == []
-    # The rect carries the idle fill as its own attribute (array-ops's convention),
-    # so it renders correctly before JS runs and under reduced-motion/print.
-    assert 'fill="var(--anim-state-idle)"' in rendered.html_body
+    # The wash rect carries its fill and a zero fill-opacity as its own
+    # attributes, so it renders correctly (fully idle) before JS runs and under
+    # reduced-motion/print, with nothing in the stylesheet competing with the
+    # value the timeline interpolates.
+    assert 'fill="var(--color-accent)" fill-opacity="0"' in rendered.html_body
     assert 'id="anim-state-rect-' in rendered.html_body
     match = re.search(
         r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
@@ -1267,16 +1449,21 @@ def test_state_machine_box_highlight_targets_the_rect_not_the_group():
     )
     steps = json.loads(match.group(1))["steps"]
     fill_steps = [s for s in steps if "fill" in (s.get("props") or {})]
-    assert fill_steps, "no fill-animating steps found"
-    for step in fill_steps:
+    fill_opacity_steps = [s for s in steps if "fillOpacity" in (s.get("props") or {})]
+    assert fill_opacity_steps, "no fill-opacity-animating steps found"
+    assert not fill_steps, (
+        "a step animates `fill` directly -- this is the exact mechanism that "
+        "broke against a real animejs, which cannot interpolate a var() string"
+    )
+    for step in fill_opacity_steps:
         for target in step["targets"]:
             assert target.startswith("#anim-state-rect-"), (
-                f"fill step targets {target!r}; animating fill on the <g> group is "
-                "overridden by the rect's own fill and never renders"
+                f"fillOpacity step targets {target!r}; animating it on the <g> "
+                "group is overridden by the rect's own fill-opacity and never renders"
             )
 
 
-def test_state_machine_draws_no_arrow_for_an_unauthored_state_pair():
+def test_state_machine_draws_no_track_arc_for_an_unauthored_state_pair():
     """Only AUTHORED transitions are ever drawn as edges (design spec's standing
     rule, and this renderer's own docstring). A chain of three states with only
     ONE authored transition must draw exactly one arrow -- not one per adjacent
@@ -1294,17 +1481,16 @@ def test_state_machine_draws_no_arrow_for_an_unauthored_state_pair():
     # Three boxes are still drawn (states are structure), but only the one
     # authored A -> B edge gets an arrow; B -> C was never authored.
     assert rendered.html_body.count('class="anim__state-box"') == 3
-    assert rendered.html_body.count('class="anim__state-arrow"') == 1
+    assert rendered.html_body.count('class="anim__state-track"') == 1
 
 
-def test_state_machine_marker_and_arrow_paint_before_the_boxes():
-    """The traveling marker and every forward arrow sit at the boxes' own
-    vertical center (a real flowchart line entering/exiting each box at its
-    edge) -- but they must be emitted BEFORE the boxes in the SVG's document
-    order, so a box's opaque rect visually covers the marker/arrow-end
-    whenever either is at/behind it (SVG paints later elements on top). A
-    marker painted AFTER the boxes would float in front of the diagram's
-    structure and could obscure a box's own text.
+def test_state_machine_marker_and_track_paint_before_the_boxes():
+    """The track and the traveling marker must be emitted BEFORE the boxes in
+    document order, so each box's opaque base rect covers them whenever either
+    passes behind it (SVG has no z-index; it paints later elements on top). A
+    marker painted AFTER the boxes floats in front of the diagram's structure
+    and covers each state's own label as it goes by -- the exact bug this
+    ordering prevents.
     """
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
@@ -1316,20 +1502,24 @@ def test_state_machine_marker_and_arrow_paint_before_the_boxes():
     rendered = render_course(md)
     assert rendered.errors == []
     body = rendered.html_body
+    track_index = body.index('class="anim__state-track"')
     marker_index = body.index('class="anim__state-marker"')
-    arrow_index = body.index('class="anim__state-arrow"')
     first_box_index = body.index('class="anim__state-box"')
-    assert arrow_index < first_box_index
+    assert track_index < first_box_index
     assert marker_index < first_box_index
-    # The marker and the arrow travel/sit at the SAME y as the box's own
-    # vertical center -- not a separate lane -- since the boxes painting on
-    # top is what keeps them from visually crossing the box's text.
-    box_match = re.search(r'<rect id="anim-state-rect-\S+" x="\S+" y="(\S+)"', body)
-    box_center_y = float(box_match.group(1)) + _STATE_BOX_HEIGHT / 2
-    marker_match = re.search(r'class="anim__state-marker"[^>]*cy="(\S+)"', body)
-    assert float(marker_match.group(1)) == box_center_y
-    arrow_match = re.search(r'class="anim__state-arrow"[^>]*y1="(\S+)"', body)
-    assert float(arrow_match.group(1)) == box_center_y
+    # The marker starts at the first state's own centre, so it reads as sitting
+    # in that box rather than floating somewhere on the track.
+    box_match = re.search(
+        r'<rect class="anim__state-base" x="(\S+)" y="(\S+)" width="(\S+)"', body
+    )
+    box_x, box_y, box_w = (float(box_match.group(i)) for i in (1, 2, 3))
+    marker_match = re.search(
+        r'class="anim__state-marker-dot"[^>]*cx="(\S+)" cy="(\S+)"', body
+    )
+    assert float(marker_match.group(1)) == pytest.approx(box_x + box_w / 2, abs=0.05)
+    assert float(marker_match.group(2)) == pytest.approx(
+        box_y + _STATE_BOX_HEIGHT / 2, abs=0.05
+    )
 
 
 def test_state_machine_labels_paint_after_the_boxes_with_a_background_chip():
@@ -1364,14 +1554,16 @@ def test_state_machine_labels_paint_after_the_boxes_with_a_background_chip():
     assert chip_width > len("a moderately long action description") * 4
 
 
-def test_state_machine_back_edge_marker_follows_the_drawn_arc_not_a_straight_line():
-    """Bug: the back-edge's marker travel step used a plain straight-line tween
-    through the lane, ignoring the curved arc actually drawn for it -- the
-    marker cut straight across underneath the boxes instead of visibly
-    following the dashed arc above them. The back-edge's own path-segment step
-    must carry via1/via2 control points matching the drawn <path>'s own cubic
-    Bezier control points exactly, so the traveling marker traces that same
-    curve. No other path-segment step (a forward transition) has via1/via2.
+def test_state_machine_marker_follows_the_drawn_track_not_a_straight_line():
+    """Every transition is an arc on the ring, so every path-segment step must
+    carry via1/via2 cubic controls -- a straight tween between two states would
+    visibly cut across the middle of the ring instead of riding the drawn track.
+
+    The drawn <path> is TRIMMED short of its destination so the arrowhead lands
+    on the box's edge rather than hidden under the box, while the marker travels
+    the FULL arc to the box's centre. So the step's controls are deliberately
+    not the drawn path's controls; what must match is the curve they describe.
+    This checks the marker's own arc stays on the ring.
     """
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
@@ -1382,13 +1574,6 @@ def test_state_machine_back_edge_marker_follows_the_drawn_arc_not_a_straight_lin
     )
     rendered = render_course(md)
     assert rendered.errors == []
-    back_edge_match = re.search(
-        r'<path class="anim__state-arrow anim__state-arrow--back" '
-        r'd="M (\S+) (\S+) C (\S+) (\S+), (\S+) (\S+), (\S+) (\S+)"',
-        rendered.html_body,
-    )
-    assert back_edge_match, "no back-edge <path> found"
-    x_from, y_top, cx1, cy1, cx2, cy2, x_to, y_top2 = (float(g) for g in back_edge_match.groups())
     match = re.search(
         r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
         rendered.html_body,
@@ -1396,44 +1581,417 @@ def test_state_machine_back_edge_marker_follows_the_drawn_arc_not_a_straight_lin
     )
     steps = json.loads(match.group(1))["steps"]
     marker_travels = [s for s in steps if s.get("kind") == "path-segment"]
-    assert len(marker_travels) == 2
-    forward_step, back_step = marker_travels
-    assert "via1" not in forward_step
-    assert "via2" not in forward_step
-    assert back_step["via1"] == [cx1, cy1]
-    assert back_step["via2"] == [cx2, cy2]
-    assert back_step["from"] == [x_from, y_top]
-    assert back_step["to"] == [x_to, y_top2]
+    # A wide sweep is split into several cubics, so there are at least as many
+    # path-segment steps as transitions, and they chain end-to-start.
+    assert len(marker_travels) >= 2
+    for previous, following in zip(marker_travels, marker_travels[1:]):
+        assert previous["to"] == following["from"], "marker teleports between segments"
+
+    # Every state centre lies on one circle; recover it from the box positions.
+    boxes = re.findall(
+        r'<rect class="anim__state-base" x="(\S+)" y="(\S+)" width="(\S+)" height="(\S+)"',
+        rendered.html_body,
+    )
+    centres = [
+        (float(x) + float(w) / 2, float(y) + float(h) / 2) for x, y, w, h in boxes
+    ]
+    ring_cx = sum(p[0] for p in centres) / len(centres)
+    ring_cy = sum(p[1] for p in centres) / len(centres)
+    radius = math.hypot(centres[0][0] - ring_cx, centres[0][1] - ring_cy)
+
+    def cubic(p0, c1, c2, p3, t):
+        mt = 1 - t
+        return (
+            mt ** 3 * p0[0] + 3 * mt ** 2 * t * c1[0] + 3 * mt * t ** 2 * c2[0] + t ** 3 * p3[0],
+            mt ** 3 * p0[1] + 3 * mt ** 2 * t * c1[1] + 3 * mt * t ** 2 * c2[1] + t ** 3 * p3[1],
+        )
+
+    for step in marker_travels:
+        assert "via1" in step and "via2" in step, "a segment tweens in a straight line"
+        for i in range(21):
+            point = cubic(step["from"], step["via1"], step["via2"], step["to"], i / 20)
+            offset = math.hypot(point[0] - ring_cx, point[1] - ring_cy)
+            # A straight chord between two ring points would dip far inside the
+            # ring; the arc must stay on it within sub-pixel tolerance.
+            assert abs(offset - radius) < 1.0, (
+                f"marker leaves the ring: {offset:.2f} vs radius {radius:.2f}"
+            )
 
 
-def test_state_toggle_renders_before_and_after_with_a_timeline_island():
-    md = course(
-        '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: state-toggle\nbefore: Shared\nafter: Modified\n```\n\n'
-        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
-        '```glossary\nTLB: definition\n```\n'
+def _dialectic():
+    return parse_animate(
+        "pattern: state-machine\n"
+        "states:\n  - Thesis\n  - Antithesis\n  - Synthesis\n"
+        "transitions:\n"
+        "  - Thesis -> Antithesis: provokes\n"
+        "  - Antithesis -> Synthesis: resolves\n"
+        "  - Synthesis -> Thesis: becomes the next thesis\n"
     )
-    rendered = render_course(md)
-    assert rendered.errors == []
-    assert re.search(
-        r'<div class="anim__state anim__state--before" id="[^"]+">'
-        r'<span class="anim__state-label">Before</span>Shared</div>',
-        rendered.html_body,
+
+
+def test_state_machine_paints_marker_behind_boxes():
+    """SVG has no z-index: document order IS paint order. A marker emitted after
+    the boxes covers each label as it passes. Correct order is
+    track -> marker -> boxes -> labels.
+    """
+    out = _state_machine_html(_dialectic(), "ANIMTOKEN1")
+    svg = out[out.index("<svg"):out.index("</svg>")]
+    track = svg.index("anim__state-track")
+    marker = svg.index("anim__state-marker")
+    first_box = svg.index("anim__state-box")
+    first_label = svg.index("anim__state-transition-label")
+    assert track < marker < first_box < first_label
+
+
+def test_state_machine_box_width_grows_with_its_label():
+    """A fixed 130px box clipped any state name longer than ~16 characters.
+    Width must derive from the authored text so long names stay readable.
+    """
+    short = parse_animate(
+        "pattern: state-machine\nstates:\n  - A\n  - B\ntransitions:\n  - A -> B: x\n"
     )
-    assert re.search(
-        r'<div class="anim__state anim__state--after" id="[^"]+">'
-        r'<span class="anim__state-label">After</span>Modified</div>',
-        rendered.html_body,
+    long = parse_animate(
+        "pattern: state-machine\n"
+        "states:\n  - A state with a considerably longer name\n  - B\n"
+        "transitions:\n  - A state with a considerably longer name -> B: x\n"
     )
-    match = re.search(
-        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
-        rendered.html_body,
-        re.DOTALL,
+
+    def widest(html_text):
+        return max(
+            float(w)
+            for w in re.findall(r'anim__state-rect[^>]*width="([\d.]+)"', html_text)
+        )
+
+    assert widest(_state_machine_html(long, "ANIMTOKEN2")) > widest(
+        _state_machine_html(short, "ANIMTOKEN3")
     )
-    assert match, "no anim__timeline data island found"
-    timeline = json.loads(match.group(1))
-    assert timeline["loop"] is True
-    assert len(timeline["steps"]) == 4
+
+
+def test_state_machine_visited_states_hold_their_tint():
+    """A visited state keeps a faint accent wash instead of reverting to idle,
+    so the path travelled so far is readable at any moment. The wash is a
+    fill-opacity animation (see .anim__visited), not a fill swap.
+    """
+    out = _state_machine_html(_dialectic(), "ANIMTOKEN1")
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    assert any(
+        "fillOpacity" in str(key)
+        for step in data["steps"]
+        for key in (step.get("props") or {})
+    )
+
+
+def test_state_machine_label_windows_do_not_overlap():
+    """Each transition label must be hidden again before the next one shows.
+    When labels ran on a period that did not divide the lap evenly, every label
+    the marker had already passed kept blinking over the current one.
+    """
+    anim = _dialectic()
+    out = _state_machine_html(anim, "ANIMTOKEN1")
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    shows = [
+        s for s in data["steps"]
+        if "opacity" in (s.get("props") or {}) and "label" in str(s.get("targets"))
+    ]
+    # One fade-in and one fade-out per transition, at minimum.
+    assert len(shows) >= 2 * len(anim.transitions)
+
+
+def _svg_rects(markup, class_name):
+    return [
+        (float(x), float(y), float(w), float(h))
+        for x, y, w, h in re.findall(
+            rf'{class_name}" x="(\S+)" y="(\S+)" width="(\S+)" height="(\S+)"', markup
+        )
+    ]
+
+
+def _boxes_overlap(a, b):
+    return not (
+        a[0] + a[2] <= b[0] or b[0] + b[2] <= a[0]
+        or a[1] + a[3] <= b[1] or b[1] + b[3] <= a[1]
+    )
+
+
+@pytest.mark.parametrize("count", range(2, 13))
+def test_state_machine_geometry_never_collides_or_clips(count):
+    """The ring's radius and every label's push distance are computed, not fixed.
+    A fixed radius looked right at three states and overlapped badly at six; a
+    label pushed a constant distance past the ring sat on top of the boxes,
+    which straddle it. This sweeps the whole plausible range and asserts nothing
+    overlaps anything and nothing escapes the viewBox.
+    """
+    names = tuple(f"State {i}" for i in range(count))
+    transitions = "".join(
+        f"  - {names[i]} -> {names[(i + 1) % count]}: transition {i}\n"
+        for i in range(count)
+    )
+    anim = parse_animate(
+        "pattern: state-machine\nstates:\n"
+        + "".join(f"  - {n}\n" for n in names)
+        + "transitions:\n"
+        + transitions
+    )
+    out = _state_machine_html(anim, "ANIMTOKEN1")
+    boxes = _svg_rects(out, "anim__state-base")
+    chips = _svg_rects(out, "anim__state-transition-label-bg")
+    assert len(boxes) == count
+
+    view_x, view_y, width, height = (
+        float(v) for v in re.search(r'viewBox="(\S+) (\S+) (\S+) (\S+)"', out).groups()
+    )
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            assert not _boxes_overlap(boxes[i], boxes[j]), f"boxes {i} and {j} overlap"
+    for box in boxes:
+        for chip in chips:
+            assert not _boxes_overlap(box, chip), "a transition label sits on a state box"
+    for i in range(len(chips)):
+        for j in range(i + 1, len(chips)):
+            assert not _boxes_overlap(chips[i], chips[j]), "two labels overlap"
+    for x, y, w, h in boxes + chips:
+        assert x >= view_x - 0.5 and y >= view_y - 0.5
+        assert x + w <= view_x + width + 0.5 and y + h <= view_y + height + 0.5
+    # A long label should widen the diagram somewhat, but not distort it into a
+    # sliver: the bug this guards against pushed a 22-character label 244px past
+    # an 88px-radius ring, more than tripling one axis while the other stayed
+    # small, and squashed the whole ring into a corner of a wildly wide viewBox.
+    assert max(width, height) / min(width, height) < 3.5
+
+
+def test_state_machine_one_long_label_does_not_distort_the_diagram():
+    """Regression for a real bug: a label's push distance was inflated by its
+    OWN full chip width, so a 22-character transition on an otherwise compact
+    ring got pushed ~244px out (radius ~88) -- nearly triple the ring's own
+    size. That dragged the viewBox out to a wide sliver and squeezed the ring
+    into one corner, which is what a reviewer flagged as looking broken. A chip
+    must instead sit just outside the ring and only step out further when an
+    actual collision demands it.
+
+    Bounding on aspect ratio alone was tried first and did not catch this: a
+    slightly different label produced a wide-but-not-absurd 1.96 ratio under
+    the SAME bug, comfortably under a naive 3.5 threshold. The real signature
+    of the bug is the RING shrinking relative to the overall canvas, so this
+    measures the ring's diameter as a fraction of the viewBox's larger side
+    instead -- that is what "squeezed into a corner" actually means.
+    """
+    anim = parse_animate(
+        "pattern: state-machine\n"
+        "states:\n  - Thesis\n  - Antithesis\n  - Synthesis\n"
+        "transitions:\n"
+        "  - Thesis -> Antithesis: provokes\n"
+        "  - Antithesis -> Synthesis: resolves\n"
+        "  - Synthesis -> Thesis: becomes the next thesis\n"
+    )
+    out = _state_machine_html(anim, "ANIMTOKEN1")
+    boxes = _svg_rects(out, "anim__state-base")
+    chips = _svg_rects(out, "anim__state-transition-label-bg")
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            assert not _boxes_overlap(boxes[i], boxes[j])
+    for box in boxes:
+        for chip in chips:
+            assert not _boxes_overlap(box, chip)
+
+    centres = [(x + w / 2, y + h / 2) for x, y, w, h in boxes]
+    ring_cx = sum(p[0] for p in centres) / len(centres)
+    ring_cy = sum(p[1] for p in centres) / len(centres)
+    ring_radius = max(math.hypot(x - ring_cx, y - ring_cy) for x, y in centres)
+
+    _, _, width, height = (
+        float(v) for v in re.search(r'viewBox="(\S+) (\S+) (\S+) (\S+)"', out).groups()
+    )
+    assert max(width, height) / min(width, height) < 3.5, (
+        f"a long label distorted the diagram into a {width:.0f}x{height:.0f} sliver"
+    )
+    # The bug shrank the ring to well under a third of the canvas; a healthy
+    # layout keeps the ring as most of whichever side it's laid out along.
+    assert (2 * ring_radius) / max(width, height) > 0.35, (
+        f"ring diameter {2 * ring_radius:.0f} is tiny next to the "
+        f"{width:.0f}x{height:.0f} canvas -- squeezed into a corner"
+    )
+
+
+def _state_machine_timeline(transitions):
+    anim = parse_animate(
+        "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+        f"transitions:\n{transitions}"
+    )
+    out = _state_machine_html(anim, "ANIMTOKEN1")
+    island = re.search(r'class="anim__timeline"[^>]*>(.*?)</script>', out, re.S)
+    return out, json.loads(island.group(1))
+
+
+_ALL_PATTERN_BLOCKS = {
+    "state-machine": (
+        "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+        "transitions:\n  - A -> B: go\n  - B -> C: next\n  - C -> A: back\n"
+    ),
+    "pipeline": "pattern: pipeline\nstages:\n  - A: x\n  - B: y\n",
+    "layer-stack": "pattern: layer-stack\nlayers:\n  - A: x\n  - B: y\n",
+    "transform": "pattern: transform\nfrom: A\nto: B\nsteps:\n  - one\n",
+    "build-up": "pattern: build-up\nwhole: W\nparts:\n  - A: a\n  - B: b\n",
+    "compare": "pattern: compare\nleft: L\nright: R\nsteps:\n  - a | b\n",
+    "split-merge": (
+        "pattern: split-merge\nsource: S\nmerged: M\nbranches:\n  - A: a\n  - B: b\n"
+    ),
+}
+
+
+def test_no_animate_pattern_animates_fill_or_stroke_with_a_css_variable():
+    """Real animejs (v4.5.0)'s colour detector (isCol in core/helpers) only
+    recognises hex, rgb(), rgba(), and hsl() -- a bare var(--token) reference
+    matches none of those. decomposeRawValue then falls through its number
+    path, defaults to the literal 0, and never revisits it: a `fill` tween
+    between two var() strings silently renders as black and never recovers.
+
+    Verified directly against the real library (not a hand-written stub): a
+    generated state-machine's arrival flash was invisible-forever after the
+    first lap. Confirmed here at the source instead, so a future JS-tween
+    color animation using a var() reference is caught without a Node
+    dependency: EVERY animate pattern's generated timeline is scanned for a
+    non-`set` step whose `fill`/`stroke` prop contains "var(--", across a
+    representative block for each of the seven patterns.
+    """
+    for name, body in _ALL_PATTERN_BLOCKS.items():
+        out = _animate_html(parse_animate(body), "ANIMTOKEN1")
+        for match in re.finditer(
+            r'class="anim__timeline"[^>]*>(.*?)</script>', out, re.S
+        ):
+            data = json.loads(match.group(1))
+            for step in data["steps"]:
+                if step.get("kind") == "set":
+                    continue
+                for prop in ("fill", "stroke"):
+                    value = (step.get("props") or {}).get(prop)
+                    if value is None:
+                        continue
+                    values = value if isinstance(value, list) else [value]
+                    for v in values:
+                        assert "var(--" not in str(v), (
+                            f"{name}: a tween step animates {prop} to {v!r} -- "
+                            "animejs cannot interpolate a CSS variable as a colour"
+                        )
+
+
+def test_no_animate_pattern_uses_a_bare_less_than_position():
+    """anime.js v4's Timeline.add() treats a bare "<" as "start once the
+    PREVIOUS step ends" -- only "<<" means "start together with it". A "<"
+    written with parallel-start intent silently serialises two steps that were
+    meant to run at once, and the delay compounds lap over lap on a looping
+    timeline: a 5-transition state-machine drifted by 3500ms across one lap
+    (measured against the real animejs library), which surfaced as labels
+    firing long after the marker had already moved on and highlights lagging
+    visibly behind the dot. Every "run alongside the previous step" position
+    in this renderer must be "<<"; this scans all seven patterns' generated
+    timelines for a lingering bare "<" to catch a regression before it ships.
+    """
+    for name, body in _ALL_PATTERN_BLOCKS.items():
+        out = _animate_html(parse_animate(body), "ANIMTOKEN1")
+        for match in re.finditer(
+            r'class="anim__timeline"[^>]*>(.*?)</script>', out, re.S
+        ):
+            data = json.loads(match.group(1))
+            for step in data["steps"]:
+                position = step.get("position")
+                assert position != "<", (
+                    f"{name}: a step has position '<', which starts it only "
+                    "after the previous step ends -- use '<<' for a parallel start"
+                )
+
+
+@pytest.mark.parametrize(
+    "transitions",
+    (
+        "  - A -> B: go\n  - B -> C: next\n",                     # no back-edge
+        "  - A -> B: go\n  - B -> C: next\n  - C -> A: back\n",   # with back-edge
+    ),
+    ids=("no-back-edge", "with-back-edge"),
+)
+def test_state_machine_resets_every_animated_property(transitions):
+    """anime.js loop invariant: a property animated on a looping timeline that is
+    never reset by a trailing `set` compounds across laps. The back-edge branch
+    used to reset `fill` but not `opacity`, so on a cycle every transition label
+    kept whatever opacity it ended the previous lap on.
+    """
+    _, data = _state_machine_timeline(transitions)
+    animated = {
+        prop
+        for step in data["steps"] if step.get("kind") != "set"
+        for prop in (step.get("props") or {})
+    }
+    reset = {
+        prop
+        for step in data["steps"] if step.get("kind") == "set"
+        for prop in (step.get("props") or {})
+    }
+    assert animated, "timeline animates nothing at all"
+    assert animated <= reset, f"never reset: {sorted(animated - reset)}"
+
+
+@pytest.mark.parametrize(
+    "transitions",
+    (
+        "  - A -> B: go\n  - B -> C: next\n",
+        "  - A -> B: go\n  - B -> C: next\n  - C -> A: back\n",
+    ),
+    ids=("no-back-edge", "with-back-edge"),
+)
+def test_state_machine_inverts_active_label_text_and_restores_it(transitions):
+    """A state's label sits on a rect the timeline fills with --color-accent.
+    --color-fg on that fill measures 1.82:1 to 3.83:1 across the three themes,
+    below the 4.5:1 floor, so the label must invert to --color-accent-contrast
+    on the same clock -- and every inverted target must be restored, or the
+    inversion persists onto an idle box next lap.
+
+    The inversion is implemented as TWO STACKED <text> elements (one plain, one
+    pre-coloured --color-accent-contrast starting at opacity 0), with OPACITY
+    animated to flip between them -- never as a `fill` tween between two CSS
+    var() strings. Confirmed against the real animejs library that a bare
+    var() reference is not recognised as a colour (its isCol() only matches
+    hex/rgb()/rgba()/hsl()) and silently decomposes to the literal number 0,
+    which rendered every label permanently black after the first lap.
+    """
+    out, data = _state_machine_timeline(transitions)
+    # Two stacked texts at the same position: the plain one always present,
+    # the inverted one starting invisible.
+    assert out.count('class="anim__state-name') >= 2
+    assert 'fill="var(--color-accent-contrast)"' in out
+    assert 'class="anim__state-name anim__state-name-inverted"' in out
+
+    def targets_where(predicate):
+        return {
+            target
+            for step in data["steps"] if predicate(step)
+            for target in step["targets"]
+        }
+
+    inverted_shown = targets_where(
+        lambda s: s.get("kind") != "set"
+        and (s.get("props") or {}).get("opacity") == [0, 1]
+        and "anim-state-text" in str(s.get("targets"))
+    )
+    inverted_hidden = targets_where(
+        lambda s: (s.get("props") or {}).get("opacity") in (0, [1, 0])
+        and "anim-state-text" in str(s.get("targets"))
+    )
+    # No step may animate `fill` on the inverted-text id at all: that is the
+    # exact mechanism that broke.
+    fill_on_inverted = targets_where(
+        lambda s: "fill" in (s.get("props") or {})
+        and "anim-state-text" in str(s.get("targets"))
+    )
+    assert inverted_shown, "no label's inverted copy ever fades in"
+    assert inverted_shown <= inverted_hidden, (
+        f"never hidden again: {sorted(inverted_shown - inverted_hidden)}"
+    )
+    assert not fill_on_inverted, (
+        f"a step still animates `fill` on the inverted text: {sorted(fill_on_inverted)}"
+    )
 
 
 def test_a_broken_animate_block_becomes_an_error_not_a_crash():
@@ -1518,233 +2076,6 @@ def test_a_figure_or_animate_block_also_counts_as_a_visual():
     )
     rendered = render_course(md)
     assert rendered.topics_missing_visual == []
-
-
-def test_parse_animate_path_trace():
-    anim = parse_animate(
-        "pattern: path-trace\npoints:\n  - 0, 10\n  - 5, 2\n  - 10, 8\n  - 15, 0\n"
-        "caption: Gradient descent converging toward the minimum"
-    )
-    assert anim == Animate(
-        pattern="path-trace",
-        points=[(0.0, 10.0), (5.0, 2.0), (10.0, 8.0), (15.0, 0.0)],
-        caption="Gradient descent converging toward the minimum",
-    )
-
-
-def test_parse_animate_path_trace_rejects_one_point():
-    with pytest.raises(AnimateError, match="at least 2 points"):
-        parse_animate("pattern: path-trace\npoints:\n  - 0, 0\ncaption: c")
-
-
-def test_parse_animate_path_trace_rejects_a_malformed_point():
-    with pytest.raises(AnimateError, match=r"invalid path-trace point: 'not-a-point'"):
-        parse_animate(
-            "pattern: path-trace\npoints:\n  - 0, 0\n  - not-a-point\ncaption: c"
-        )
-
-
-def test_parse_animate_path_trace_rejects_missing_caption():
-    with pytest.raises(AnimateError, match="path-trace needs 'caption:'"):
-        parse_animate("pattern: path-trace\npoints:\n  - 0, 0\n  - 1, 1")
-
-
-def test_parse_animate_path_trace_rejects_steps():
-    with pytest.raises(AnimateError, match="path-trace does not use 'before:'/'after:'"):
-        parse_animate(
-            "pattern: path-trace\npoints:\n  - 0, 0\n  - 1, 1\ncaption: c\nbefore: x"
-        )
-
-
-def test_parse_animate_path_trace_rejects_a_stray_direction_key():
-    with pytest.raises(AnimateError, match="path-trace does not use"):
-        parse_animate(
-            "pattern: path-trace\npoints:\n  - 0, 0\n  - 1, 1\ncaption: c\n"
-            "direction: up\n"
-        )
-
-
-def test_array_ops_renders_bars_and_a_timeline_island():
-    md = course(
-        '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\n  - 1\n'
-        'ops:\n  - compare 0 1\n  - swap 0 1\n  - highlight 2\n```\n\n'
-        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
-        '```glossary\nTLB: definition\n```\n'
-    )
-    rendered = render_course(md)
-    assert rendered.errors == []
-    assert rendered.html_body.count('<g class="anim__array-bar"') == 4
-    assert rendered.html_body.count('<text class="anim__array-label"') == 4
-    assert '>5<' in rendered.html_body
-    assert '>3<' in rendered.html_body
-    assert '>8<' in rendered.html_body
-    assert '>1<' in rendered.html_body
-    assert 'class="anim__array-legend"' in rendered.html_body
-    assert 'class="anim__caption"' in rendered.html_body
-    assert 'transform-box: fill-box; transform-origin: center' in rendered.html_body
-    assert 'transform="translate(' not in rendered.html_body  # the SVG-transform-attribute gotcha
-    assert '<ol class="anim__array-steps-static">' in rendered.html_body
-    assert '<li>compare index 0 and 1</li>' in rendered.html_body
-    assert '<li>swap index 0 and 1</li>' in rendered.html_body
-    assert '<li>highlight index 2</li>' in rendered.html_body
-
-    match = re.search(
-        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
-        rendered.html_body,
-        re.DOTALL,
-    )
-    assert match, "no anim__timeline data island found"
-    timeline = json.loads(match.group(1))
-    assert timeline["loop"] is True
-    kinds = [step.get("kind", "add") for step in timeline["steps"]]
-    assert kinds[-1] == "set" and kinds[-2] == "set"  # the loop-reset pair, last in the list
-    swap_steps = [s for s in timeline["steps"] if s.get("caption", "").startswith("swapping")]
-    assert len(swap_steps) >= 1
-
-    # Fill-only steps carry no "ease": their keyframes are var(--anim-array-*)
-    # references, which anime.js cannot interpolate as colors (its classifier only
-    # accepts #hex/rgb()/rgba()/hsl()/hsla()), so the swap is an instant cut and an
-    # ease would only advertise a smoothness that never happens. Steps that animate
-    # a real numeric property (scale/translateX) still ease.
-    fill_only = [
-        s for s in timeline["steps"]
-        if s.get("kind", "add") == "add" and set(s["props"]) == {"fill"}
-    ]
-    assert len(fill_only) == 3  # one per op: compare, swap, highlight
-    assert all("ease" not in s for s in fill_only), fill_only
-    motion_steps = [
-        s for s in timeline["steps"]
-        if s.get("kind", "add") == "add" and s["props"] and "fill" not in s["props"]
-    ]
-    assert motion_steps and all("ease" in s for s in motion_steps)
-
-
-def test_array_ops_swap_displacement_lands_each_bar_in_the_other_bars_slot():
-    """A swap's translateX must be each bar's ABSOLUTE displacement from its own
-    home slot -- (slot_of_bar[i] - i) * slot_width computed independently per bar,
-    never `delta` and `-delta`. The mirrored form is only right when both bars
-    start in their home slots; after any earlier swap has already displaced one of
-    them it sends that bar to the wrong x. `swap 0 2` then `swap 0 1` exercises
-    exactly that: by the second swap, bar 1 sits in slot 0 and bar 0 sits in slot
-    2, so the two bars' displacements are NOT negatives of each other.
-    """
-    md = course(
-        '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: array-ops\narray:\n  - 5\n  - 3\n  - 8\n  - 1\n'
-        'ops:\n  - swap 0 2\n  - swap 0 1\n```\n\n'
-        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
-        '```glossary\nTLB: definition\n```\n'
-    )
-    rendered = render_course(md)
-    assert rendered.errors == []
-    match = re.search(
-        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
-        rendered.html_body,
-        re.DOTALL,
-    )
-    assert match
-    timeline = json.loads(match.group(1))
-
-    # Recover each bar's rendered home x from its <rect> so the expected
-    # displacements are derived from the real emitted geometry, not a constant
-    # duplicated from the implementation.
-    home_x = {
-        int(m.group(1)): float(m.group(2))
-        for m in re.finditer(r'<rect id="anim-rect-\d+-(\d)" x="([\d.]+)"', rendered.html_body)
-    }
-    assert len(home_x) == 4
-
-    # translateX steps, in emission order, keyed by the bar id they target.
-    moves = [
-        (int(re.search(r"-(\d)$", s["targets"][0]).group(1)), s["props"]["translateX"])
-        for s in timeline["steps"]
-        if s.get("kind") != "set" and "translateX" in s.get("props", {})
-    ]
-    # swap 0 2 moves bars 0 and 2; swap 0 1 then moves bars 0 and 1.
-    assert [bar for bar, _ in moves] == [0, 2, 0, 1]
-
-    # After both swaps: slot_of_bar == [1, 0, 2 -> see below]. Walk it explicitly.
-    slot_of_bar = [0, 1, 2, 3]
-    slot_of_bar[0], slot_of_bar[2] = slot_of_bar[2], slot_of_bar[0]
-    slot_of_bar[0], slot_of_bar[1] = slot_of_bar[1], slot_of_bar[0]
-    assert slot_of_bar == [1, 2, 0, 3]
-
-    # Each move must place its bar exactly on the home x of the slot it now occupies.
-    final = {}
-    for bar, dx in moves:
-        final[bar] = home_x[bar] + dx
-    for bar in (0, 1, 2):
-        assert final[bar] == home_x[slot_of_bar[bar]], (
-            f"bar {bar} landed at {final[bar]}, slot {slot_of_bar[bar]} is at "
-            f"{home_x[slot_of_bar[bar]]}"
-        )
-    # The second swap's two deltas are genuinely NOT mirror images -- this is the
-    # case the naive `delta`/`-delta` pair gets wrong.
-    assert moves[2][1] != -moves[3][1]
-
-
-def test_path_trace_renders_gridlines_trail_and_a_timeline_island():
-    md = course(
-        '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: path-trace\npoints:\n  - 0, 10\n  - 5, 2\n  - 10, 8\n  - 15, 0\n'
-        'caption: TLB hit rate rising\n```\n\n'
-        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
-        '```glossary\nTLB: definition\n```\n'
-    )
-    rendered = render_course(md)
-    assert rendered.errors == []
-    assert '<line class="anim__path-axis"' in rendered.html_body
-    assert '<text class="anim__path-tick"' in rendered.html_body
-    assert '<polyline class="anim__path-line"' in rendered.html_body
-    assert '<path class="anim__path-trail"' in rendered.html_body
-    assert '<circle class="anim__path-marker"' in rendered.html_body
-    # Both classes: .anim__caption is the live-narration hook, .anim__path-caption
-    # marks this caption as the author's own text so the print/reduced-motion rules
-    # (scoped to .anim--array-ops) leave it visible.
-    assert 'class="anim__caption anim__path-caption"' in rendered.html_body
-    assert '<ol class="anim__path-steps-static">' in rendered.html_body
-    assert '<li>from (0, 10) to (5, 2)</li>' in rendered.html_body
-    assert '<li>from (5, 2) to (10, 8)</li>' in rendered.html_body
-    assert '<li>from (10, 8) to (15, 0)</li>' in rendered.html_body
-
-    match = re.search(
-        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
-        rendered.html_body,
-        re.DOTALL,
-    )
-    assert match, "no anim__timeline data island found"
-    timeline = json.loads(match.group(1))
-    assert timeline["loop"] is True
-    # One path-segment step per segment (0->5->10->15), plus the two reset steps
-    # that snap the marker/trail back to the start before the loop restarts.
-    segments = [s for s in timeline["steps"] if s["kind"] == "path-segment"]
-    assert len(segments) == 3
-    assert [s["kind"] for s in timeline["steps"][3:]] == ["set", "set-attr"]
-    assert segments[0]["caption"] == "Moving from (0, 10) to (5, 2)"
-
-    # Constant visual speed: each segment's duration is proportional to its real
-    # Euclidean length. (0,10)->(5,2) spans hypot(5, 8) = 9.434 units while
-    # (5,2)->(10,8) spans only hypot(5, 6) = 7.810, so the FIRST segment is the
-    # longer one and must get the longer duration.
-    durations = [s["duration"] for s in segments]
-    assert durations[0] > durations[1]
-    assert durations[0] == durations[2]  # (0,10)->(5,2) and (10,8)->(15,0) are congruent
-    # Proportionality, not merely ordering: ms-per-unit is constant across segments.
-    ratios = [d / math.hypot(s["to"][0] - s["from"][0], s["to"][1] - s["from"][1])
-              for d, s in zip(durations, segments)]
-    assert all(abs(r - ratios[0]) < 1.0 for r in ratios)
-
-
-def test_a_broken_array_ops_block_becomes_an_error_not_a_crash():
-    md = course(
-        '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: array-ops\narray:\n  - 1\nops:\n  - highlight 0\n```\n\n'
-        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
-        '```glossary\nTLB: definition\n```\n'
-    )
-    rendered = render_course(md)
-    assert any("array-ops" in e for e in rendered.errors)
 
 
 def test_a_broken_path_trace_block_becomes_an_error_not_a_crash():

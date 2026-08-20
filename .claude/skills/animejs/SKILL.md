@@ -118,6 +118,9 @@ The complete anime.js v4 documentation structure:
 - `morphTo()` - SVG shape morphing
 - `createDrawable()` - SVG line drawing animation
 - `createMotionPath()` - Motion path animation
+- **Paint order**: SVG has no `z-index` — document order IS paint order. A travelling
+  marker emitted after the shapes it passes will cover their text. Emit
+  connectors → marker → boxes → labels. See "Gotchas" in `references/api-reference.md`.
 
 ### Text Utilities (`splitText`)
 - **Settings**: lines, words, chars, debug, includeSpaces, accessible

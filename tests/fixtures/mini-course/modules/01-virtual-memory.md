@@ -21,13 +21,12 @@ caption: The original slide this diagram is redrawn from.
 ```
 
 ```animate
-pattern: path-trace
-points:
-  - 0, 10
-  - 5, 2
-  - 10, 8
-  - 15, 0
-caption: TLB hit rate rising as the working set warms up
+pattern: transform
+from: A virtual address
+to: A physical address
+steps:
+  - Split into page number and offset
+  - Look the page number up in the TLB
 ```
 
 ```quiz

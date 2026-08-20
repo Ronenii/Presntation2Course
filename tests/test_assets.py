@@ -301,25 +301,75 @@ def test_layout_css_styles_every_component_the_renderers_emit():
         ".sources-group",
         ".sources",
         ".diagram-fallback",
-        ".anim__caption",
-        ".anim--array-ops",
-        ".anim__array",
-        ".anim__array-axis",
-        ".anim__array-gridline",
-        ".anim__array-label",
-        ".anim__array-legend",
-        ".anim__array-steps-static",
-        ".anim--path-trace",
-        ".anim__path",
-        ".anim__path-axis",
-        ".anim__path-tick",
-        ".anim__path-line",
-        ".anim__path-marker",
-        ".anim__path-trail",
-        ".anim__path-caption",
-        ".anim__path-steps-static",
+        ".anim__state-machine",
+        ".anim__state-steps-static",
+        ".anim__pipeline",
+        ".anim__layer-stack",
+        ".anim__transform",
     ):
         assert selector in css, selector
+
+
+def _relative_luminance(hex_color):
+    hex_color = hex_color.lstrip("#")
+    channels = (int(hex_color[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def _contrast_ratio(a, b):
+    hi, lo = sorted((_relative_luminance(a), _relative_luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _theme_palettes():
+    """Yield (theme, mode, {token: hex}) for each theme's light and dark block."""
+    for theme_dir in sorted((ASSETS / "themes").iterdir()):
+        if not theme_dir.is_dir():
+            continue
+        css = "".join(p.read_text(encoding="utf-8") for p in sorted(theme_dir.glob("*.css")))
+        split = css.find("@media")
+        segments = {"light": css[:split] if split > 0 else css}
+        if split > 0:
+            segments["dark"] = css[split:]
+        for mode, segment in segments.items():
+            found = dict(re.findall(r"--color-([a-z-]+):\s*(#[0-9a-fA-F]{6})", segment))
+            if "accent" in found:
+                yield theme_dir.name, mode, found
+
+
+def test_text_on_accent_fill_uses_the_contrast_token():
+    """Text painted on a box the timeline fills with --color-accent must use
+    --color-accent-contrast. Measured across all three themes, --color-fg on
+    accent scores 1.82:1 to 3.83:1 and --color-muted scores 1.04:1 to 1.34:1 --
+    all far below the 4.5:1 body-text floor, and the muted case is effectively
+    invisible. This is the defect that made a highlighted state's label vanish.
+    """
+    css = (ASSETS / "base" / "layout.css").read_text(encoding="utf-8")
+    assert "--color-accent-contrast" in css
+    assert ".anim__text-on-accent" in css, "no shared rule for text on an accent fill"
+
+
+def test_the_contrast_token_actually_beats_fg_on_every_theme_accent():
+    """The token is only worth using if it measurably wins. Asserted against
+    real theme hex values rather than the stylesheet's text, so a theme that
+    later retunes its accent cannot silently reintroduce the defect.
+
+    Note clinical/light lands at 4.16:1 -- short of the 4.5:1 ideal but the best
+    available against that accent, and ~1.9x better than the --color-fg it
+    replaces. The floor asserted here is therefore 4.0, with the stronger claim
+    being the improvement over --color-fg.
+    """
+    for theme, mode, palette in _theme_palettes():
+        accent = palette["accent"]
+        contrast = palette["accent-contrast"]
+        fg = palette["fg"]
+        got = _contrast_ratio(contrast, accent)
+        assert got > _contrast_ratio(fg, accent), (
+            f"{theme}/{mode}: --color-accent-contrast ({got:.2f}) is no better "
+            f"than --color-fg on the same accent"
+        )
+        assert got >= 4.0, f"{theme}/{mode}: contrast token only scores {got:.2f} on accent"
 
 
 def test_new_animate_patterns_define_their_tokens_and_static_fallbacks():
@@ -336,6 +386,21 @@ def test_new_animate_patterns_define_their_tokens_and_static_fallbacks():
     tail = "".join(reduced[1:])
     for selector in ("anim--pipeline", "anim--layer-stack", "anim--transform"):
         assert selector in tail, f"{selector} has no reduced-motion fallback"
+
+
+def test_new_patterns_reveal_under_reduced_motion_and_print():
+    """Every element the timeline reveals starts hidden via an inline
+    attribute (opacity="0", full stroke-dashoffset). Under
+    prefers-reduced-motion and in print the timeline never runs, so CSS must
+    force them visible or the diagram renders blank -- a silent failure no
+    Python renderer test catches on its own.
+    """
+    layout = (ASSETS / "base" / "layout.css").read_text(encoding="utf-8")
+    printcss = (ASSETS / "print.css").read_text(encoding="utf-8")
+    reduced = "".join(layout.split("@media (prefers-reduced-motion: reduce)")[1:])
+    for pattern in ("build-up", "compare", "split-merge"):
+        assert f"anim--{pattern}" in reduced, f"{pattern} has no reduced-motion reveal"
+        assert f"anim--{pattern}" in printcss, f"{pattern} has no print reveal"
 
 
 def test_reduced_motion_static_lists_for_the_new_patterns_get_list_styling():
@@ -387,29 +452,31 @@ def test_layout_css_only_uses_tokens_the_themes_define():
         for t in used
         if t.startswith((
             "--space", "--radius", "--measure", "--z-", "--drawer-closed-x",
-            "--anim-array-", "--anim-state-", "--anim-pipe-", "--anim-layer-",
-            "--anim-xform-",
+            "--anim-state-", "--anim-pipe-", "--anim-layer-", "--anim-xform-",
+            # Layout-owned with an inline fallback, so a theme that never defines
+            # it still renders; themes override it only to strengthen the wash in
+            # dark mode, where the accent is lighter.
+            "--anim-visited-",
         ))
     }
     assert used - layout_owned <= set(REQUIRED_TOKENS)
 
 
-def test_caption_hiding_is_scoped_to_array_ops_so_authored_captions_survive():
-    """Array-ops and path-trace share .anim__caption, but they hold different kinds
-    of text. Array-ops' caption is generated chrome ("Step 1 of 3") that means
-    nothing once frozen, so print and reduced motion hide it. Path-trace's caption
-    is the course author's OWN written text (anim.caption) -- real content, which a
-    bare `.anim__caption { display: none }` silently deleted from every printout and
-    from every reduced-motion reader's page. Both hiding rules must therefore be
-    scoped to .anim--array-ops.
+def test_no_stylesheet_still_targets_a_removed_pattern():
+    """array-ops and path-trace are gone, and with them the only two patterns
+    that emitted .anim__caption, .anim__array*, and .anim__path*. A rule left
+    behind targeting any of them is dead weight that later reads as a live
+    convention -- and a stale `.anim--array-ops`-scoped hide would silently do
+    nothing while looking like it still guards something.
     """
+    dead = (
+        "anim--array-ops", "anim--path-trace", "anim__caption",
+        "anim__array", "anim__path", "anim-array",
+    )
     for name in (ASSETS / "base" / "layout.css", ASSETS / "print.css"):
         css = name.read_text()
-        hide_rules = re.findall(r"^\s*([^\n{]*\.anim__caption[^\n{]*)\{[^}]*display:\s*none",
-                                css, re.MULTILINE)
-        assert hide_rules, f"{name.name}: no .anim__caption hiding rule found at all"
-        for selector in hide_rules:
-            assert ".anim--array-ops" in selector, f"{name.name}: unscoped hide {selector!r}"
+        for selector in dead:
+            assert selector not in css, f"{name.name} still references {selector}"
 
 
 def test_print_css_reveals_quiz_answers_and_hides_chrome():

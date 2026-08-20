@@ -253,12 +253,12 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .figure figcaption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
 
 .anim { margin: var(--space-6) 0; }
-.anim--state-machine { text-align: center; }
-.anim__state-machine {
-  width: 100%; height: auto;
-  --anim-state-idle: var(--color-surface);
-  --anim-state-current: var(--color-accent);
-}
+.anim--state-machine { text-align: center; overflow-x: auto; }
+/* max-width rather than width: 100%. Stretching a fixed viewBox across the full
+   column scales its text down with it, which is what made a 5-state machine
+   illegible; capping instead lets the ring render at its natural size and hands
+   overflow to the wrapper's own scroll, the same approach .mermaid uses. */
+.anim__state-machine { max-width: 100%; height: auto; }
 /* Tokens for the pipeline, layer-stack, and transform patterns (Tasks 2-4),
    referenced via a fill="var(...)" attribute directly on the SVG's own rects
    -- same reasoning as .anim__state-box above: an author `fill` declaration
@@ -275,26 +275,81 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   --anim-xform-idle: var(--color-surface);
   --anim-xform-active: var(--color-accent);
 }
-/* No `fill` here on purpose: the rect carries fill="var(--anim-state-idle)" as
-   its own attribute (see _state_machine_html, mirroring _array_ops_html's
-   rects). A stylesheet `fill` declaration would be an author declaration that
-   overrides the attribute, so the arrival-highlight animation's interpolated
-   fill would never reach a rendered pixel. */
-.anim__state-box rect {
-  stroke: var(--color-border); stroke-width: 1.5;
+.anim__compare {
+  --anim-cmp-active: var(--color-accent);
 }
-.anim__state-box text {
-  fill: var(--color-fg); font-size: 13px; text-anchor: middle; dominant-baseline: middle;
+.anim__split-merge {
+  --anim-split-idle: var(--color-surface);
+  --anim-split-active: var(--color-accent);
 }
-.anim__state-arrow {
+/* Text sitting on a box the timeline fills with --color-accent must invert to
+   the accent's own contrast colour, in step with the fill. Measured across all
+   three themes: --color-fg on accent scores 1.82:1 to 3.83:1 and --color-muted
+   scores 1.04:1 to 1.34:1 -- both fail the 4.5:1 body-text floor and the muted
+   case is effectively invisible, which is why a highlighted state's label
+   disappeared. --color-accent-contrast scores 4.16:1 to 8.66:1 instead.
+   A box holding the faint accent wash below must NOT invert. */
+.anim__text-on-accent { fill: var(--color-accent-contrast); }
+
+/* A visited element holds a faint accent wash rather than reverting to idle, so
+   the path travelled so far stays readable. Kept light on purpose: at ~12% the
+   label still clears the contrast floor against the surface beneath, whereas a
+   solid accent fill would force the inversion rule above. Deliberately NOT
+   color-mix(): it appears nowhere else in this codebase, the project sets no
+   browser-target config, and a generated course is standalone HTML a student
+   may open in any browser. Renderers emit fill="var(--color-accent)" with
+   fill-opacity="0" so the element starts idle, and the timeline animates
+   fillOpacity -- so every trailing reset must restore it to 0.
+
+   The strength is a token because a dark theme's accent is lighter and needs
+   slightly more presence to read as "visited". Themes may override
+   --anim-visited-strength; the fallback here keeps the rule working for a
+   theme that does not. layout.css deliberately carries no dark-mode block of
+   its own -- themes own that three-state (media query + [data-theme]) dance.
+
+   Only `fill` is declared here, never `fill-opacity`: a stylesheet declaration
+   of any kind outranks an inline PRESENTATION attribute, so declaring it would
+   override the renderer's fill-opacity="0" and paint every box pre-tinted
+   before the timeline ever runs. The wash strength is applied by the timeline's
+   own fillOpacity target instead, and the token is read by the reduced-motion
+   and print blocks below, where there is no timeline to do it. */
+.anim__visited {
+  fill: var(--color-accent);
+}
+
+/* The track the marker rides: one arc per authored transition. Drawn at reduced
+   contrast so it reads as the path between states rather than as another
+   element competing with them. */
+.anim__state-track {
   stroke: var(--color-border); stroke-width: 1.5; fill: none;
 }
-.anim__state-arrow--back { stroke-dasharray: 4, 3; }
 .anim__state-arrowhead { fill: var(--color-border); }
-/* Named distinctly from .anim__state-label (state-toggle's existing
-   "Before"/"After" chrome label, defined earlier in this file) to avoid a
-   same-name collision between two unrelated rules -- this one is the
-   transition's action text inside the new state-machine SVG. The opacity
+
+/* Each state box is two stacked rects. The base is opaque so the track and the
+   marker passing behind it are hidden; the wash above it is what the timeline
+   tints. Animating a single rect's opacity would fade the whole box out and
+   show the track through it. */
+.anim__state-base {
+  fill: var(--color-surface); stroke: var(--color-border); stroke-width: 1.5;
+}
+/* No `fill-opacity` here: see .anim__visited above. The renderer's inline
+   fill-opacity="0" must win at rest, and a stylesheet declaration of any kind
+   would outrank it. */
+.anim__state-rect { stroke: none; }
+/* No `fill` here either: the <text> carries fill="var(--color-fg)" as its own
+   attribute so the timeline can interpolate it to --color-accent-contrast while
+   its box holds the accent flash. */
+.anim__state-name {
+  font-size: 13px; font-weight: 600; text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+/* The travelling marker: a solid dot with a soft halo behind it. Both circles
+   are moved by one timeline step (they share a selector), and both are emitted
+   BEFORE the boxes so they pass behind them. */
+.anim__state-marker-dot { fill: var(--color-accent); }
+.anim__state-marker-glow { fill: var(--color-accent); opacity: .16; }
+/* The transition's action text inside the state-machine SVG. The opacity
    animation targets the GROUP (chip + text together, see
    _state_machine_html), invisible at rest and faded in only during its own
    transition's step, so the background chip never sits there empty when its
@@ -308,224 +363,190 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .anim__state-marker { fill: var(--color-accent); }
 /* Hidden during normal animated playback; shown only under the static
    print/reduced-motion presentation below, same toggle-pair pattern as
-   .anim__array-steps-static/.anim__path-steps-static. */
+   .anim__pipeline-static/.anim__layer-static/.anim__xform-static. */
 .anim__state-steps-static { display: none; }
-/* display: grid + a shared grid-area (rather than position: absolute) sizes the
-   container to the tallest state's content, so realistic caption-length text that
-   wraps to 2-3 lines doesn't overflow into whatever follows -- an absolutely
-   positioned child never contributes to its parent's size. */
-.anim--state-toggle { display: grid; min-block-size: 3em; }
-.anim__state {
-  grid-area: 1 / 1;
-  opacity: 0; /* wireAnimations() drives visibility once JS runs; the "before"
-                state is shown before JS via the reduced-motion/print override
-                below, so this 0 is only the JS-enabled resting default */
-}
-.anim__state--before { opacity: 1; }
-/* Literal English UI chrome (see mdrender._animate_html), language-agnostic like the
-   "Analogy" callout label. Hidden during normal animated playback; shown only under
-   the static print/reduced-motion presentation below and in print.css. */
-.anim__state-label { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .anim__state { opacity: 1; }
-  /* Both states are shown at once (no animation to convey them over time), so lay
-     them out labeled side-by-side instead of stacked on top of each other. */
-  .anim--state-toggle { grid-template-columns: 1fr 1fr; gap: var(--space-4); }
-  .anim__state { grid-area: auto; }
-  .anim__state-label { display: block; font-weight: 600; margin-block-end: var(--space-1); }
   .anim__state-machine { display: none; }
   .anim__state-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
 }
 
-.anim--array-ops { text-align: center; }
-/* Live step narration, rewritten by each timeline step's onBegin (see
-   wireAnimations in course.js). Rendered with the pre-JS "Step 1 of N" text so
-   the slot never collapses to zero height and shift the bars when JS lands. */
-.anim__caption {
-  text-align: center; font-weight: 600; font-size: 1rem; color: var(--color-fg);
-  margin: 0 0 var(--space-3);
-}
-.anim__array {
-  width: 100%; height: auto;
-  /* Bar fill for each of the three op verbs, plus the resting/idle color -- named
-     by the anime.js timeline island's per-step `fill` keyframes and by the initial
-     fill attribute on every rect. Those keyframes carry these var() references
-     verbatim, which anime.js cannot interpolate as colors, so each step swaps the
-     fill instantly at the keyframe boundary rather than fading between the two
-     colors. That is deliberate: it keeps the bars theme-aware (each theme defines
-     these tokens differently in light and dark mode) at the cost of a hard cut.
-     compare/swap/highlight reuse the same semantic
-     colors quiz feedback already uses (warn/accent/correct), so a reader doesn't
-     have to learn a second color vocabulary for the same ideas ("being
-     inspected", "in motion", "settled/done"). */
-  --anim-array-idle: var(--color-border);
-  --anim-array-compare: var(--color-warn);
-  --anim-array-swap: var(--color-accent);
-  --anim-array-highlight: var(--color-correct);
-}
-.anim__array-axis { stroke: var(--color-fg); stroke-width: 1.5; }
-.anim__array-gridline { stroke: var(--color-border); stroke-width: 1; stroke-dasharray: 3,3; }
-.anim__array-label {
-  font-size: 15px;
-  fill: var(--color-fg);
-  text-anchor: middle;
-}
-.anim__array-legend {
-  display: flex; gap: var(--space-4); justify-content: center;
-  margin-block-start: var(--space-2); font-size: 0.75rem; color: var(--color-muted);
-}
-.anim__array-legend-swatch {
-  display: inline-block; inline-size: 10px; block-size: 10px; border-radius: 2px;
-  margin-inline-end: var(--space-1);
-}
-.anim__array-legend-swatch--idle { background: var(--color-border); }
-.anim__array-legend-swatch--compare { background: var(--color-warn); }
-.anim__array-legend-swatch--swap { background: var(--color-accent); }
-.anim__array-legend-swatch--highlight { background: var(--color-correct); }
-/* Hidden during normal animated playback; shown only under the static
-   print/reduced-motion presentation below, same toggle-pair pattern as
-   .anim__state-label. */
-.anim__array-steps-static { display: none; }
-
-.anim--path-trace { text-align: center; }
-.anim__path { width: 100%; height: auto; max-block-size: 16rem; }
-.anim__path-axis {
-  stroke: var(--color-border);
-  stroke-width: 1;
-}
-.anim__path-tick {
-  font-size: 6px;
-  fill: var(--color-muted);
-}
-.anim__path-line {
-  fill: none;
-  stroke: var(--color-border);
-  stroke-width: 2;
-}
-/* The trail is drawn by wireAnimations() appending to this path's "d" as the
-   marker advances; the reduced opacity keeps it reading as a motion wake behind
-   the marker rather than a second data series competing with .anim__path-line. */
-.anim__path-trail {
-  fill: none;
-  stroke: var(--color-accent);
-  stroke-width: 1.2;
-  stroke-linecap: round;
-  opacity: 0.6;
-}
-.anim__path-marker { fill: var(--color-accent); }
-/* Path-trace's caption carries the course author's own written text (anim.caption),
-   not the generated "Step N of M" chrome array-ops shows -- which is why the
-   print/reduced-motion hiding rules below are scoped to .anim--array-ops and
-   leave this one visible. It otherwise inherits .anim__caption's styling
-   (full-contrast --color-fg at 1rem, margin BELOW it since it renders above the
-   plot); the earlier muted/0.9rem/margin-block-start declarations here fought
-   that and are gone. Authored prose wraps, so keep it readable at any width. */
-.anim__path-caption { text-wrap: balance; }
-/* Hidden during animated playback; shown only under the static
-   print/reduced-motion presentation below, same toggle pair as array-ops. */
-.anim__path-steps-static { display: none; }
-
-/* Unlike .anim__state-machine/.anim__path/.anim__array above (width: 100%,
-   which stretches a wide viewBox across the full column and shrinks its text
-   proportionally -- illegible once a 6-stage pipeline or a wide transform gap
-   pushes the viewBox past ~1000px), these three carry explicit width/height
-   presentation attributes in the markup (see _pipeline_html/_layer_stack_html/
-   _transform_html) so the SVG renders at its own natural, legible size by
-   default. max-width keeps a narrow one from overflowing its column, and the
-   wrapper's overflow-x below -- the same pattern .mermaid already uses for the
-   same reason -- takes over once natural size exceeds the column instead of
-   scaling text down to fit. */
+/* Every animated SVG carries explicit width/height presentation attributes in
+   the markup (see each renderer) so it renders at its own natural, legible size
+   by default. max-width keeps a narrow one from overflowing its column, and the
+   wrapper's overflow-x -- the same pattern .mermaid already uses for the same
+   reason -- takes over once natural size exceeds the column, instead of scaling
+   the text down to fit. */
 .anim__pipeline,
 .anim__layer-stack,
-.anim__transform {
+.anim__transform,
+.anim__build-up,
+.anim__compare,
+.anim__split-merge {
   max-width: 100%;
   height: auto;
 }
 .anim--pipeline,
 .anim--layer-stack,
-.anim--transform {
+.anim--transform,
+.anim--build-up,
+.anim--compare,
+.anim--split-merge {
   overflow-x: auto;
 }
 
 .anim__pipe-box,
 .anim__layer-box,
-.anim__xform-box {
+.anim__xform-box,
+.anim__build-base,
+.anim__cmp-box,
+.anim__split-box {
   stroke: var(--color-border);
   stroke-width: 1;
 }
 
 .anim__pipe-line,
-.anim__xform-line {
+.anim__xform-line,
+.anim__split-line {
   stroke: var(--color-muted);
   stroke-width: 2;
   fill: none;
 }
 
+/* No `fill` in these rules: pipeline/layer-stack/transform/build-up/compare/
+   split-merge each flash a box to a solid --color-accent fill, and the label
+   sitting on it must invert to --color-accent-contrast while that flash is
+   active (--color-fg scores 1.82:1-3.83:1 against accent across the themes,
+   --color-muted 1.04:1-1.34:1 -- both fail the 4.5:1 floor). A stacked,
+   pre-inverted copy of each label is the ONLY thing whose OPACITY the
+   timeline animates -- never a `fill` tween between two var() tokens, which
+   animejs's colour detector cannot interpolate (see .anim__text-on-accent
+   above) -- so the base colour must come from each element's own inline
+   fill="..." attribute, which a stylesheet `fill` declaration here would
+   outrank and permanently override. */
 .anim__pipe-name,
 .anim__layer-name,
-.anim__xform-label {
+.anim__xform-label,
+.anim__build-name,
+.anim__cmp-text,
+.anim__split-name {
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 600;
-  fill: var(--color-fg);
 }
 
 .anim__pipe-change,
 .anim__layer-adds,
-.anim__xform-step-text {
+.anim__xform-step-text,
+.anim__build-contrib,
+.anim__split-what {
   font-family: var(--font-body);
   font-size: 11px;
-  fill: var(--color-muted);
 }
 
-.anim__xform-step-bg {
-  fill: var(--color-bg);
+/* .anim__layer-adds and .anim__build-contrib are the only two classes the
+   renderer gives text-anchor="end" (a fixed-width row's second column,
+   right-aligned against the SVG's own dir="ltr"). Per the SVG/CSS bidi
+   rules, an "end" anchor resolves against the PARAGRAPH direction -- which
+   these elements inherit as ltr from the SVG root, not from their own
+   Hebrew/Arabic content -- so the Unicode Bidi Algorithm reorders trailing
+   neutral characters (spaces, punctuation) to the wrong side of the anchor
+   and the run spills past the box's edge. unicode-bidi: plaintext makes each
+   element resolve its OWN paragraph direction from its first strong
+   character (Unicode's P2/P3 rules), independent of the SVG's dir and
+   without the renderer needing to know the course's language at all. */
+.anim__layer-adds,
+.anim__build-contrib {
+  unicode-bidi: plaintext;
+}
+
+.anim__xform-step-text {
+  fill: var(--color-fg);
+}
+
+.anim__xform-step-dot {
+  fill: var(--color-accent);
+}
+
+.anim__cmp-heading {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  fill: var(--color-muted);
+}
+.anim__cmp-divider {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
 }
 
 /* The static <ol> lists are the print/reduced-motion presentation only; during
    normal animated playback the SVG carries the meaning. Same toggle-pair
-   pattern as .anim--array-ops. */
+   pattern as .anim__state-steps-static. */
 .anim__pipeline-static,
 .anim__layer-static,
-.anim__xform-static {
+.anim__xform-static,
+.anim__build-static,
+.anim__cmp-static,
+.anim__split-static {
   display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .anim__array { display: none; }
-  /* The caption and legend only mean anything while the timeline is playing --
-     wireAnimations() bails out entirely under reduced motion, so both would
-     otherwise sit there frozen on the pre-JS "Step 1 of N" text. Scoped to
-     array-ops on purpose: path-trace's caption is the course author's own
-     written text, real content that must stay visible without motion. */
-  .anim--array-ops .anim__caption { display: none; }
-  .anim__array-legend { display: none; }
-  .anim__array-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
-  /* No CSS animation left to disable -- wireAnimations() bails out entirely under
-     reduced motion, so the marker/trail simply stay at their rendered starting
-     position. The step list carries the sequence information instead, exactly as
-     it does for array-ops -- but unlike array-ops the caption stays visible here,
-     since it holds the author's own text rather than live step narration. */
-  .anim__path-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
-
   /* The timeline never runs here, so every element it would have revealed must
      be forced visible -- inline opacity="0" and stroke-dashoffset would
      otherwise leave these diagrams blank. Every stage/layer/step shows at once. */
   .anim--pipeline .anim__pipe-line,
-  .anim--transform .anim__xform-line {
+  .anim--transform .anim__xform-line,
+  .anim--split-merge .anim__split-line {
     stroke-dashoffset: 0 !important;
   }
 
-  .anim--layer-stack .anim__layer-box,
-  .anim--transform .anim__xform-step {
+  /* :not(.anim__layer-box-active) excludes the accent highlight overlay: only
+     ONE layer is ever highlighted at a time during playback, so forcing every
+     layer's highlight to opacity 1 here would show every row as
+     simultaneously "active" -- the reduced-motion picture should be the plain
+     revealed stack the static <ol> narrates, not every accent flash
+     overlapping at once. The inverted text pair needs no matching exclusion:
+     it inherits visibility from its own opacity="0", which this rule never
+     touches, and only the plain (always-shown) copy is targeted here anyway.
+     compare's active overlay and split-merge's merged-active overlay get the
+     same exclusion: a comparison's flash is a momentary contrast, not a
+     lasting state, and the merged box's "solid accent" look is the animated
+     PAYOFF once every branch has landed -- neither belongs in a static
+     picture that shows every element at once. build-up's wash IS meant to
+     persist (every part stays lit once it joins the whole, unlike a layer's
+     single active tier), so .anim__build-rect gets no such exclusion. */
+  .anim--layer-stack .anim__layer-box:not(.anim__layer-box-active),
+  .anim--transform .anim__xform-step,
+  .anim--compare .anim__cmp-box-active,
+  .anim--split-merge .anim__split-box-active {
     opacity: 1 !important;
+  }
+  /* .anim__layer-row and .anim__build-part are the WHOLE-row/part reveal
+     group (box, name, and description together) -- each starts at
+     opacity="0" on the <g> itself, not on any child rect, so it needs its
+     own force-reveal line here or the static picture renders every row blank. */
+  .anim--layer-stack .anim__layer-row,
+  .anim--build-up .anim__build-part,
+  .anim--split-merge .anim__split-box:not(.anim__split-box-active) {
+    opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-rect {
+    fill-opacity: var(--anim-visited-strength, .12) !important;
+  }
+  .anim--split-merge .anim__split-box.anim__visited {
+    fill-opacity: var(--anim-visited-strength, .12) !important;
   }
 
   .anim--pipeline .anim__pipeline-static,
   .anim--layer-stack .anim__layer-static,
-  .anim--transform .anim__xform-static {
+  .anim--transform .anim__xform-static,
+  .anim--build-up .anim__build-static,
+  .anim--compare .anim__cmp-static,
+  .anim--split-merge .anim__split-static {
     display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0;
   }
 }
