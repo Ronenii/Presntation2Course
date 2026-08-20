@@ -1027,7 +1027,7 @@ def test_transform_constants_are_divisible_by_four():
         # state-machine is deliberately absent too: like the old step-reveal, its
         # transitions play sequentially by design (see
         # test_state_machine_transitions_play_sequentially_not_all_at_once in
-        # this file), so it emits no "<" position for THIS test to check the
+        # this file), so it emits no "<<" position for THIS test to check the
         # escaping of.
         'pattern: state-toggle\nbefore: Shared\nafter: Modified',
     ],
@@ -1036,9 +1036,11 @@ def test_timeline_island_position_tokens_are_not_html_escaped(block):
     """A <script> is an HTML *raw text* element, so character references inside it
     are never decoded. html.escape()-ing the island would hand JSON.parse the four
     literal characters "&lt;" instead of "<", turning anime.js's
-    "start with the previous step" position token into an unrecognized string and
-    silently making parallel steps play sequentially. The island must therefore
-    contain no "&lt;", and every position that means "<" must parse back to "<".
+    "start together with the previous step" position token ("<<" -- a bare "<"
+    means "start after the previous step ENDS", not alongside it) into an
+    unrecognized string and silently making parallel steps play sequentially.
+    The island must therefore contain no "&lt;", and every position that means
+    "<<" must parse back to "<<".
     """
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
@@ -1060,7 +1062,7 @@ def test_timeline_island_position_tokens_are_not_html_escaped(block):
     # sequence that would break out of the island.
     assert "<" not in raw
     positions = [s.get("position") for s in json.loads(raw)["steps"]]
-    assert "<" in positions, positions
+    assert "<<" in positions, positions
 
 
 def test_state_machine_renders_boxes_track_arcs_and_a_timeline_island():
@@ -1651,6 +1653,42 @@ def test_no_animate_pattern_animates_fill_or_stroke_with_a_css_variable():
                             f"{name}: a tween step animates {prop} to {v!r} -- "
                             "animejs cannot interpolate a CSS variable as a colour"
                         )
+
+
+def test_no_animate_pattern_uses_a_bare_less_than_position():
+    """anime.js v4's Timeline.add() treats a bare "<" as "start once the
+    PREVIOUS step ends" -- only "<<" means "start together with it". A "<"
+    written with parallel-start intent silently serialises two steps that were
+    meant to run at once, and the delay compounds lap over lap on a looping
+    timeline: a 5-transition state-machine drifted by 3500ms across one lap
+    (measured against the real animejs library), which surfaced as labels
+    firing long after the marker had already moved on and highlights lagging
+    visibly behind the dot. Every "run alongside the previous step" position
+    in this renderer must be "<<"; this scans all five patterns' generated
+    timelines for a lingering bare "<" to catch a regression before it ships.
+    """
+    blocks = {
+        "state-machine": (
+            "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+            "transitions:\n  - A -> B: go\n  - B -> C: next\n  - C -> A: back\n"
+        ),
+        "state-toggle": "pattern: state-toggle\nbefore: X\nafter: Y\n",
+        "pipeline": "pattern: pipeline\nstages:\n  - A: x\n  - B: y\n",
+        "layer-stack": "pattern: layer-stack\nlayers:\n  - A: x\n  - B: y\n",
+        "transform": "pattern: transform\nfrom: A\nto: B\nsteps:\n  - one\n",
+    }
+    for name, body in blocks.items():
+        out = _animate_html(parse_animate(body), "ANIMTOKEN1")
+        for match in re.finditer(
+            r'class="anim__timeline"[^>]*>(.*?)</script>', out, re.S
+        ):
+            data = json.loads(match.group(1))
+            for step in data["steps"]:
+                position = step.get("position")
+                assert position != "<", (
+                    f"{name}: a step has position '<', which starts it only "
+                    "after the previous step ends -- use '<<' for a parallel start"
+                )
 
 
 @pytest.mark.parametrize(

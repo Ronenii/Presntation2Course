@@ -908,7 +908,12 @@ def _state_machine_html(anim: Animate, token: str) -> str:
             "targets": [f"#{text_ids[to_i]}"],
             "props": {"opacity": [0, 1]},
             "duration": 300,
-            "position": "<",
+            # "<<" starts together with the PREVIOUS step; a bare "<" instead
+            # starts right after it ENDS (anime.js v4's actual semantics --
+            # counter to what the single-bracket name suggests), which silently
+            # serialised every one of this function's "run alongside" steps and
+            # was the real cause of labels drifting later lap over lap.
+            "position": "<<",
         })
         # The flash then settles to the faint wash and KEEPS it -- no later step
         # animates it back down mid-lap. That is the whole point: the path
@@ -926,14 +931,14 @@ def _state_machine_html(anim: Animate, token: str) -> str:
             "targets": [f"#{text_ids[to_i]}"],
             "props": {"opacity": 0},
             "duration": 200,
-            "position": "<",
+            "position": "<<",
         })
         # The label leaves with its own segment, so exactly one is ever visible.
         steps_json.append({
             "targets": [f"#{label_ids[i]}"],
             "props": {"opacity": [1, 0]},
             "duration": 200,
-            "position": "<",
+            "position": "<<",
         })
 
     # Every animated property is reset before the loop restarts. anime.js
@@ -1036,7 +1041,10 @@ def _state_toggle_html(anim: Animate, token: str) -> str:
         "loopDelay": 0,
         "steps": [
             {"targets": [f"#{before_id}"], "props": {"opacity": [1, 0]}, "duration": 4000, "ease": "inOutQuad"},
-            {"targets": [f"#{after_id}"], "props": {"opacity": [0, 1]}, "duration": 4000, "ease": "inOutQuad", "position": "<"},
+            # "<<" starts together with the previous step; a bare "<" starts
+            # only after it ends (anime.js v4's real semantics), which would
+            # play the crossfade as two back-to-back fades instead of one.
+            {"targets": [f"#{after_id}"], "props": {"opacity": [0, 1]}, "duration": 4000, "ease": "inOutQuad", "position": "<<"},
             {"kind": "set", "targets": [f"#{before_id}"], "props": {"opacity": 1}},
             {"kind": "set", "targets": [f"#{after_id}"], "props": {"opacity": 0}},
         ],
@@ -1165,7 +1173,9 @@ def _pipeline_html(anim: Animate, token: str) -> str:
                 "props": {"opacity": 0},
                 "duration": 400,
                 "ease": "outQuad",
-                "position": "<",
+                # "<<" starts together with the reveal above; a bare "<" would
+                # wait for it to finish first (anime.js v4's real semantics).
+                "position": "<<",
             })
         if i < len(anim.stages) - 1:
             steps_json.append({
@@ -1281,7 +1291,9 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
             "props": {"opacity": [0, 1]},
             "duration": 500,
             "ease": "outQuad",
-            "position": "<",
+            # "<<" starts together with the base reveal above; a bare "<"
+            # would wait for it to finish first (anime.js v4's real semantics).
+            "position": "<<",
         })
         if position > 0:
             previous = list(order)[position - 1]
@@ -1294,7 +1306,7 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
                 "props": {"opacity": 0},
                 "duration": 500,
                 "ease": "outQuad",
-                "position": "<",
+                "position": "<<",
             })
 
     steps_json.append({
@@ -1437,7 +1449,9 @@ def _transform_html(anim: Animate, token: str) -> str:
                 "props": {"opacity": 0},
                 "duration": 400,
                 "ease": "outQuad",
-                "position": "<",
+                # "<<" starts together with the reveal above; a bare "<" would
+                # wait for it to finish first (anime.js v4's real semantics).
+                "position": "<<",
             })
     steps_json.append({
         "targets": [f"#{to_active_id}", f"#{to_inverted_id}"],
