@@ -52,7 +52,11 @@
   .anim--transform .anim__xform-line {
     stroke-dashoffset: 0 !important;
   }
-  .anim--layer-stack .anim__layer-box,
+  /* :not(.anim__layer-box-active) excludes the accent highlight overlay --
+     same reasoning as layout.css's reduced-motion rule: only one layer is
+     ever highlighted during playback, so printing every one "active" would
+     misrepresent the sequence the static list already narrates. */
+  .anim--layer-stack .anim__layer-box:not(.anim__layer-box-active),
   .anim--transform .anim__xform-step {
     opacity: 1 !important;
   }

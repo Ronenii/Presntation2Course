@@ -25,6 +25,7 @@ from p2c.mdrender import (
     Animate,
     AnimateError,
     FigureError,
+    _animate_html,
     _layer_stack_html,
     _pipeline_html,
     _transform_html,
@@ -1199,13 +1200,13 @@ def test_state_machine_without_a_back_edge_resets_invisibly():
 
 
 def test_state_machine_box_highlight_targets_the_rect_not_the_group():
-    """A state box is a <g> wrapping a <rect> and a <text>, and both children
-    carry their own `fill` attribute. Animating `fill` on the wrapping <g> never
-    reaches a rendered pixel, because a child's own fill outranks anything
-    inherited from the group. Every fill-animating step -- arrival highlight,
-    settle-back-to-idle, the label inversion, and the trailing kind:"set" resets
-    -- must therefore target a rect or text id, never a group id
-    (anim-state-box-*).
+    """A state box is a <g> wrapping a <rect> and two <text> elements, and every
+    child carries its own `fill` attribute. Animating `fill` on the wrapping <g>
+    never reaches a rendered pixel, because a child's own fill outranks anything
+    inherited from the group. Every fill-animating step -- the arrival highlight
+    and settle-back-to-idle -- must therefore target a rect id, never a group id
+    (anim-state-box-*). (The label inversion no longer animates `fill` at all;
+    see test_state_machine_inverts_active_label_text_and_restores_it for why.)
     """
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
@@ -1229,12 +1230,17 @@ def test_state_machine_box_highlight_targets_the_rect_not_the_group():
     )
     steps = json.loads(match.group(1))["steps"]
     fill_steps = [s for s in steps if "fill" in (s.get("props") or {})]
-    assert fill_steps, "no fill-animating steps found"
-    for step in fill_steps:
+    fill_opacity_steps = [s for s in steps if "fillOpacity" in (s.get("props") or {})]
+    assert fill_opacity_steps, "no fill-opacity-animating steps found"
+    assert not fill_steps, (
+        "a step animates `fill` directly -- this is the exact mechanism that "
+        "broke against a real animejs, which cannot interpolate a var() string"
+    )
+    for step in fill_opacity_steps:
         for target in step["targets"]:
-            assert target.startswith(("#anim-state-rect-", "#anim-state-text-")), (
-                f"fill step targets {target!r}; animating fill on the <g> group is "
-                "overridden by the child's own fill and never renders"
+            assert target.startswith("#anim-state-rect-"), (
+                f"fillOpacity step targets {target!r}; animating it on the <g> "
+                "group is overridden by the rect's own fill-opacity and never renders"
             )
 
 
@@ -1531,6 +1537,64 @@ def test_state_machine_geometry_never_collides_or_clips(count):
     for x, y, w, h in boxes + chips:
         assert x >= view_x - 0.5 and y >= view_y - 0.5
         assert x + w <= view_x + width + 0.5 and y + h <= view_y + height + 0.5
+    # A long label should widen the diagram somewhat, but not distort it into a
+    # sliver: the bug this guards against pushed a 22-character label 244px past
+    # an 88px-radius ring, more than tripling one axis while the other stayed
+    # small, and squashed the whole ring into a corner of a wildly wide viewBox.
+    assert max(width, height) / min(width, height) < 3.5
+
+
+def test_state_machine_one_long_label_does_not_distort_the_diagram():
+    """Regression for a real bug: a label's push distance was inflated by its
+    OWN full chip width, so a 22-character transition on an otherwise compact
+    ring got pushed ~244px out (radius ~88) -- nearly triple the ring's own
+    size. That dragged the viewBox out to a wide sliver and squeezed the ring
+    into one corner, which is what a reviewer flagged as looking broken. A chip
+    must instead sit just outside the ring and only step out further when an
+    actual collision demands it.
+
+    Bounding on aspect ratio alone was tried first and did not catch this: a
+    slightly different label produced a wide-but-not-absurd 1.96 ratio under
+    the SAME bug, comfortably under a naive 3.5 threshold. The real signature
+    of the bug is the RING shrinking relative to the overall canvas, so this
+    measures the ring's diameter as a fraction of the viewBox's larger side
+    instead -- that is what "squeezed into a corner" actually means.
+    """
+    anim = parse_animate(
+        "pattern: state-machine\n"
+        "states:\n  - Thesis\n  - Antithesis\n  - Synthesis\n"
+        "transitions:\n"
+        "  - Thesis -> Antithesis: provokes\n"
+        "  - Antithesis -> Synthesis: resolves\n"
+        "  - Synthesis -> Thesis: becomes the next thesis\n"
+    )
+    out = _state_machine_html(anim, "ANIMTOKEN1")
+    boxes = _svg_rects(out, "anim__state-base")
+    chips = _svg_rects(out, "anim__state-transition-label-bg")
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            assert not _boxes_overlap(boxes[i], boxes[j])
+    for box in boxes:
+        for chip in chips:
+            assert not _boxes_overlap(box, chip)
+
+    centres = [(x + w / 2, y + h / 2) for x, y, w, h in boxes]
+    ring_cx = sum(p[0] for p in centres) / len(centres)
+    ring_cy = sum(p[1] for p in centres) / len(centres)
+    ring_radius = max(math.hypot(x - ring_cx, y - ring_cy) for x, y in centres)
+
+    _, _, width, height = (
+        float(v) for v in re.search(r'viewBox="(\S+) (\S+) (\S+) (\S+)"', out).groups()
+    )
+    assert max(width, height) / min(width, height) < 3.5, (
+        f"a long label distorted the diagram into a {width:.0f}x{height:.0f} sliver"
+    )
+    # The bug shrank the ring to well under a third of the canvas; a healthy
+    # layout keeps the ring as most of whichever side it's laid out along.
+    assert (2 * ring_radius) / max(width, height) > 0.35, (
+        f"ring diameter {2 * ring_radius:.0f} is tiny next to the "
+        f"{width:.0f}x{height:.0f} canvas -- squeezed into a corner"
+    )
 
 
 def _state_machine_timeline(transitions):
@@ -1541,6 +1605,52 @@ def _state_machine_timeline(transitions):
     out = _state_machine_html(anim, "ANIMTOKEN1")
     island = re.search(r'class="anim__timeline"[^>]*>(.*?)</script>', out, re.S)
     return out, json.loads(island.group(1))
+
+
+def test_no_animate_pattern_animates_fill_or_stroke_with_a_css_variable():
+    """Real animejs (v4.5.0)'s colour detector (isCol in core/helpers) only
+    recognises hex, rgb(), rgba(), and hsl() -- a bare var(--token) reference
+    matches none of those. decomposeRawValue then falls through its number
+    path, defaults to the literal 0, and never revisits it: a `fill` tween
+    between two var() strings silently renders as black and never recovers.
+
+    Verified directly against the real library (not a hand-written stub): a
+    generated state-machine's arrival flash was invisible-forever after the
+    first lap. Confirmed here at the source instead, so a future JS-tween
+    color animation using a var() reference is caught without a Node
+    dependency: EVERY animate pattern's generated timeline is scanned for a
+    non-`set` step whose `fill`/`stroke` prop contains "var(--", across a
+    representative block for each of the five surviving patterns.
+    """
+    blocks = {
+        "state-machine": (
+            "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+            "transitions:\n  - A -> B: go\n  - B -> C: next\n  - C -> A: back\n"
+        ),
+        "state-toggle": "pattern: state-toggle\nbefore: X\nafter: Y\n",
+        "pipeline": "pattern: pipeline\nstages:\n  - A: x\n  - B: y\n",
+        "layer-stack": "pattern: layer-stack\nlayers:\n  - A: x\n  - B: y\n",
+        "transform": "pattern: transform\nfrom: A\nto: B\nsteps:\n  - one\n",
+    }
+    for name, body in blocks.items():
+        out = _animate_html(parse_animate(body), "ANIMTOKEN1")
+        for match in re.finditer(
+            r'class="anim__timeline"[^>]*>(.*?)</script>', out, re.S
+        ):
+            data = json.loads(match.group(1))
+            for step in data["steps"]:
+                if step.get("kind") == "set":
+                    continue
+                for prop in ("fill", "stroke"):
+                    value = (step.get("props") or {}).get(prop)
+                    if value is None:
+                        continue
+                    values = value if isinstance(value, list) else [value]
+                    for v in values:
+                        assert "var(--" not in str(v), (
+                            f"{name}: a tween step animates {prop} to {v!r} -- "
+                            "animejs cannot interpolate a CSS variable as a colour"
+                        )
 
 
 @pytest.mark.parametrize(
@@ -1586,25 +1696,51 @@ def test_state_machine_inverts_active_label_text_and_restores_it(transitions):
     below the 4.5:1 floor, so the label must invert to --color-accent-contrast
     on the same clock -- and every inverted target must be restored, or the
     inversion persists onto an idle box next lap.
+
+    The inversion is implemented as TWO STACKED <text> elements (one plain, one
+    pre-coloured --color-accent-contrast starting at opacity 0), with OPACITY
+    animated to flip between them -- never as a `fill` tween between two CSS
+    var() strings. Confirmed against the real animejs library that a bare
+    var() reference is not recognised as a colour (its isCol() only matches
+    hex/rgb()/rgba()/hsl()) and silently decomposes to the literal number 0,
+    which rendered every label permanently black after the first lap.
     """
     out, data = _state_machine_timeline(transitions)
-    # The stylesheet must not declare a competing fill, or the attribute the
-    # timeline interpolates would never win.
-    assert 'fill="var(--color-fg)"' in out, "label carries no inline base fill"
-    inverted = {
-        target
-        for step in data["steps"] if step.get("kind") != "set"
-        and "accent-contrast" in str(step.get("props", ""))
-        for target in step["targets"]
-    }
-    restored = {
-        target
-        for step in data["steps"] if step.get("kind") == "set"
-        and "color-fg" in str(step.get("props", ""))
-        for target in step["targets"]
-    }
-    assert inverted, "no label ever inverts on the accent fill"
-    assert inverted <= restored, f"never restored: {sorted(inverted - restored)}"
+    # Two stacked texts at the same position: the plain one always present,
+    # the inverted one starting invisible.
+    assert out.count('class="anim__state-name') >= 2
+    assert 'fill="var(--color-accent-contrast)"' in out
+    assert 'class="anim__state-name anim__state-name-inverted"' in out
+
+    def targets_where(predicate):
+        return {
+            target
+            for step in data["steps"] if predicate(step)
+            for target in step["targets"]
+        }
+
+    inverted_shown = targets_where(
+        lambda s: s.get("kind") != "set"
+        and (s.get("props") or {}).get("opacity") == [0, 1]
+        and "anim-state-text" in str(s.get("targets"))
+    )
+    inverted_hidden = targets_where(
+        lambda s: (s.get("props") or {}).get("opacity") in (0, [1, 0])
+        and "anim-state-text" in str(s.get("targets"))
+    )
+    # No step may animate `fill` on the inverted-text id at all: that is the
+    # exact mechanism that broke.
+    fill_on_inverted = targets_where(
+        lambda s: "fill" in (s.get("props") or {})
+        and "anim-state-text" in str(s.get("targets"))
+    )
+    assert inverted_shown, "no label's inverted copy ever fades in"
+    assert inverted_shown <= inverted_hidden, (
+        f"never hidden again: {sorted(inverted_shown - inverted_hidden)}"
+    )
+    assert not fill_on_inverted, (
+        f"a step still animates `fill` on the inverted text: {sorted(fill_on_inverted)}"
+    )
 
 
 def test_state_toggle_renders_before_and_after_with_a_timeline_island():

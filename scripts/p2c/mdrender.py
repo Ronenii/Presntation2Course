@@ -519,6 +519,16 @@ def _arc_between(
 _ARC_MAX_SWEEP = math.pi * 2 / 3  # 120 degrees; see _arc_between's error note
 
 
+def _rects_overlap(
+    a: tuple[float, float, float, float], b: tuple[float, float, float, float]
+) -> bool:
+    """True if two (x, y, width, height) rectangles intersect."""
+    return not (
+        a[0] + a[2] <= b[0] or b[0] + b[2] <= a[0]
+        or a[1] + a[3] <= b[1] or b[1] + b[3] <= a[1]
+    )
+
+
 def _arc_chain(
     start: tuple[float, float], end: tuple[float, float], cx: float, cy: float
 ) -> list[tuple[tuple[float, float], tuple[float, float], tuple[float, float]]]:
@@ -628,6 +638,12 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     def _lerp(a, b, t):
         return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
 
+    def _outside_box(point, box_x, box_y, box_w, box_h, margin):
+        return (
+            point[0] < box_x - margin or point[0] > box_x + box_w + margin
+            or point[1] < box_y - margin or point[1] > box_y + box_h + margin
+        )
+
     track_segments = []
     for from_state, to_state, _action in anim.transitions:
         from_i = anim.states.index(from_state)
@@ -638,19 +654,37 @@ def _state_machine_html(anim: Animate, token: str) -> str:
         # The drawn arc stops short of the destination box rather than running to
         # its centre, so the arrowhead lands on the box's edge where it can be
         # seen. Only the LAST piece is trimmed; earlier ones are drawn whole.
-        # t is found by walking the curve rather than solving analytically: a
-        # cubic's arc length has no closed form, and 60 samples is well under a
-        # pixel at these radii.
+        #
+        # The stop point is where the curve first enters the box's own
+        # rectangle (plus a small margin), not a fixed "half the box's width"
+        # radius: a box is wider than it is tall, so a clearance sized off its
+        # width stopped the arc far short whenever the approach was closer to
+        # vertical -- the arc ended up floating 50-70px from the box it should
+        # have pointed into. t is found by walking the curve rather than
+        # solving analytically: a cubic's arc length has no closed form, and
+        # 60 samples is well under a pixel at these radii.
         last_c1, last_c2, last_end = pieces[-1]
         piece_start = pieces[-2][2] if len(pieces) > 1 else start
-        stop_distance = box_widths[to_i] / 2 + 6
-        trim_t = 1.0
-        for sample in range(60, 0, -1):
-            t = sample / 60
-            point = _cubic_at(piece_start, last_c1, last_c2, last_end, t)
-            if math.hypot(point[0] - last_end[0], point[1] - last_end[1]) >= stop_distance:
-                trim_t = t
-                break
+        box_x = centers[to_i][0] - box_widths[to_i] / 2
+        box_y = centers[to_i][1] - _STATE_BOX_HEIGHT / 2
+        arrow_clearance = 6  # visible gap between the arrowhead's tip and the box edge
+        # Binary search for the crossing rather than a coarse fixed step: a
+        # linear scan's last "outside" SAMPLE can sit several pixels short of
+        # the box's actual boundary between samples, which is what left the
+        # arrow visibly floating short of its destination. 30 halvings is
+        # comfortably under a millipixel at these coordinate magnitudes.
+        outside_t, inside_t = 0.0, 1.0
+        for _ in range(30):
+            mid = (outside_t + inside_t) / 2
+            point = _cubic_at(piece_start, last_c1, last_c2, last_end, mid)
+            if _outside_box(
+                point, box_x, box_y, box_widths[to_i], _STATE_BOX_HEIGHT,
+                margin=arrow_clearance,
+            ):
+                outside_t = mid
+            else:
+                inside_t = mid
+        trim_t = outside_t
         # de Casteljau split at trim_t. The leading sub-curve's controls are the
         # first interpolation point (p01) and the second-level one (q0); its end
         # is the third-level point, which is the curve's own value at trim_t.
@@ -712,11 +746,23 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     extents: list[tuple[float, float, float, float]] = []
 
     boxes_html = []
+    box_rects: list[tuple[float, float, float, float]] = []
     for i, name in enumerate(anim.states):
         width = box_widths[i]
         x = centers[i][0] - width / 2
         y = centers[i][1] - _STATE_BOX_HEIGHT / 2
         extents.append((x, y, x + width, y + _STATE_BOX_HEIGHT))
+        box_rects.append((x, y, width, _STATE_BOX_HEIGHT))
+        label_x, label_y = centers[i][0], centers[i][1] + 5
+        # Two stacked <text> elements, not one whose `fill` is animated between
+        # "var(--color-fg)" and "var(--color-accent-contrast)". anime.js only
+        # recognises hex/rgb()/rgba()/hsl() as colour values (see its isCol
+        # helper); a bare var() reference matches none of those, falls through
+        # decomposeRawValue's number path, and silently becomes the literal 0 --
+        # rendering as black and never restoring, which is what made every
+        # state's label go dark and stay dark after the first lap. Animating
+        # OPACITY between two pre-coloured, stacked texts sidesteps the colour
+        # pipeline entirely; opacity is a plain number anime.js handles natively.
         boxes_html.append(
             f'<g class="anim__state-box">'
             f'<rect class="anim__state-base" x="{x:.1f}" y="{y:.1f}" '
@@ -725,9 +771,13 @@ def _state_machine_html(anim: Animate, token: str) -> str:
             f'x="{x:.1f}" y="{y:.1f}" '
             f'width="{width:.1f}" height="{_STATE_BOX_HEIGHT}" rx="10" '
             f'fill="var(--color-accent)" fill-opacity="0"></rect>'
-            f'<text class="anim__state-name" id="{text_ids[i]}" '
-            f'x="{centers[i][0]:.1f}" y="{centers[i][1] + 5:.1f}" '
+            f'<text class="anim__state-name" '
+            f'x="{label_x:.1f}" y="{label_y:.1f}" '
             f'fill="var(--color-fg)">{html.escape(name)}</text>'
+            f'<text class="anim__state-name anim__state-name-inverted" '
+            f'id="{text_ids[i]}" '
+            f'x="{label_x:.1f}" y="{label_y:.1f}" opacity="0" '
+            f'fill="var(--color-accent-contrast)">{html.escape(name)}</text>'
             "</g>"
         )
     # Labels paint LAST: authored prose stays legible above everything. Each sits
@@ -735,6 +785,7 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     # clears the boxes -- which straddle the ring, so a label only just outside
     # the radius would sit on top of them.
     labels_html = []
+    placed_chips: list[tuple[float, float, float, float]] = []
     for i, (from_state, to_state, action) in enumerate(anim.transitions):
         from_i = anim.states.index(from_state)
         to_i = anim.states.index(to_state)
@@ -755,19 +806,33 @@ def _state_machine_html(anim: Animate, token: str) -> str:
             mid_x, mid_y = -chord_y / chord_length, chord_x / chord_length
             length = 1.0
         unit_x, unit_y = mid_x / length, mid_y / length
-        # Clear the boxes' own extent along this direction, then the chip's, then
-        # a breathing gap. Both reaches are the half-extent of an axis-aligned
-        # rectangle measured along (unit_x, unit_y), which is the SUM of the two
-        # projected half-sides -- not the larger of them. Taking the max instead
-        # under-measured any direction that is neither axis-aligned, and labels
-        # at the top and bottom of an 8-state ring overlapped their boxes.
-        box_reach = (
-            abs(unit_x) * max(box_widths) / 2 + abs(unit_y) * _STATE_BOX_HEIGHT / 2
-        )
-        chip_reach = abs(unit_x) * chip_width / 2 + abs(unit_y) * chip_height / 2
-        push = radius + box_reach + chip_reach + 8
+        # Sit the chip just outside the ring, then push it out only as far as an
+        # actual collision demands. Inflating the push by the chip's own length
+        # up front (an earlier version did) sends a long label flying: a
+        # 22-character chip on a radius-88 ring was pushed 244px out, three times
+        # the ring's size, dragging the viewBox with it and squashing the diagram
+        # into a corner.
+        push = radius + chip_height / 2 + 10
         lx = cx + unit_x * push
         ly = cy + unit_y * push
+        for _attempt in range(24):
+            chip_box = (
+                lx - chip_width / 2, ly - chip_height / 2, chip_width, chip_height,
+            )
+            blocked = any(
+                _rects_overlap(chip_box, (bx, by, bw, bh))
+                for bx, by, bw, bh in box_rects
+            ) or any(
+                _rects_overlap(chip_box, placed) for placed in placed_chips
+            )
+            if not blocked:
+                break
+            push += 6
+            lx = cx + unit_x * push
+            ly = cy + unit_y * push
+        placed_chips.append(
+            (lx - chip_width / 2, ly - chip_height / 2, chip_width, chip_height)
+        )
         extents.append((
             lx - chip_width / 2, ly - chip_height / 2,
             lx + chip_width / 2, ly + chip_height / 2,
@@ -833,11 +898,15 @@ def _state_machine_html(anim: Animate, token: str) -> str:
             "duration": 300,
             "position": "-=260",
         })
-        # Its label inverts on the same clock: --color-fg on a solid accent
-        # measures 1.82:1 to 3.83:1 across the themes, below the 4.5:1 floor.
+        # The inverted (accent-contrast) copy of the label fades in on the same
+        # clock as the flash: --color-fg on a solid accent measures 1.82:1 to
+        # 3.83:1 across the themes, below the 4.5:1 floor. Animating opacity on
+        # a pre-coloured stacked <text>, rather than animating `fill` itself,
+        # because anime.js cannot interpolate a bare var() reference as a
+        # colour -- see the boxes_html comment above.
         steps_json.append({
             "targets": [f"#{text_ids[to_i]}"],
-            "props": {"fill": ["var(--color-fg)", "var(--color-accent-contrast)"]},
+            "props": {"opacity": [0, 1]},
             "duration": 300,
             "position": "<",
         })
@@ -845,8 +914,9 @@ def _state_machine_html(anim: Animate, token: str) -> str:
         # animates it back down mid-lap. That is the whole point: the path
         # travelled so far stays visible instead of each state flashing back to
         # blank behind the marker. Only the trailing reset clears it, so the next
-        # lap starts clean. The label returns to --color-fg, legible again once
-        # the fill is this pale.
+        # lap starts clean. The inverted label copy fades back out, uncovering
+        # the plain --color-fg one beneath it, legible again once the fill is
+        # this pale.
         steps_json.append({
             "targets": [f"#{rect_ids[to_i]}"],
             "props": {"fillOpacity": _STATE_VISITED_OPACITY},
@@ -854,7 +924,7 @@ def _state_machine_html(anim: Animate, token: str) -> str:
         })
         steps_json.append({
             "targets": [f"#{text_ids[to_i]}"],
-            "props": {"fill": "var(--color-fg)"},
+            "props": {"opacity": 0},
             "duration": 200,
             "position": "<",
         })
@@ -878,7 +948,7 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     steps_json.append({
         "kind": "set",
         "targets": [f"#{t}" for t in text_ids],
-        "props": {"fill": "var(--color-fg)"},
+        "props": {"opacity": 0},
     })
     steps_json.append({
         "kind": "set",
@@ -992,6 +1062,8 @@ def _pipeline_html(anim: Animate, token: str) -> str:
     """
     token_seed = re.sub(r"\D", "", token) or "0"
     rect_ids = [f"anim-pipe-rect-{token_seed}-{i}" for i in range(len(anim.stages))]
+    name_text_ids = [f"anim-pipe-name-{token_seed}-{i}" for i in range(len(anim.stages))]
+    change_text_ids = [f"anim-pipe-change-{token_seed}-{i}" for i in range(len(anim.stages))]
     line_ids = [f"anim-pipe-line-{token_seed}-{i}" for i in range(len(anim.stages) - 1)]
 
     # Every box must be at least as wide as its OWN longest line (name or
@@ -1038,16 +1110,39 @@ def _pipeline_html(anim: Animate, token: str) -> str:
     for i, (name, change) in enumerate(anim.stages):
         x = box_x(i)
         center_x = x + box_width / 2
+        # Two rects (idle base + accent overlay whose OPACITY is animated, never
+        # its FILL between two var() tokens -- animejs's colour detector only
+        # recognises hex/rgb()/rgba()/hsl(), so a bare var(--anim-pipe-active)
+        # reference silently decomposes to the literal number 0 and the stage
+        # never actually highlighted in a real browser) and two stacked text
+        # pairs per line, the same "plain + pre-inverted, opacity-swapped"
+        # mechanism state-machine uses, since a solid accent fill also fails
+        # contrast for both --color-fg (3.33:1/2.00:1 across themes) and
+        # --color-muted (1.21:1/1.04:1) -- a defect invisible until the fill
+        # animation actually worked.
         boxes_html.append(
             f'<g class="anim__pipe-stage">'
-            f'<rect class="anim__pipe-box" id="{rect_ids[i]}" x="{x:g}" '
+            f'<rect class="anim__pipe-box" x="{x:g}" '
             f'y="{_PIPE_TOP_MARGIN}" width="{box_width:g}" '
             f'height="{_PIPE_BOX_HEIGHT}" rx="8" '
             f'fill="var(--anim-pipe-idle)"></rect>'
+            f'<rect class="anim__pipe-box anim__pipe-box-active" id="{rect_ids[i]}" '
+            f'x="{x:g}" y="{_PIPE_TOP_MARGIN}" width="{box_width:g}" '
+            f'height="{_PIPE_BOX_HEIGHT}" rx="8" '
+            f'fill="var(--anim-pipe-active)" opacity="0"></rect>'
             f'<text class="anim__pipe-name" x="{center_x:g}" '
-            f'y="{box_center_y - 4:g}" text-anchor="middle">{html.escape(name)}</text>'
+            f'y="{box_center_y - 4:g}" text-anchor="middle" '
+            f'fill="var(--color-fg)">{html.escape(name)}</text>'
+            f'<text class="anim__pipe-name anim__text-on-accent" '
+            f'id="{name_text_ids[i]}" x="{center_x:g}" '
+            f'y="{box_center_y - 4:g}" text-anchor="middle" opacity="0">'
+            f'{html.escape(name)}</text>'
             f'<text class="anim__pipe-change" x="{center_x:g}" '
-            f'y="{box_center_y + 14:g}" text-anchor="middle">'
+            f'y="{box_center_y + 14:g}" text-anchor="middle" '
+            f'fill="var(--color-muted)">{html.escape(change)}</text>'
+            f'<text class="anim__pipe-change anim__text-on-accent" '
+            f'id="{change_text_ids[i]}" x="{center_x:g}" '
+            f'y="{box_center_y + 14:g}" text-anchor="middle" opacity="0">'
             f'{html.escape(change)}</text>'
             f'</g>'
         )
@@ -1055,15 +1150,19 @@ def _pipeline_html(anim: Animate, token: str) -> str:
     steps_json: list[dict] = []
     for i in range(len(anim.stages)):
         steps_json.append({
-            "targets": [f"#{rect_ids[i]}"],
-            "props": {"fill": "var(--anim-pipe-active)"},
+            "targets": [f"#{rect_ids[i]}", f"#{name_text_ids[i]}", f"#{change_text_ids[i]}"],
+            "props": {"opacity": [0, 1]},
             "duration": 400,
             "ease": "outQuad",
         })
         if i > 0:
             steps_json.append({
-                "targets": [f"#{rect_ids[i - 1]}"],
-                "props": {"fill": "var(--anim-pipe-idle)"},
+                "targets": [
+                    f"#{rect_ids[i - 1]}",
+                    f"#{name_text_ids[i - 1]}",
+                    f"#{change_text_ids[i - 1]}",
+                ],
+                "props": {"opacity": 0},
                 "duration": 400,
                 "ease": "outQuad",
                 "position": "<",
@@ -1079,8 +1178,10 @@ def _pipeline_html(anim: Animate, token: str) -> str:
     # Gotcha 2: snap every animated property back to baseline before the loop
     # restarts, or lap two starts from lap one's end state.
     steps_json.append({
-        "kind": "set", "targets": [f"#{r}" for r in rect_ids],
-        "props": {"fill": "var(--anim-pipe-idle)"},
+        "kind": "set",
+        "targets": [f"#{r}" for r in rect_ids] + [f"#{t}" for t in name_text_ids]
+        + [f"#{t}" for t in change_text_ids],
+        "props": {"opacity": 0},
     })
     steps_json.append({
         "kind": "set", "targets": [f"#{l}" for l in line_ids],
@@ -1115,6 +1216,9 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
     token_seed = re.sub(r"\D", "", token) or "0"
     count = len(anim.layers)
     rect_ids = [f"anim-layer-rect-{token_seed}-{i}" for i in range(count)]
+    active_rect_ids = [f"anim-layer-active-{token_seed}-{i}" for i in range(count)]
+    name_text_ids = [f"anim-layer-name-{token_seed}-{i}" for i in range(count)]
+    adds_text_ids = [f"anim-layer-adds-{token_seed}-{i}" for i in range(count)]
     total_height = _LAYER_TOP_MARGIN * 2 + count * _LAYER_HEIGHT + (count - 1) * _LAYER_GAP
     total_width = _LAYER_WIDTH + _LAYER_TOP_MARGIN * 2
 
@@ -1126,18 +1230,38 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
     rows_html = []
     for i, (name, adds) in enumerate(anim.layers):
         y = layer_y(i)
+        name_x = _LAYER_TOP_MARGIN + 12
+        adds_x = _LAYER_TOP_MARGIN + _LAYER_WIDTH - 12
+        text_y = y + _LAYER_HEIGHT / 2 + 4
+        # A row's own reveal (idle rect, opacity 0->1) is a SEPARATE property from
+        # its accent HIGHLIGHT (a second, stacked rect whose opacity is animated,
+        # never a `fill` tween between two var() tokens -- animejs's colour
+        # detector only recognises hex/rgb()/rgba()/hsl(), so the highlight never
+        # actually rendered in a real browser). Labels get the same plain +
+        # pre-inverted, opacity-swapped pair state-machine and pipeline use,
+        # since --color-fg/--color-muted both fail contrast against a solid
+        # --color-accent fill.
         rows_html.append(
             f'<g class="anim__layer-row">'
             f'<rect class="anim__layer-box" id="{rect_ids[i]}" '
             f'x="{_LAYER_TOP_MARGIN}" y="{y:g}" width="{_LAYER_WIDTH}" '
             f'height="{_LAYER_HEIGHT}" rx="6" fill="var(--anim-layer-idle)" '
             f'opacity="0"></rect>'
-            f'<text class="anim__layer-name" x="{_LAYER_TOP_MARGIN + 12}" '
-            f'y="{y + _LAYER_HEIGHT / 2 + 4:g}">{html.escape(name)}</text>'
-            f'<text class="anim__layer-adds" '
-            f'x="{_LAYER_TOP_MARGIN + _LAYER_WIDTH - 12}" '
-            f'y="{y + _LAYER_HEIGHT / 2 + 4:g}" text-anchor="end">'
-            f'{html.escape(adds)}</text>'
+            f'<rect class="anim__layer-box anim__layer-box-active" '
+            f'id="{active_rect_ids[i]}" '
+            f'x="{_LAYER_TOP_MARGIN}" y="{y:g}" width="{_LAYER_WIDTH}" '
+            f'height="{_LAYER_HEIGHT}" rx="6" fill="var(--anim-layer-active)" '
+            f'opacity="0"></rect>'
+            f'<text class="anim__layer-name" x="{name_x}" y="{text_y:g}" '
+            f'fill="var(--color-fg)">{html.escape(name)}</text>'
+            f'<text class="anim__layer-name anim__text-on-accent" '
+            f'id="{name_text_ids[i]}" x="{name_x}" y="{text_y:g}" opacity="0">'
+            f'{html.escape(name)}</text>'
+            f'<text class="anim__layer-adds" x="{adds_x}" y="{text_y:g}" '
+            f'text-anchor="end" fill="var(--color-muted)">{html.escape(adds)}</text>'
+            f'<text class="anim__layer-adds anim__text-on-accent" '
+            f'id="{adds_text_ids[i]}" x="{adds_x}" y="{text_y:g}" '
+            f'text-anchor="end" opacity="0">{html.escape(adds)}</text>'
             f'</g>'
         )
 
@@ -1146,23 +1270,42 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
     for position, i in enumerate(order):
         steps_json.append({
             "targets": [f"#{rect_ids[i]}"],
-            "props": {"opacity": [0, 1], "fill": "var(--anim-layer-active)"},
+            "props": {"opacity": [0, 1]},
             "duration": 500,
             "ease": "outQuad",
+        })
+        steps_json.append({
+            "targets": [
+                f"#{active_rect_ids[i]}", f"#{name_text_ids[i]}", f"#{adds_text_ids[i]}",
+            ],
+            "props": {"opacity": [0, 1]},
+            "duration": 500,
+            "ease": "outQuad",
+            "position": "<",
         })
         if position > 0:
             previous = list(order)[position - 1]
             steps_json.append({
-                "targets": [f"#{rect_ids[previous]}"],
-                "props": {"fill": "var(--anim-layer-idle)"},
+                "targets": [
+                    f"#{active_rect_ids[previous]}",
+                    f"#{name_text_ids[previous]}",
+                    f"#{adds_text_ids[previous]}",
+                ],
+                "props": {"opacity": 0},
                 "duration": 500,
                 "ease": "outQuad",
                 "position": "<",
             })
 
     steps_json.append({
-        "kind": "set", "targets": [f"#{r}" for r in rect_ids],
-        "props": {"opacity": 0, "fill": "var(--anim-layer-idle)"},
+        "kind": "set",
+        "targets": (
+            [f"#{r}" for r in rect_ids]
+            + [f"#{r}" for r in active_rect_ids]
+            + [f"#{t}" for t in name_text_ids]
+            + [f"#{t}" for t in adds_text_ids]
+        ),
+        "props": {"opacity": 0},
     })
 
     timeline_json = _timeline_island_json(
@@ -1194,6 +1337,8 @@ def _transform_html(anim: Animate, token: str) -> str:
     to_id = f"anim-xform-to-{token_seed}"
     line_id = f"anim-xform-line-{token_seed}"
     step_ids = [f"anim-xform-step-{token_seed}-{i}" for i in range(len(anim.steps))]
+    to_active_id = f"anim-xform-to-active-{token_seed}"
+    to_inverted_id = f"anim-xform-to-inverted-{token_seed}"
 
     # Each step's mask must be at least as wide as its own authored text -- reusing
     # _state_machine_html's exact "estimate width from character count" approach
@@ -1217,15 +1362,40 @@ def _transform_html(anim: Animate, token: str) -> str:
     line_x2 = _XFORM_BOX_WIDTH + gap
     label_center_x = line_x1 + gap / 2
 
-    def endpoint(box_id: str, x: float, label: str) -> str:
+    # The `to` endpoint gets a second, stacked accent rect and a pre-inverted
+    # label, whose OPACITY the timeline animates once the last step lands --
+    # never a `fill` tween between two var() tokens, which animejs's colour
+    # detector cannot interpolate (see .anim__text-on-accent's comment). Only
+    # `to` needs this; `from` never changes fill. Both `active_id` and
+    # `inverted_id` are None for `from`, where they're unused.
+    def endpoint(
+        box_id: str, x: float, label: str,
+        active_id: str | None = None, inverted_id: str | None = None,
+    ) -> str:
+        label_x = x + _XFORM_BOX_WIDTH / 2
+        label_y = box_center_y + 4
+        extra = ""
+        if active_id is not None:
+            extra = (
+                f'<rect class="anim__xform-box anim__xform-box-active" '
+                f'id="{active_id}" x="{x:g}" '
+                f'y="{_XFORM_TOP_MARGIN}" width="{_XFORM_BOX_WIDTH}" '
+                f'height="{_XFORM_BOX_HEIGHT}" rx="8" '
+                f'fill="var(--anim-xform-active)" opacity="0"></rect>'
+                f'<text class="anim__xform-label anim__text-on-accent" '
+                f'id="{inverted_id}" x="{label_x:g}" y="{label_y:g}" '
+                f'text-anchor="middle" opacity="0">{html.escape(label)}</text>'
+            )
         return (
             f'<g class="anim__xform-endpoint">'
             f'<rect class="anim__xform-box" id="{box_id}" x="{x:g}" '
             f'y="{_XFORM_TOP_MARGIN}" width="{_XFORM_BOX_WIDTH}" '
             f'height="{_XFORM_BOX_HEIGHT}" rx="8" '
             f'fill="var(--anim-xform-idle)"></rect>'
-            f'<text class="anim__xform-label" x="{x + _XFORM_BOX_WIDTH / 2:g}" '
-            f'y="{box_center_y + 4:g}" text-anchor="middle">{html.escape(label)}</text>'
+            f'<text class="anim__xform-label" x="{label_x:g}" '
+            f'y="{label_y:g}" text-anchor="middle" '
+            f'fill="var(--color-fg)">{html.escape(label)}</text>'
+            f'{extra}'
             f'</g>'
         )
 
@@ -1270,8 +1440,8 @@ def _transform_html(anim: Animate, token: str) -> str:
                 "position": "<",
             })
     steps_json.append({
-        "targets": [f"#{to_id}"],
-        "props": {"fill": "var(--anim-xform-active)"},
+        "targets": [f"#{to_active_id}", f"#{to_inverted_id}"],
+        "props": {"opacity": [0, 1]},
         "duration": 500,
         "ease": "outQuad",
     })
@@ -1284,8 +1454,8 @@ def _transform_html(anim: Animate, token: str) -> str:
         "props": {"strokeDashoffset": gap},
     })
     steps_json.append({
-        "kind": "set", "targets": [f"#{to_id}"],
-        "props": {"fill": "var(--anim-xform-idle)"},
+        "kind": "set", "targets": [f"#{to_active_id}", f"#{to_inverted_id}"],
+        "props": {"opacity": 0},
     })
 
     timeline_json = _timeline_island_json(
@@ -1301,7 +1471,7 @@ def _transform_html(anim: Animate, token: str) -> str:
         f'y1="{box_center_y:g}" x2="{line_x2:g}" y2="{box_center_y:g}" '
         f'stroke-dasharray="{gap:g}" stroke-dashoffset="{gap:g}"></line>'
         f'{endpoint(from_id, 0, anim.from_entity)}'
-        f'{endpoint(to_id, _XFORM_BOX_WIDTH + gap, anim.to_entity)}'
+        f'{endpoint(to_id, _XFORM_BOX_WIDTH + gap, anim.to_entity, to_active_id, to_inverted_id)}'
         f"{''.join(labels_html)}</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
         f'<ol class="anim__xform-static">{static_steps}</ol></div>'
