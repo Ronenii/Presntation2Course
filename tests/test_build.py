@@ -158,7 +158,7 @@ def test_anime_is_inlined_once_when_an_animate_block_is_present(tmp_path):
         modules.joinpath(name).write_text((MINI / "modules" / name).read_text())
     with modules.joinpath("02-scheduling.md").open("a") as handle:
         handle.write(
-            "\n```animate\npattern: state-toggle\nbefore: Ready\nafter: Running\n```\n"
+            "\n```animate\npattern: pipeline\nstages:\n  - Ready: waiting\n  - Running: executing\n```\n"
         )
     out = tmp_path / "out"
     normalized = out / ".p2c" / "normalized"
@@ -455,7 +455,7 @@ def test_animate_blocks_render_inside_a_built_course(tmp_path):
         modules.joinpath(name).write_text((MINI / "modules" / name).read_text())
     with modules.joinpath("02-scheduling.md").open("a") as handle:
         handle.write(
-            "\n```animate\npattern: state-toggle\nbefore: Ready\nafter: Running\n```\n"
+            "\n```animate\npattern: pipeline\nstages:\n  - Ready: waiting\n  - Running: executing\n```\n"
         )
     out = tmp_path / "out"
     normalized = out / ".p2c" / "normalized"
@@ -466,8 +466,9 @@ def test_animate_blocks_render_inside_a_built_course(tmp_path):
     result = build(MINI / "outline.json", modules, out, ASSETS)
     html = result.course_html.read_text()
     assert re.search(
-        r'<div class="anim__state anim__state--before" id="[^"]+">'
-        r'<span class="anim__state-label">Before</span>Ready</div>',
+        r'<rect class="anim__pipe-box"[^>]*></rect>'
+        r'<rect class="anim__pipe-box anim__pipe-box-active"[^>]*></rect>'
+        r'<text class="anim__pipe-name"[^>]*>Ready</text>',
         html,
     )
 

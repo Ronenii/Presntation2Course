@@ -209,7 +209,7 @@ def test_mermaid_blocks_become_divs_and_set_the_flag():
 def test_an_animate_block_sets_the_uses_animate_flag():
     md = course(
         '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: state-toggle\nbefore: Ready\nafter: Running\n```\n\n'
+        '```animate\npattern: pipeline\nstages:\n  - Ready: waiting\n  - Running: executing\n```\n\n'
         '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
         '```glossary\nTLB: definition\n```\n'
     )
@@ -504,13 +504,6 @@ def test_parse_animate_state_machine_with_a_trailing_back_edge():
     )
 
 
-def test_parse_animate_state_toggle():
-    anim = parse_animate(
-        "pattern: state-toggle\nbefore: Marked Shared\nafter: Marked Modified"
-    )
-    assert anim == Animate(pattern="state-toggle", before="Marked Shared", after="Marked Modified")
-
-
 def test_parse_animate_rejects_an_unknown_pattern():
     with pytest.raises(AnimateError, match="animate pattern must be"):
         parse_animate("pattern: spin\nstates:\n  - a\n  - b")
@@ -632,19 +625,6 @@ def test_parse_animate_state_machine_rejects_a_stray_stages_key():
         parse_animate(
             "pattern: state-machine\nstates:\n  - A\n  - B\n"
             "transitions:\n  - A -> B: go\nstages:\n  - X: y\n"
-        )
-
-
-def test_parse_animate_rejects_a_state_toggle_missing_after():
-    with pytest.raises(AnimateError, match="needs both 'before:' and 'after:'"):
-        parse_animate("pattern: state-toggle\nbefore: only before")
-
-
-def test_parse_animate_state_toggle_rejects_a_stray_layers_key():
-    with pytest.raises(AnimateError, match="state-toggle does not use"):
-        parse_animate(
-            "pattern: state-toggle\nbefore: Shared\nafter: Modified\n"
-            "layers:\n  - X: y\n"
         )
 
 
@@ -1266,7 +1246,7 @@ def test_split_merge_renders_and_resets():
         # test_state_machine_transitions_play_sequentially_not_all_at_once in
         # this file), so it emits no "<<" position for THIS test to check the
         # escaping of.
-        'pattern: state-toggle\nbefore: Shared\nafter: Modified',
+        'pattern: pipeline\nstages:\n  - Fetch: read\n  - Decode: parse\n',
     ],
 )
 def test_timeline_island_position_tokens_are_not_html_escaped(block):
@@ -1851,7 +1831,6 @@ _ALL_PATTERN_BLOCKS = {
         "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
         "transitions:\n  - A -> B: go\n  - B -> C: next\n  - C -> A: back\n"
     ),
-    "state-toggle": "pattern: state-toggle\nbefore: X\nafter: Y\n",
     "pipeline": "pattern: pipeline\nstages:\n  - A: x\n  - B: y\n",
     "layer-stack": "pattern: layer-stack\nlayers:\n  - A: x\n  - B: y\n",
     "transform": "pattern: transform\nfrom: A\nto: B\nsteps:\n  - one\n",
@@ -1876,7 +1855,7 @@ def test_no_animate_pattern_animates_fill_or_stroke_with_a_css_variable():
     color animation using a var() reference is caught without a Node
     dependency: EVERY animate pattern's generated timeline is scanned for a
     non-`set` step whose `fill`/`stroke` prop contains "var(--", across a
-    representative block for each of the eight patterns.
+    representative block for each of the seven patterns.
     """
     for name, body in _ALL_PATTERN_BLOCKS.items():
         out = _animate_html(parse_animate(body), "ANIMTOKEN1")
@@ -1908,7 +1887,7 @@ def test_no_animate_pattern_uses_a_bare_less_than_position():
     (measured against the real animejs library), which surfaced as labels
     firing long after the marker had already moved on and highlights lagging
     visibly behind the dot. Every "run alongside the previous step" position
-    in this renderer must be "<<"; this scans all eight patterns' generated
+    in this renderer must be "<<"; this scans all seven patterns' generated
     timelines for a lingering bare "<" to catch a regression before it ships.
     """
     for name, body in _ALL_PATTERN_BLOCKS.items():
@@ -2013,36 +1992,6 @@ def test_state_machine_inverts_active_label_text_and_restores_it(transitions):
     assert not fill_on_inverted, (
         f"a step still animates `fill` on the inverted text: {sorted(fill_on_inverted)}"
     )
-
-
-def test_state_toggle_renders_before_and_after_with_a_timeline_island():
-    md = course(
-        '<!-- topic: tlb -->\n### The TLB\n\n'
-        '```animate\npattern: state-toggle\nbefore: Shared\nafter: Modified\n```\n\n'
-        '```quiz\nq: q\n- [ ] a\n- [x] b\n- [ ] c\nwhy: because\n```\n\n'
-        '```glossary\nTLB: definition\n```\n'
-    )
-    rendered = render_course(md)
-    assert rendered.errors == []
-    assert re.search(
-        r'<div class="anim__state anim__state--before" id="[^"]+">'
-        r'<span class="anim__state-label">Before</span>Shared</div>',
-        rendered.html_body,
-    )
-    assert re.search(
-        r'<div class="anim__state anim__state--after" id="[^"]+">'
-        r'<span class="anim__state-label">After</span>Modified</div>',
-        rendered.html_body,
-    )
-    match = re.search(
-        r'<script type="application/json" class="anim__timeline"[^>]*>(.*?)</script>',
-        rendered.html_body,
-        re.DOTALL,
-    )
-    assert match, "no anim__timeline data island found"
-    timeline = json.loads(match.group(1))
-    assert timeline["loop"] is True
-    assert len(timeline["steps"]) == 4
 
 
 def test_a_broken_animate_block_becomes_an_error_not_a_crash():

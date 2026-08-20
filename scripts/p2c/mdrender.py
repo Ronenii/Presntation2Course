@@ -147,8 +147,6 @@ class AnimateError(ValueError):
 @dataclass
 class Animate:
     pattern: str
-    before: str = ""
-    after: str = ""
     caption: str = ""
     states: list[str] = field(default_factory=list)
     transitions: list[tuple[str, str, str]] = field(default_factory=list)
@@ -176,7 +174,7 @@ _LIST_HEADERS = {
 
 
 _PATTERNS = (
-    "state-machine", "state-toggle", "pipeline", "layer-stack", "transform",
+    "state-machine", "pipeline", "layer-stack", "transform",
     "build-up", "compare", "split-merge",
 )
 
@@ -184,7 +182,7 @@ _PATTERNS = (
 def _require_known_pattern(pattern: str | None) -> None:
     if pattern not in _PATTERNS:
         raise AnimateError(
-            "animate pattern must be 'state-machine', 'state-toggle', 'pipeline', "
+            "animate pattern must be 'state-machine', 'pipeline', "
             "'layer-stack', 'transform', 'build-up', 'compare', or 'split-merge', "
             f"got {pattern!r}"
         )
@@ -330,20 +328,6 @@ def parse_animate(body: str) -> Animate:
                 )
             transitions.append((from_state, to_state, action))
         return Animate(pattern=pattern, states=states, transitions=transitions)
-    elif pattern == "state-toggle":
-        if not before or not after:
-            raise AnimateError("state-toggle needs both 'before:' and 'after:'")
-        if (
-            states_raw or transitions_raw or caption
-            or stages_raw or layers_raw or steps_raw or direction or from_value or to_value
-            or parts_raw or branches_raw or whole_value or left_value or right_value
-            or source_value or merged_value
-        ):
-            raise AnimateError(
-                "state-toggle does not use 'states:'/'transitions:'/'caption:'/"
-                "'stages:'/'layers:'/'steps:'/'direction:'/'from:'/'to:'/'whole:'/"
-                "'parts:'/'left:'/'right:'/'source:'/'merged:'/'branches:'"
-            )
     elif pattern == "pipeline":
         if (
             before or after or states_raw or transitions_raw
@@ -509,15 +493,13 @@ def parse_animate(body: str) -> Animate:
             pattern=pattern, source=source_value, merged=merged_value, branches=branches,
         )
     else:
-        # The whitelist above admits exactly eight patterns and every one of
+        # The whitelist above admits exactly seven patterns and every one of
         # them is handled by a branch, so reaching here means a pattern was
         # added to the whitelist without a parse branch. Raise rather than
         # fall through: an earlier version ended in a bare `else` that parsed
         # the last pattern, which would silently mis-parse any newly
         # whitelisted name.
         raise AnimateError(f"animate pattern {pattern!r} has no parser branch")
-
-    return Animate(pattern=pattern, before=before or "", after=after or "")
 
 
 _PIPE_BOX_WIDTH = 140
@@ -529,6 +511,10 @@ _LAYER_WIDTH = 260
 _LAYER_HEIGHT = 44
 _LAYER_GAP = 12
 _LAYER_TOP_MARGIN = 20
+_LAYER_DWELL_MS = 700  # pause after a row's highlight lands, before the next
+                       # row starts arriving -- gives real prose time to be
+                       # read instead of the stack advancing as fast as each
+                       # fade completes
 
 _XFORM_BOX_WIDTH = 200
 _XFORM_BOX_HEIGHT = 40
@@ -539,6 +525,9 @@ _BUILD_ROW_WIDTH = 320
 _BUILD_ROW_HEIGHT = 40
 _BUILD_ROW_GAP = 8
 _BUILD_MARGIN = 12
+_BUILD_DWELL_MS = 400  # pause after a part settles, before the next starts
+                       # arriving -- gives real prose time to be read instead
+                       # of the whole accumulating as fast as each fade completes
 
 _CMP_ROW_HEIGHT = 52
 _CMP_GUTTER = 28
@@ -606,8 +595,6 @@ def _timeline_island_json(timeline: dict) -> str:
 def _animate_html(anim: Animate, token: str) -> str:
     if anim.pattern == "state-machine":
         return _state_machine_html(anim, token)
-    if anim.pattern == "state-toggle":
-        return _state_toggle_html(anim, token)
     if anim.pattern == "pipeline":
         return _pipeline_html(anim, token)
     if anim.pattern == "layer-stack":
@@ -1170,49 +1157,6 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     )
 
 
-def _state_toggle_html(anim: Animate, token: str) -> str:
-    # See _step_reveal_html's token_seed comment: only the token's ordinal digits
-    # are used to build element ids, never the token's literal text.
-    token_seed = re.sub(r"\D", "", token) or "0"
-    before_id = f"anim-state-before-{token_seed}"
-    after_id = f"anim-state-after-{token_seed}"
-    # "Before"/"After" are literal English UI chrome -- like the "Analogy" callout
-    # label, added by the render layer rather than the course-writer, so they stay
-    # legible regardless of course language (including RTL). They are hidden during
-    # normal animated playback and shown only in the print/reduced-motion static
-    # presentation; see .anim__state-label in layout.css/print.css.
-    #
-    # The trailing pair of "kind": "set" steps resets both states back to their
-    # resting opacity once the crossfade completes, so the NEXT loop iteration
-    # starts from the same opacity as the first: "after" ends the visible
-    # crossfade at opacity 1 and must be snapped back to 0 before the loop
-    # restarts, and vice versa for "before" -- otherwise the second lap plays
-    # from the wrong starting point.
-    timeline = {
-        "loop": True,
-        "loopDelay": 0,
-        "steps": [
-            {"targets": [f"#{before_id}"], "props": {"opacity": [1, 0]}, "duration": 4000, "ease": "inOutQuad"},
-            # "<<" starts together with the previous step; a bare "<" starts
-            # only after it ends (anime.js v4's real semantics), which would
-            # play the crossfade as two back-to-back fades instead of one.
-            {"targets": [f"#{after_id}"], "props": {"opacity": [0, 1]}, "duration": 4000, "ease": "inOutQuad", "position": "<<"},
-            {"kind": "set", "targets": [f"#{before_id}"], "props": {"opacity": 1}},
-            {"kind": "set", "targets": [f"#{after_id}"], "props": {"opacity": 0}},
-        ],
-    }
-    timeline_json = _timeline_island_json(timeline)
-    return (
-        '<div class="anim anim--state-toggle">'
-        f'<div class="anim__state anim__state--before" id="{before_id}">'
-        f'<span class="anim__state-label">Before</span>{html.escape(anim.before)}</div>'
-        f'<div class="anim__state anim__state--after" id="{after_id}">'
-        f'<span class="anim__state-label">After</span>{html.escape(anim.after)}</div>'
-        f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
-        "</div>"
-    )
-
-
 def _pipeline_html(anim: Animate, token: str) -> str:
     """Stages light up left-to-right; each connector draws itself between them.
 
@@ -1374,10 +1318,15 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
     bottom of the SVG). A `direction: down` block reverses only the reveal
     ORDER, never the drawn positions -- the stack's geometry is the same
     picture either way, which is what makes the static fallback correct for both.
+
+    Each row is one <g>, invisible at rest, that fades in as a WHOLE unit --
+    box, name, and description together -- rather than the box appearing first
+    and its text being highlighted separately. There is nothing to read until
+    a row's own reveal step fires.
     """
     token_seed = re.sub(r"\D", "", token) or "0"
     count = len(anim.layers)
-    rect_ids = [f"anim-layer-rect-{token_seed}-{i}" for i in range(count)]
+    row_group_ids = [f"anim-layer-row-{token_seed}-{i}" for i in range(count)]
     active_rect_ids = [f"anim-layer-active-{token_seed}-{i}" for i in range(count)]
     name_text_ids = [f"anim-layer-name-{token_seed}-{i}" for i in range(count)]
     adds_text_ids = [f"anim-layer-adds-{token_seed}-{i}" for i in range(count)]
@@ -1395,20 +1344,19 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
         name_x = _LAYER_TOP_MARGIN + 12
         adds_x = _LAYER_TOP_MARGIN + _LAYER_WIDTH - 12
         text_y = y + _LAYER_HEIGHT / 2 + 4
-        # A row's own reveal (idle rect, opacity 0->1) is a SEPARATE property from
-        # its accent HIGHLIGHT (a second, stacked rect whose opacity is animated,
-        # never a `fill` tween between two var() tokens -- animejs's colour
-        # detector only recognises hex/rgb()/rgba()/hsl(), so the highlight never
-        # actually rendered in a real browser). Labels get the same plain +
-        # pre-inverted, opacity-swapped pair state-machine and pipeline use,
-        # since --color-fg/--color-muted both fail contrast against a solid
-        # --color-accent fill.
+        # The row's own reveal (the GROUP's opacity, 0->1) is a separate
+        # property from its accent HIGHLIGHT (a second, stacked rect whose
+        # opacity is animated, never a `fill` tween between two var() tokens --
+        # animejs's colour detector only recognises hex/rgb()/rgba()/hsl(), so
+        # the highlight never actually rendered in a real browser). Labels get
+        # the same plain + pre-inverted, opacity-swapped pair state-machine and
+        # pipeline use, since --color-fg/--color-muted both fail contrast
+        # against a solid --color-accent fill.
         rows_html.append(
-            f'<g class="anim__layer-row">'
-            f'<rect class="anim__layer-box" id="{rect_ids[i]}" '
+            f'<g class="anim__layer-row" id="{row_group_ids[i]}" opacity="0">'
+            f'<rect class="anim__layer-box" '
             f'x="{_LAYER_TOP_MARGIN}" y="{y:g}" width="{_LAYER_WIDTH}" '
-            f'height="{_LAYER_HEIGHT}" rx="6" fill="var(--anim-layer-idle)" '
-            f'opacity="0"></rect>'
+            f'height="{_LAYER_HEIGHT}" rx="6" fill="var(--anim-layer-idle)"></rect>'
             f'<rect class="anim__layer-box anim__layer-box-active" '
             f'id="{active_rect_ids[i]}" '
             f'x="{_LAYER_TOP_MARGIN}" y="{y:g}" width="{_LAYER_WIDTH}" '
@@ -1430,22 +1378,17 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
     order = range(count) if anim.direction == "up" else range(count - 1, -1, -1)
     steps_json: list[dict] = []
     for position, i in enumerate(order):
+        # The whole row (box, name, description) fades in together, so there
+        # is nothing to read -- not even a plain box -- until this fires. The
+        # PREVIOUS row's highlight fades out on this SAME clock (both "<<" off
+        # this step, added right after it), so the handoff from one active
+        # row to the next reads as one continuous moment rather than a fade-out
+        # followed by a gap followed by a fade-in.
         steps_json.append({
-            "targets": [f"#{rect_ids[i]}"],
+            "targets": [f"#{row_group_ids[i]}"],
             "props": {"opacity": [0, 1]},
             "duration": 500,
             "ease": "outQuad",
-        })
-        steps_json.append({
-            "targets": [
-                f"#{active_rect_ids[i]}", f"#{name_text_ids[i]}", f"#{adds_text_ids[i]}",
-            ],
-            "props": {"opacity": [0, 1]},
-            "duration": 500,
-            "ease": "outQuad",
-            # "<<" starts together with the base reveal above; a bare "<"
-            # would wait for it to finish first (anime.js v4's real semantics).
-            "position": "<<",
         })
         if position > 0:
             previous = list(order)[position - 1]
@@ -1460,11 +1403,31 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
                 "ease": "outQuad",
                 "position": "<<",
             })
+        steps_json.append({
+            "targets": [f"#{active_rect_ids[i]}", f"#{name_text_ids[i]}", f"#{adds_text_ids[i]}"],
+            "props": {"opacity": [0, 1]},
+            "duration": 500,
+            "ease": "outQuad",
+            # "<<" starts together with the row reveal above; a bare "<"
+            # would wait for it to finish first (anime.js v4's real semantics).
+            "position": "<<",
+        })
+        # A dwell after the highlight lands, before the next row starts
+        # arriving, so a real sentence of prose has time to be read rather
+        # than the stack advancing as fast as each fade completes. Appended
+        # with no position, so it starts only once every step above (whichever
+        # ends latest) has finished, and the NEXT iteration's row reveal then
+        # appends after this, inheriting the same "no position" append point.
+        steps_json.append({
+            "targets": [f"#{active_rect_ids[i]}"],
+            "props": {"opacity": 1},
+            "duration": _LAYER_DWELL_MS,
+        })
 
     steps_json.append({
         "kind": "set",
         "targets": (
-            [f"#{r}" for r in rect_ids]
+            [f"#{g}" for g in row_group_ids]
             + [f"#{r}" for r in active_rect_ids]
             + [f"#{t}" for t in name_text_ids]
             + [f"#{t}" for t in adds_text_ids]
@@ -1492,14 +1455,15 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
 def _build_up_html(anim: Animate, token: str) -> str:
     """A whole assembling from its parts, in authored order, top to bottom.
 
-    Each part fades in, takes the accent briefly as it lands, then settles to
-    the faint accent wash and KEEPS it -- unlike layer-stack, where only one
-    tier is ever "active" at a time, every part here stays lit once it has
-    joined the whole, so the accumulated structure reads at a glance.
+    Each part fades in as a WHOLE unit -- box and both text lines together,
+    nothing showing beforehand -- then holds the faint accent wash it settles
+    to. Unlike layer-stack, where only one tier is ever "active" at a time,
+    every part here stays lit once it has joined the whole, so the
+    accumulated structure reads at a glance.
     """
     token_seed = re.sub(r"\D", "", token) or "0"
     count = len(anim.parts)
-    base_ids = [f"anim-build-base-{token_seed}-{i}" for i in range(count)]
+    part_group_ids = [f"anim-build-part-{token_seed}-{i}" for i in range(count)]
     rect_ids = [f"anim-build-rect-{token_seed}-{i}" for i in range(count)]
     name_text_ids = [f"anim-build-name-{token_seed}-{i}" for i in range(count)]
     contrib_text_ids = [f"anim-build-contrib-{token_seed}-{i}" for i in range(count)]
@@ -1522,16 +1486,17 @@ def _build_up_html(anim: Animate, token: str) -> str:
         name_x = _BUILD_MARGIN + 12
         contrib_x = _BUILD_MARGIN + row_width - 12
         text_y = y + _BUILD_ROW_HEIGHT / 2 + 4
-        # The base rect reveals the row's existence (opacity 0->1); the second,
-        # stacked rect on top of it is the accent wash whose FILL-OPACITY the
-        # timeline animates -- same .anim__visited convention as state-machine,
+        # The GROUP's own opacity (0->1) reveals the whole part -- box and both
+        # text lines together -- as one unit; there is nothing to read before
+        # this fires. The stacked rect inside it is the accent wash whose
+        # FILL-OPACITY the timeline separately animates once the group is
+        # already visible -- same .anim__visited convention as state-machine,
         # so the settle never needs a `fill` tween between two var() tokens,
         # which animejs's colour detector cannot interpolate.
         rows_html.append(
-            f'<g class="anim__build-part">'
-            f'<rect class="anim__build-base" id="{base_ids[i]}" x="{_BUILD_MARGIN}" y="{y:g}" '
-            f'width="{row_width:g}" height="{_BUILD_ROW_HEIGHT}" rx="8" '
-            f'opacity="0"></rect>'
+            f'<g class="anim__build-part" id="{part_group_ids[i]}" opacity="0">'
+            f'<rect class="anim__build-base" x="{_BUILD_MARGIN}" y="{y:g}" '
+            f'width="{row_width:g}" height="{_BUILD_ROW_HEIGHT}" rx="8"></rect>'
             f'<rect class="anim__build-rect anim__visited" id="{rect_ids[i]}" '
             f'x="{_BUILD_MARGIN}" y="{y:g}" width="{row_width:g}" '
             f'height="{_BUILD_ROW_HEIGHT}" rx="8" fill="var(--color-accent)" '
@@ -1551,23 +1516,25 @@ def _build_up_html(anim: Animate, token: str) -> str:
 
     steps_json: list[dict] = []
     for i in range(count):
+        # The whole part fades in as one unit -- nothing shows until this
+        # fires.
         steps_json.append({
-            "targets": [f"#{base_ids[i]}"],
+            "targets": [f"#{part_group_ids[i]}"],
             "props": {"opacity": [0, 1]},
-            "duration": 350,
+            "duration": 400,
             "ease": "outQuad",
         })
         steps_json.append({
             "targets": [f"#{rect_ids[i]}"],
             "props": {"fillOpacity": [0, 1]},
-            "duration": 350,
+            "duration": 400,
             "ease": "outQuad",
             "position": "<<",
         })
         steps_json.append({
             "targets": [f"#{name_text_ids[i]}", f"#{contrib_text_ids[i]}"],
             "props": {"opacity": [0, 1]},
-            "duration": 350,
+            "duration": 400,
             "ease": "outQuad",
             "position": "<<",
         })
@@ -1582,9 +1549,18 @@ def _build_up_html(anim: Animate, token: str) -> str:
             "duration": 250,
             "position": "<<",
         })
+        # A dwell before the next part starts arriving, so a real phrase has
+        # time to be read rather than the whole accumulating as fast as each
+        # fade completes. Appended with no position, so it starts only once
+        # every step above has finished.
+        steps_json.append({
+            "targets": [f"#{part_group_ids[i]}"],
+            "props": {"opacity": 1},
+            "duration": _BUILD_DWELL_MS,
+        })
 
     steps_json.append({
-        "kind": "set", "targets": [f"#{b}" for b in base_ids], "props": {"opacity": 0},
+        "kind": "set", "targets": [f"#{g}" for g in part_group_ids], "props": {"opacity": 0},
     })
     steps_json.append({
         "kind": "set", "targets": [f"#{r}" for r in rect_ids], "props": {"fillOpacity": 0},

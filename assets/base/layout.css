@@ -349,10 +349,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
    BEFORE the boxes so they pass behind them. */
 .anim__state-marker-dot { fill: var(--color-accent); }
 .anim__state-marker-glow { fill: var(--color-accent); opacity: .16; }
-/* Named distinctly from .anim__state-label (state-toggle's existing
-   "Before"/"After" chrome label, defined earlier in this file) to avoid a
-   same-name collision between two unrelated rules -- this one is the
-   transition's action text inside the new state-machine SVG. The opacity
+/* The transition's action text inside the state-machine SVG. The opacity
    animation targets the GROUP (chip + text together, see
    _state_machine_html), invisible at rest and faded in only during its own
    transition's step, so the background chip never sits there empty when its
@@ -368,31 +365,9 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
    print/reduced-motion presentation below, same toggle-pair pattern as
    .anim__pipeline-static/.anim__layer-static/.anim__xform-static. */
 .anim__state-steps-static { display: none; }
-/* display: grid + a shared grid-area (rather than position: absolute) sizes the
-   container to the tallest state's content, so realistic caption-length text that
-   wraps to 2-3 lines doesn't overflow into whatever follows -- an absolutely
-   positioned child never contributes to its parent's size. */
-.anim--state-toggle { display: grid; min-block-size: 3em; }
-.anim__state {
-  grid-area: 1 / 1;
-  opacity: 0; /* wireAnimations() drives visibility once JS runs; the "before"
-                state is shown before JS via the reduced-motion/print override
-                below, so this 0 is only the JS-enabled resting default */
-}
-.anim__state--before { opacity: 1; }
-/* Literal English UI chrome (see mdrender._animate_html), language-agnostic like the
-   "Analogy" callout label. Hidden during normal animated playback; shown only under
-   the static print/reduced-motion presentation below and in print.css. */
-.anim__state-label { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .anim__state { opacity: 1; }
-  /* Both states are shown at once (no animation to convey them over time), so lay
-     them out labeled side-by-side instead of stacked on top of each other. */
-  .anim--state-toggle { grid-template-columns: 1fr 1fr; gap: var(--space-4); }
-  .anim__state { grid-area: auto; }
-  .anim__state-label { display: block; font-weight: 600; margin-block-end: var(--space-1); }
   .anim__state-machine { display: none; }
   .anim__state-steps-static { display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0; }
 }
@@ -534,7 +509,12 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   .anim--split-merge .anim__split-box-active {
     opacity: 1 !important;
   }
-  .anim--build-up .anim__build-base,
+  /* .anim__layer-row and .anim__build-part are the WHOLE-row/part reveal
+     group (box, name, and description together) -- each starts at
+     opacity="0" on the <g> itself, not on any child rect, so it needs its
+     own force-reveal line here or the static picture renders every row blank. */
+  .anim--layer-stack .anim__layer-row,
+  .anim--build-up .anim__build-part,
   .anim--split-merge .anim__split-box:not(.anim__split-box-active) {
     opacity: 1 !important;
   }

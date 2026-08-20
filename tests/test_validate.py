@@ -333,7 +333,9 @@ source_decks:
 ## Networking Basics
 """
 
-ANIMATE_BLOCK = "```animate\npattern: state-toggle\nbefore: Ready\nafter: Running\n```"
+ANIMATE_BLOCK = (
+    "```animate\npattern: pipeline\nstages:\n  - Ready: waiting\n  - Running: executing\n```"
+)
 
 LINEAR_MERMAID_BLOCK = "```mermaid\nflowchart LR\n  A --> B\n  B --> C\n```"
 

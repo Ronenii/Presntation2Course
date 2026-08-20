@@ -13,12 +13,6 @@
   .quiz, .callout, .mermaid, table, pre { break-inside: avoid; page-break-inside: avoid; }
   .figure, .anim { break-inside: avoid; page-break-inside: avoid; }
   .anim__step { opacity: 1 !important; font-weight: 400 !important; }
-  .anim__state { opacity: 1 !important; }
-  /* Both states are shown at once in print (no animation on paper), labeled and
-     side-by-side rather than sharing the animated view's stacked grid cell. */
-  .anim--state-toggle { grid-template-columns: 1fr 1fr !important; gap: 0.5em; }
-  .anim__state { grid-area: auto !important; }
-  .anim__state-label { display: block !important; font-weight: 600; margin-block-end: 0.25em; }
 
   /* In print every question is immediately followed by its answer and explanation. */
   .quiz__answer, .quiz__why { display: block !important; }
@@ -68,7 +62,12 @@
   .anim--split-merge .anim__split-box-active {
     opacity: 1 !important;
   }
-  .anim--build-up .anim__build-base,
+  /* .anim__layer-row and .anim__build-part are the WHOLE-row/part reveal
+     group (box, name, and description together) -- each starts at
+     opacity="0" on the <g> itself, not on any child rect, so it needs its
+     own force-reveal line here or the printed page renders every row blank. */
+  .anim--layer-stack .anim__layer-row,
+  .anim--build-up .anim__build-part,
   .anim--split-merge .anim__split-box:not(.anim__split-box-active) {
     opacity: 1 !important;
   }
