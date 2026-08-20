@@ -275,6 +275,13 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   --anim-xform-idle: var(--color-surface);
   --anim-xform-active: var(--color-accent);
 }
+.anim__compare {
+  --anim-cmp-active: var(--color-accent);
+}
+.anim__split-merge {
+  --anim-split-idle: var(--color-surface);
+  --anim-split-active: var(--color-accent);
+}
 /* Text sitting on a box the timeline fills with --color-accent must invert to
    the accent's own contrast colour, in step with the fill. Measured across all
    three themes: --color-fg on accent scores 1.82:1 to 3.83:1 and --color-muted
@@ -398,43 +405,57 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
    the text down to fit. */
 .anim__pipeline,
 .anim__layer-stack,
-.anim__transform {
+.anim__transform,
+.anim__build-up,
+.anim__compare,
+.anim__split-merge {
   max-width: 100%;
   height: auto;
 }
 .anim--pipeline,
 .anim--layer-stack,
-.anim--transform {
+.anim--transform,
+.anim--build-up,
+.anim--compare,
+.anim--split-merge {
   overflow-x: auto;
 }
 
 .anim__pipe-box,
 .anim__layer-box,
-.anim__xform-box {
+.anim__xform-box,
+.anim__build-base,
+.anim__cmp-box,
+.anim__split-box {
   stroke: var(--color-border);
   stroke-width: 1;
 }
 
 .anim__pipe-line,
-.anim__xform-line {
+.anim__xform-line,
+.anim__split-line {
   stroke: var(--color-muted);
   stroke-width: 2;
   fill: none;
 }
 
-/* No `fill` in either of these two rules: pipeline/layer-stack/transform each
-   flash a box to a solid --color-accent fill, and the label sitting on it must
-   invert to --color-accent-contrast while that flash is active (--color-fg
-   scores 1.82:1-3.83:1 against accent across the themes, --color-muted
-   1.04:1-1.34:1 -- both fail the 4.5:1 floor). A stacked, pre-inverted copy of
-   each label is the ONLY thing whose OPACITY the timeline animates -- never a
-   `fill` tween between two var() tokens, which animejs's colour detector
-   cannot interpolate (see .anim__text-on-accent above) -- so the base colour
-   must come from each element's own inline fill="..." attribute, which a
-   stylesheet `fill` declaration here would outrank and permanently override. */
+/* No `fill` in these rules: pipeline/layer-stack/transform/build-up/compare/
+   split-merge each flash a box to a solid --color-accent fill, and the label
+   sitting on it must invert to --color-accent-contrast while that flash is
+   active (--color-fg scores 1.82:1-3.83:1 against accent across the themes,
+   --color-muted 1.04:1-1.34:1 -- both fail the 4.5:1 floor). A stacked,
+   pre-inverted copy of each label is the ONLY thing whose OPACITY the
+   timeline animates -- never a `fill` tween between two var() tokens, which
+   animejs's colour detector cannot interpolate (see .anim__text-on-accent
+   above) -- so the base colour must come from each element's own inline
+   fill="..." attribute, which a stylesheet `fill` declaration here would
+   outrank and permanently override. */
 .anim__pipe-name,
 .anim__layer-name,
-.anim__xform-label {
+.anim__xform-label,
+.anim__build-name,
+.anim__cmp-text,
+.anim__split-name {
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 600;
@@ -442,7 +463,9 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 
 .anim__pipe-change,
 .anim__layer-adds,
-.anim__xform-step-text {
+.anim__xform-step-text,
+.anim__build-contrib,
+.anim__split-what {
   font-family: var(--font-body);
   font-size: 11px;
 }
@@ -455,12 +478,28 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   fill: var(--color-accent);
 }
 
+.anim__cmp-heading {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  fill: var(--color-muted);
+}
+.anim__cmp-divider {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
 /* The static <ol> lists are the print/reduced-motion presentation only; during
    normal animated playback the SVG carries the meaning. Same toggle-pair
    pattern as .anim__state-steps-static. */
 .anim__pipeline-static,
 .anim__layer-static,
-.anim__xform-static {
+.anim__xform-static,
+.anim__build-static,
+.anim__cmp-static,
+.anim__split-static {
   display: none;
 }
 
@@ -469,7 +508,8 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
      be forced visible -- inline opacity="0" and stroke-dashoffset would
      otherwise leave these diagrams blank. Every stage/layer/step shows at once. */
   .anim--pipeline .anim__pipe-line,
-  .anim--transform .anim__xform-line {
+  .anim--transform .anim__xform-line,
+  .anim--split-merge .anim__split-line {
     stroke-dashoffset: 0 !important;
   }
 
@@ -480,15 +520,37 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
      revealed stack the static <ol> narrates, not every accent flash
      overlapping at once. The inverted text pair needs no matching exclusion:
      it inherits visibility from its own opacity="0", which this rule never
-     touches, and only the plain (always-shown) copy is targeted here anyway. */
+     touches, and only the plain (always-shown) copy is targeted here anyway.
+     compare's active overlay and split-merge's merged-active overlay get the
+     same exclusion: a comparison's flash is a momentary contrast, not a
+     lasting state, and the merged box's "solid accent" look is the animated
+     PAYOFF once every branch has landed -- neither belongs in a static
+     picture that shows every element at once. build-up's wash IS meant to
+     persist (every part stays lit once it joins the whole, unlike a layer's
+     single active tier), so .anim__build-rect gets no such exclusion. */
   .anim--layer-stack .anim__layer-box:not(.anim__layer-box-active),
-  .anim--transform .anim__xform-step {
+  .anim--transform .anim__xform-step,
+  .anim--compare .anim__cmp-box-active,
+  .anim--split-merge .anim__split-box-active {
     opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-base,
+  .anim--split-merge .anim__split-box:not(.anim__split-box-active) {
+    opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-rect {
+    fill-opacity: var(--anim-visited-strength, .12) !important;
+  }
+  .anim--split-merge .anim__split-box.anim__visited {
+    fill-opacity: var(--anim-visited-strength, .12) !important;
   }
 
   .anim--pipeline .anim__pipeline-static,
   .anim--layer-stack .anim__layer-static,
-  .anim--transform .anim__xform-static {
+  .anim--transform .anim__xform-static,
+  .anim--build-up .anim__build-static,
+  .anim--compare .anim__cmp-static,
+  .anim--split-merge .anim__split-static {
     display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0;
   }
 }

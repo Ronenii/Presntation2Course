@@ -25,8 +25,11 @@ from p2c.mdrender import (
     AnimateError,
     FigureError,
     _animate_html,
+    _build_up_html,
+    _compare_html,
     _layer_stack_html,
     _pipeline_html,
+    _split_merge_html,
     _transform_html,
     mermaid_problem,
     parse_animate,
@@ -1083,6 +1086,177 @@ def test_transform_resets_every_animated_property():
     assert animated <= reset
 
 
+def test_build_up_parses_whole_and_parts():
+    anim = parse_animate(
+        "pattern: build-up\nwhole: A valid syllogism\n"
+        "parts:\n  - Major premise: all men are mortal\n"
+        "  - Minor premise: Socrates is a man\n"
+        "  - Conclusion: Socrates is mortal\n"
+    )
+    assert anim.whole == "A valid syllogism"
+    assert anim.parts[0] == ("Major premise", "all men are mortal")
+    assert len(anim.parts) == 3
+
+
+def test_build_up_rejects_bad_part_counts():
+    with pytest.raises(AnimateError, match="at least 2 parts"):
+        parse_animate("pattern: build-up\nwhole: W\nparts:\n  - Only: one\n")
+    body = "pattern: build-up\nwhole: W\nparts:\n" + "".join(
+        f"  - P{i}: does {i}\n" for i in range(7)
+    )
+    with pytest.raises(AnimateError, match="at most 6 parts"):
+        parse_animate(body)
+
+
+def test_build_up_requires_whole():
+    with pytest.raises(AnimateError, match="needs 'whole:'"):
+        parse_animate("pattern: build-up\nparts:\n  - A: a\n  - B: b\n")
+
+
+def test_build_up_rejects_keys_it_does_not_use():
+    for stray in ("caption: c", "direction: up", "from: X"):
+        with pytest.raises(AnimateError, match="does not use"):
+            parse_animate(
+                f"pattern: build-up\nwhole: W\nparts:\n  - A: a\n  - B: b\n{stray}\n"
+            )
+
+
+def test_build_up_parts_settle_and_stay():
+    anim = parse_animate(
+        "pattern: build-up\nwhole: W\nparts:\n  - A: a\n  - B: b\n  - C: c\n"
+    )
+    out = _build_up_html(anim, "ANIMTOKEN1")
+    assert 'dir="ltr"' in out
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    assert any("fillOpacity" in str(k) for s in data["steps"]
+               for k in (s.get("props") or {}))
+    animated = {p for s in data["steps"] if s.get("kind") != "set"
+                for p in (s.get("props") or {})}
+    reset = {p for s in data["steps"] if s.get("kind") == "set"
+             for p in (s.get("props") or {})}
+    assert animated <= reset
+
+
+def test_compare_parses_two_tracks():
+    anim = parse_animate(
+        "pattern: compare\nleft: First-come\nright: Round robin\n"
+        "steps:\n  - A long job blocks the queue | Each job gets a slice\n"
+        "  - Short jobs wait | Short jobs finish early\n"
+    )
+    assert anim.left == "First-come"
+    assert anim.right == "Round robin"
+    assert anim.rows[0] == ("A long job blocks the queue", "Each job gets a slice")
+
+
+def test_compare_requires_both_sides_of_every_row():
+    with pytest.raises(AnimateError, match="must be written as"):
+        parse_animate(
+            "pattern: compare\nleft: L\nright: R\nsteps:\n  - only one side\n"
+        )
+
+
+def test_compare_requires_both_headers():
+    with pytest.raises(AnimateError, match="needs both 'left:' and 'right:'"):
+        parse_animate("pattern: compare\nleft: L\nsteps:\n  - a | b\n")
+
+
+def test_compare_rejects_bad_row_counts():
+    with pytest.raises(AnimateError, match="at least 1 step"):
+        parse_animate("pattern: compare\nleft: L\nright: R\n")
+    body = "pattern: compare\nleft: L\nright: R\nsteps:\n" + "".join(
+        f"  - l{i} | r{i}\n" for i in range(6)
+    )
+    with pytest.raises(AnimateError, match="at most 5 steps"):
+        parse_animate(body)
+
+
+def test_compare_inverts_text_on_the_accent_flash():
+    anim = parse_animate(
+        "pattern: compare\nleft: L\nright: R\nsteps:\n  - a | b\n  - c | d\n"
+    )
+    out = _compare_html(anim, "ANIMTOKEN1")
+    assert 'dir="ltr"' in out
+    assert "anim__text-on-accent" in out
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    inverts = [
+        s for s in data["steps"]
+        if "opacity" in (s.get("props") or {}) and "inverted" in str(s.get("targets"))
+    ]
+    assert inverts
+
+
+def test_compare_resets_every_animated_property():
+    anim = parse_animate(
+        "pattern: compare\nleft: L\nright: R\nsteps:\n  - a | b\n  - c | d\n"
+    )
+    out = _compare_html(anim, "ANIMTOKEN1")
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    animated = {p for s in data["steps"] if s.get("kind") != "set"
+                for p in (s.get("props") or {})}
+    reset = {p for s in data["steps"] if s.get("kind") == "set"
+             for p in (s.get("props") or {})}
+    assert animated <= reset
+
+
+def _sm2():
+    return parse_animate(
+        "pattern: split-merge\nsource: Proof by cases\n"
+        "branches:\n  - Case n even: divide by two\n  - Case n odd: apply 3n + 1\n"
+        "merged: Both cases reach 1\n"
+    )
+
+
+def test_split_merge_parses_source_branches_and_merge():
+    anim = _sm2()
+    assert anim.source == "Proof by cases"
+    assert anim.merged == "Both cases reach 1"
+    assert anim.branches[0] == ("Case n even", "divide by two")
+
+
+def test_split_merge_requires_source_and_merged():
+    with pytest.raises(AnimateError, match="needs both 'source:' and 'merged:'"):
+        parse_animate(
+            "pattern: split-merge\nsource: S\nbranches:\n  - A: a\n  - B: b\n"
+        )
+
+
+def test_split_merge_rejects_bad_branch_counts():
+    with pytest.raises(AnimateError, match="at least 2 branches"):
+        parse_animate(
+            "pattern: split-merge\nsource: S\nmerged: M\nbranches:\n  - A: a\n"
+        )
+    body = ("pattern: split-merge\nsource: S\nmerged: M\nbranches:\n"
+            + "".join(f"  - B{i}: does {i}\n" for i in range(5)))
+    with pytest.raises(AnimateError, match="at most 4 branches"):
+        parse_animate(body)
+
+
+def test_split_merge_renders_and_resets():
+    out = _split_merge_html(_sm2(), "ANIMTOKEN1")
+    assert 'dir="ltr"' in out
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    animated = {p for s in data["steps"] if s.get("kind") != "set"
+                for p in (s.get("props") or {})}
+    reset = {p for s in data["steps"] if s.get("kind") == "set"
+             for p in (s.get("props") or {})}
+    assert animated <= reset
+    # the merged box goes solid accent, so its label must invert
+    assert "anim__text-on-accent" in out
+    inverts = [
+        s for s in data["steps"]
+        if "opacity" in (s.get("props") or {}) and "inverted" in str(s.get("targets"))
+    ]
+    assert inverts
+
+
 @pytest.mark.parametrize(
     "block",
     [
@@ -1672,6 +1846,23 @@ def _state_machine_timeline(transitions):
     return out, json.loads(island.group(1))
 
 
+_ALL_PATTERN_BLOCKS = {
+    "state-machine": (
+        "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
+        "transitions:\n  - A -> B: go\n  - B -> C: next\n  - C -> A: back\n"
+    ),
+    "state-toggle": "pattern: state-toggle\nbefore: X\nafter: Y\n",
+    "pipeline": "pattern: pipeline\nstages:\n  - A: x\n  - B: y\n",
+    "layer-stack": "pattern: layer-stack\nlayers:\n  - A: x\n  - B: y\n",
+    "transform": "pattern: transform\nfrom: A\nto: B\nsteps:\n  - one\n",
+    "build-up": "pattern: build-up\nwhole: W\nparts:\n  - A: a\n  - B: b\n",
+    "compare": "pattern: compare\nleft: L\nright: R\nsteps:\n  - a | b\n",
+    "split-merge": (
+        "pattern: split-merge\nsource: S\nmerged: M\nbranches:\n  - A: a\n  - B: b\n"
+    ),
+}
+
+
 def test_no_animate_pattern_animates_fill_or_stroke_with_a_css_variable():
     """Real animejs (v4.5.0)'s colour detector (isCol in core/helpers) only
     recognises hex, rgb(), rgba(), and hsl() -- a bare var(--token) reference
@@ -1685,19 +1876,9 @@ def test_no_animate_pattern_animates_fill_or_stroke_with_a_css_variable():
     color animation using a var() reference is caught without a Node
     dependency: EVERY animate pattern's generated timeline is scanned for a
     non-`set` step whose `fill`/`stroke` prop contains "var(--", across a
-    representative block for each of the five surviving patterns.
+    representative block for each of the eight patterns.
     """
-    blocks = {
-        "state-machine": (
-            "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
-            "transitions:\n  - A -> B: go\n  - B -> C: next\n  - C -> A: back\n"
-        ),
-        "state-toggle": "pattern: state-toggle\nbefore: X\nafter: Y\n",
-        "pipeline": "pattern: pipeline\nstages:\n  - A: x\n  - B: y\n",
-        "layer-stack": "pattern: layer-stack\nlayers:\n  - A: x\n  - B: y\n",
-        "transform": "pattern: transform\nfrom: A\nto: B\nsteps:\n  - one\n",
-    }
-    for name, body in blocks.items():
+    for name, body in _ALL_PATTERN_BLOCKS.items():
         out = _animate_html(parse_animate(body), "ANIMTOKEN1")
         for match in re.finditer(
             r'class="anim__timeline"[^>]*>(.*?)</script>', out, re.S
@@ -1727,20 +1908,10 @@ def test_no_animate_pattern_uses_a_bare_less_than_position():
     (measured against the real animejs library), which surfaced as labels
     firing long after the marker had already moved on and highlights lagging
     visibly behind the dot. Every "run alongside the previous step" position
-    in this renderer must be "<<"; this scans all five patterns' generated
+    in this renderer must be "<<"; this scans all eight patterns' generated
     timelines for a lingering bare "<" to catch a regression before it ships.
     """
-    blocks = {
-        "state-machine": (
-            "pattern: state-machine\nstates:\n  - A\n  - B\n  - C\n"
-            "transitions:\n  - A -> B: go\n  - B -> C: next\n  - C -> A: back\n"
-        ),
-        "state-toggle": "pattern: state-toggle\nbefore: X\nafter: Y\n",
-        "pipeline": "pattern: pipeline\nstages:\n  - A: x\n  - B: y\n",
-        "layer-stack": "pattern: layer-stack\nlayers:\n  - A: x\n  - B: y\n",
-        "transform": "pattern: transform\nfrom: A\nto: B\nsteps:\n  - one\n",
-    }
-    for name, body in blocks.items():
+    for name, body in _ALL_PATTERN_BLOCKS.items():
         out = _animate_html(parse_animate(body), "ANIMTOKEN1")
         for match in re.finditer(
             r'class="anim__timeline"[^>]*>(.*?)</script>', out, re.S

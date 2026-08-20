@@ -344,6 +344,13 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   --anim-xform-idle: var(--color-surface);
   --anim-xform-active: var(--color-accent);
 }
+.anim__compare {
+  --anim-cmp-active: var(--color-accent);
+}
+.anim__split-merge {
+  --anim-split-idle: var(--color-surface);
+  --anim-split-active: var(--color-accent);
+}
 /* Text sitting on a box the timeline fills with --color-accent must invert to
    the accent's own contrast colour, in step with the fill. Measured across all
    three themes: --color-fg on accent scores 1.82:1 to 3.83:1 and --color-muted
@@ -467,43 +474,57 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
    the text down to fit. */
 .anim__pipeline,
 .anim__layer-stack,
-.anim__transform {
+.anim__transform,
+.anim__build-up,
+.anim__compare,
+.anim__split-merge {
   max-width: 100%;
   height: auto;
 }
 .anim--pipeline,
 .anim--layer-stack,
-.anim--transform {
+.anim--transform,
+.anim--build-up,
+.anim--compare,
+.anim--split-merge {
   overflow-x: auto;
 }
 
 .anim__pipe-box,
 .anim__layer-box,
-.anim__xform-box {
+.anim__xform-box,
+.anim__build-base,
+.anim__cmp-box,
+.anim__split-box {
   stroke: var(--color-border);
   stroke-width: 1;
 }
 
 .anim__pipe-line,
-.anim__xform-line {
+.anim__xform-line,
+.anim__split-line {
   stroke: var(--color-muted);
   stroke-width: 2;
   fill: none;
 }
 
-/* No `fill` in either of these two rules: pipeline/layer-stack/transform each
-   flash a box to a solid --color-accent fill, and the label sitting on it must
-   invert to --color-accent-contrast while that flash is active (--color-fg
-   scores 1.82:1-3.83:1 against accent across the themes, --color-muted
-   1.04:1-1.34:1 -- both fail the 4.5:1 floor). A stacked, pre-inverted copy of
-   each label is the ONLY thing whose OPACITY the timeline animates -- never a
-   `fill` tween between two var() tokens, which animejs's colour detector
-   cannot interpolate (see .anim__text-on-accent above) -- so the base colour
-   must come from each element's own inline fill="..." attribute, which a
-   stylesheet `fill` declaration here would outrank and permanently override. */
+/* No `fill` in these rules: pipeline/layer-stack/transform/build-up/compare/
+   split-merge each flash a box to a solid --color-accent fill, and the label
+   sitting on it must invert to --color-accent-contrast while that flash is
+   active (--color-fg scores 1.82:1-3.83:1 against accent across the themes,
+   --color-muted 1.04:1-1.34:1 -- both fail the 4.5:1 floor). A stacked,
+   pre-inverted copy of each label is the ONLY thing whose OPACITY the
+   timeline animates -- never a `fill` tween between two var() tokens, which
+   animejs's colour detector cannot interpolate (see .anim__text-on-accent
+   above) -- so the base colour must come from each element's own inline
+   fill="..." attribute, which a stylesheet `fill` declaration here would
+   outrank and permanently override. */
 .anim__pipe-name,
 .anim__layer-name,
-.anim__xform-label {
+.anim__xform-label,
+.anim__build-name,
+.anim__cmp-text,
+.anim__split-name {
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 600;
@@ -511,7 +532,9 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 
 .anim__pipe-change,
 .anim__layer-adds,
-.anim__xform-step-text {
+.anim__xform-step-text,
+.anim__build-contrib,
+.anim__split-what {
   font-family: var(--font-body);
   font-size: 11px;
 }
@@ -524,12 +547,28 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   fill: var(--color-accent);
 }
 
+.anim__cmp-heading {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  fill: var(--color-muted);
+}
+.anim__cmp-divider {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
 /* The static <ol> lists are the print/reduced-motion presentation only; during
    normal animated playback the SVG carries the meaning. Same toggle-pair
    pattern as .anim__state-steps-static. */
 .anim__pipeline-static,
 .anim__layer-static,
-.anim__xform-static {
+.anim__xform-static,
+.anim__build-static,
+.anim__cmp-static,
+.anim__split-static {
   display: none;
 }
 
@@ -538,7 +577,8 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
      be forced visible -- inline opacity="0" and stroke-dashoffset would
      otherwise leave these diagrams blank. Every stage/layer/step shows at once. */
   .anim--pipeline .anim__pipe-line,
-  .anim--transform .anim__xform-line {
+  .anim--transform .anim__xform-line,
+  .anim--split-merge .anim__split-line {
     stroke-dashoffset: 0 !important;
   }
 
@@ -549,15 +589,37 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
      revealed stack the static <ol> narrates, not every accent flash
      overlapping at once. The inverted text pair needs no matching exclusion:
      it inherits visibility from its own opacity="0", which this rule never
-     touches, and only the plain (always-shown) copy is targeted here anyway. */
+     touches, and only the plain (always-shown) copy is targeted here anyway.
+     compare's active overlay and split-merge's merged-active overlay get the
+     same exclusion: a comparison's flash is a momentary contrast, not a
+     lasting state, and the merged box's "solid accent" look is the animated
+     PAYOFF once every branch has landed -- neither belongs in a static
+     picture that shows every element at once. build-up's wash IS meant to
+     persist (every part stays lit once it joins the whole, unlike a layer's
+     single active tier), so .anim__build-rect gets no such exclusion. */
   .anim--layer-stack .anim__layer-box:not(.anim__layer-box-active),
-  .anim--transform .anim__xform-step {
+  .anim--transform .anim__xform-step,
+  .anim--compare .anim__cmp-box-active,
+  .anim--split-merge .anim__split-box-active {
     opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-base,
+  .anim--split-merge .anim__split-box:not(.anim__split-box-active) {
+    opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-rect {
+    fill-opacity: var(--anim-visited-strength, .12) !important;
+  }
+  .anim--split-merge .anim__split-box.anim__visited {
+    fill-opacity: var(--anim-visited-strength, .12) !important;
   }
 
   .anim--pipeline .anim__pipeline-static,
   .anim--layer-stack .anim__layer-static,
-  .anim--transform .anim__xform-static {
+  .anim--transform .anim__xform-static,
+  .anim--build-up .anim__build-static,
+  .anim--compare .anim__cmp-static,
+  .anim--split-merge .anim__split-static {
     display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0;
   }
 }
@@ -609,24 +671,43 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
     padding-inline-start: 1.5em !important; margin: 0 !important;
   }
 
-  /* Same reasoning as the reduced-motion rule in layout.css: the timeline never
-     runs on paper, so pipeline/layer-stack/transform's animated elements would
-     otherwise print blank -- inline opacity="0" and stroke-dashoffset override. */
+  /* Same reasoning as the reduced-motion rule in layout.css: the timeline
+     never runs on paper, so pipeline/layer-stack/transform/split-merge's
+     animated elements would otherwise print blank -- inline opacity="0" and
+     stroke-dashoffset override. */
   .anim--pipeline .anim__pipe-line,
-  .anim--transform .anim__xform-line {
+  .anim--transform .anim__xform-line,
+  .anim--split-merge .anim__split-line {
     stroke-dashoffset: 0 !important;
   }
   /* :not(.anim__layer-box-active) excludes the accent highlight overlay --
      same reasoning as layout.css's reduced-motion rule: only one layer is
      ever highlighted during playback, so printing every one "active" would
-     misrepresent the sequence the static list already narrates. */
+     misrepresent the sequence the static list already narrates. compare's
+     flash and split-merge's merged-active overlay get the same exclusion for
+     the same reason: neither is a lasting state. build-up's wash DOES persist
+     (every part stays lit once it joins the whole), so its rect gets no such
+     exclusion, just the fill-opacity fallback used elsewhere on paper. */
   .anim--layer-stack .anim__layer-box:not(.anim__layer-box-active),
-  .anim--transform .anim__xform-step {
+  .anim--transform .anim__xform-step,
+  .anim--compare .anim__cmp-box-active,
+  .anim--split-merge .anim__split-box-active {
     opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-base,
+  .anim--split-merge .anim__split-box:not(.anim__split-box-active) {
+    opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-rect,
+  .anim--split-merge .anim__split-box.anim__visited {
+    fill-opacity: .12 !important;
   }
   .anim--pipeline .anim__pipeline-static,
   .anim--layer-stack .anim__layer-static,
-  .anim--transform .anim__xform-static {
+  .anim--transform .anim__xform-static,
+  .anim--build-up .anim__build-static,
+  .anim--compare .anim__cmp-static,
+  .anim--split-merge .anim__split-static {
     display: block !important; list-style: decimal !important;
     padding-inline-start: 1.5em !important; margin: 0 !important;
   }
@@ -733,7 +814,7 @@ back of the queue. A short quantum makes the machine feel responsive but spends 
 switching between processes. A long quantum reduces that overhead and makes interactive
 programs feel sluggish.</p>
 <div class="anim anim--state-machine"><svg class="anim__state-machine" dir="ltr" width="410" height="258" viewBox="-185.9 -126.0 410.5 258.0"><path class="anim__state-track" fill="none" d="M 0.0 -76.0 C 48.0 -76.0, 81.3 -33.3, 75.5 10.0" marker-end="url(#anim-arrowhead-29)"></path><path class="anim__state-track" fill="none" d="M 65.8 38.0 C 43.7 76.3, -3.6 85.7, -37.9 66.0" marker-end="url(#anim-arrowhead-29)"></path><path class="anim__state-track" fill="none" d="M -65.8 38.0 C -79.4 14.5, -79.4 -14.5, -65.8 -38.0 C -62.5 -43.7, -58.5 -48.9, -54.0 -53.5" marker-end="url(#anim-arrowhead-29)"></path><g class="anim__state-marker"><circle id="anim-state-marker-29" class="anim__state-marker-dot" cx="0.0" cy="-76.0" r="7"></circle><circle id="anim-state-marker-29-glow" class="anim__state-marker-glow" cx="0.0" cy="-76.0" r="14"></circle></g><g class="anim__state-box"><rect class="anim__state-base" x="-48.0" y="-98.0" width="96.0" height="44" rx="10"></rect><rect class="anim__state-rect anim__visited" id="anim-state-rect-29-0" x="-48.0" y="-98.0" width="96.0" height="44" rx="10" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__state-name" x="0.0" y="-71.0" fill="var(--color-fg)">Ready</text><text class="anim__state-name anim__state-name-inverted" id="anim-state-text-29-0" x="0.0" y="-71.0" opacity="0" fill="var(--color-accent-contrast)">Ready</text></g><g class="anim__state-box"><rect class="anim__state-base" x="15.2" y="16.0" width="101.2" height="44" rx="10"></rect><rect class="anim__state-rect anim__visited" id="anim-state-rect-29-1" x="15.2" y="16.0" width="101.2" height="44" rx="10" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__state-name" x="65.8" y="43.0" fill="var(--color-fg)">Running</text><text class="anim__state-name anim__state-name-inverted" id="anim-state-text-29-1" x="65.8" y="43.0" opacity="0" fill="var(--color-accent-contrast)">Running</text></g><g class="anim__state-box"><rect class="anim__state-base" x="-116.4" y="16.0" width="101.2" height="44" rx="10"></rect><rect class="anim__state-rect anim__visited" id="anim-state-rect-29-2" x="-116.4" y="16.0" width="101.2" height="44" rx="10" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__state-name" x="-65.8" y="43.0" fill="var(--color-fg)">Waiting</text><text class="anim__state-name anim__state-name-inverted" id="anim-state-text-29-2" x="-65.8" y="43.0" opacity="0" fill="var(--color-accent-contrast)">Waiting</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-0" opacity="0"><rect class="anim__state-transition-label-bg" x="51.0" y="-80.5" width="145.6" height="18.0" rx="4"></rect><text class="anim__state-transition-label" x="123.8" y="-67.5">scheduler picks it</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-1" opacity="0"><rect class="anim__state-transition-label-bg" x="-54.8" y="86.0" width="109.6" height="18.0" rx="4"></rect><text class="anim__state-transition-label" x="0.0" y="99.0">blocks on I/O</text></g><g class="anim__state-transition-label-group" id="anim-state-label-29-2" opacity="0"><rect class="anim__state-transition-label-bg" x="-157.9" y="-68.5" width="109.6" height="18.0" rx="4"></rect><text class="anim__state-transition-label" x="-103.1" y="-55.5">I/O completes</text></g></svg><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 800, "steps": [{"targets": ["#anim-state-label-29-0"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29, #anim-state-marker-29-glow", "from": [0.0, -76.0], "to": [65.8, 38.0], "via1": [58.5, -76.0], "via2": [95.1, -12.7], "duration": 900, "ease": "inOutQuad", "position": null}, {"targets": ["#anim-state-rect-29-1"], "props": {"fillOpacity": [0, 1]}, "duration": 300, "position": "-=260"}, {"targets": ["#anim-state-text-29-1"], "props": {"opacity": [0, 1]}, "duration": 300, "position": "\u003c\u003c"}, {"targets": ["#anim-state-rect-29-1"], "props": {"fillOpacity": 0.14}, "duration": 500}, {"targets": ["#anim-state-text-29-1"], "props": {"opacity": 0}, "duration": 200, "position": "\u003c\u003c"}, {"targets": ["#anim-state-label-29-0"], "props": {"opacity": [1, 0]}, "duration": 200, "position": "\u003c\u003c"}, {"targets": ["#anim-state-label-29-1"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29, #anim-state-marker-29-glow", "from": [65.8, 38.0], "to": [-65.8, 38.0], "via1": [36.6, 88.7], "via2": [-36.6, 88.7], "duration": 900, "ease": "inOutQuad", "position": null}, {"targets": ["#anim-state-rect-29-2"], "props": {"fillOpacity": [0, 1]}, "duration": 300, "position": "-=260"}, {"targets": ["#anim-state-text-29-2"], "props": {"opacity": [0, 1]}, "duration": 300, "position": "\u003c\u003c"}, {"targets": ["#anim-state-rect-29-2"], "props": {"fillOpacity": 0.14}, "duration": 500}, {"targets": ["#anim-state-text-29-2"], "props": {"opacity": 0}, "duration": 200, "position": "\u003c\u003c"}, {"targets": ["#anim-state-label-29-1"], "props": {"opacity": [1, 0]}, "duration": 200, "position": "\u003c\u003c"}, {"targets": ["#anim-state-label-29-2"], "props": {"opacity": [0, 1]}, "duration": 200}, {"kind": "path-segment", "marker": "#anim-state-marker-29, #anim-state-marker-29-glow", "from": [-65.8, 38.0], "to": [-65.8, -38.0], "via1": [-79.4, 14.5], "via2": [-79.4, -14.5], "duration": 450, "ease": "inQuad", "position": null}, {"kind": "path-segment", "marker": "#anim-state-marker-29, #anim-state-marker-29-glow", "from": [-65.8, -38.0], "to": [-0.0, -76.0], "via1": [-52.2, -61.5], "via2": [-27.2, -76.0], "duration": 450, "ease": "outQuad", "position": null}, {"targets": ["#anim-state-rect-29-0"], "props": {"fillOpacity": [0, 1]}, "duration": 300, "position": "-=260"}, {"targets": ["#anim-state-text-29-0"], "props": {"opacity": [0, 1]}, "duration": 300, "position": "\u003c\u003c"}, {"targets": ["#anim-state-rect-29-0"], "props": {"fillOpacity": 0.14}, "duration": 500}, {"targets": ["#anim-state-text-29-0"], "props": {"opacity": 0}, "duration": 200, "position": "\u003c\u003c"}, {"targets": ["#anim-state-label-29-2"], "props": {"opacity": [1, 0]}, "duration": 200, "position": "\u003c\u003c"}, {"kind": "set", "targets": ["#anim-state-rect-29-0", "#anim-state-rect-29-1", "#anim-state-rect-29-2"], "props": {"fillOpacity": 0}}, {"kind": "set", "targets": ["#anim-state-text-29-0", "#anim-state-text-29-1", "#anim-state-text-29-2"], "props": {"opacity": 0}}, {"kind": "set", "targets": ["#anim-state-label-29-0", "#anim-state-label-29-1", "#anim-state-label-29-2"], "props": {"opacity": 0}}]}</script><ol class="anim__state-steps-static"><li>Ready — scheduler picks it — Running</li><li>Running — blocks on I/O — Waiting</li><li>Waiting — I/O completes — Ready</li></ol></div>
-<div class="anim anim--state-toggle"><div class="anim__state anim__state--before" id="anim-state-before-210"><span class="anim__state-label">Before</span>First-come, first-served</div><div class="anim__state anim__state--after" id="anim-state-after-210"><span class="anim__state-label">After</span>Round robin</div><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 0, "steps": [{"targets": ["#anim-state-before-210"], "props": {"opacity": [1, 0]}, "duration": 4000, "ease": "inOutQuad"}, {"targets": ["#anim-state-after-210"], "props": {"opacity": [0, 1]}, "duration": 4000, "ease": "inOutQuad", "position": "\u003c\u003c"}, {"kind": "set", "targets": ["#anim-state-before-210"], "props": {"opacity": 1}}, {"kind": "set", "targets": ["#anim-state-after-210"], "props": {"opacity": 0}}]}</script></div>
+<div class="anim anim--compare"><svg class="anim__compare" dir="ltr" width="663.2" height="160" viewBox="0 0 663.2 160"><text class="anim__cmp-heading" x="164.8" y="26" text-anchor="middle">First-come, first-served</text><text class="anim__cmp-heading" x="498.4" y="26" text-anchor="middle">Round robin</text><line class="anim__cmp-divider" x1="331.6" y1="12" x2="331.6" y2="148"></line><g class="anim__cmp-row"><rect class="anim__cmp-box" id="anim-cmp-left-210-0" x="12" y="36" width="305.6" height="52" rx="8"></rect><rect class="anim__cmp-box anim__cmp-box-active" id="anim-cmp-left-active-210-0" x="12" y="36" width="305.6" height="52" rx="8" fill="var(--anim-cmp-active)" opacity="0"></rect><text class="anim__cmp-text" x="164.8" y="66" text-anchor="middle" fill="var(--color-fg)">A long job blocks everything behind it</text><text class="anim__cmp-text anim__text-on-accent" id="anim-cmp-left-inverted-210-0" x="164.8" y="66" text-anchor="middle" opacity="0">A long job blocks everything behind it</text><rect class="anim__cmp-box" id="anim-cmp-right-210-0" x="345.6" y="36" width="305.6" height="52" rx="8"></rect><rect class="anim__cmp-box anim__cmp-box-active" id="anim-cmp-right-active-210-0" x="345.6" y="36" width="305.6" height="52" rx="8" fill="var(--anim-cmp-active)" opacity="0"></rect><text class="anim__cmp-text" x="498.4" y="66" text-anchor="middle" fill="var(--color-fg)">Each job gets a fixed slice</text><text class="anim__cmp-text anim__text-on-accent" id="anim-cmp-right-inverted-210-0" x="498.4" y="66" text-anchor="middle" opacity="0">Each job gets a fixed slice</text></g><g class="anim__cmp-row"><rect class="anim__cmp-box" id="anim-cmp-left-210-1" x="12" y="96" width="305.6" height="52" rx="8"></rect><rect class="anim__cmp-box anim__cmp-box-active" id="anim-cmp-left-active-210-1" x="12" y="96" width="305.6" height="52" rx="8" fill="var(--anim-cmp-active)" opacity="0"></rect><text class="anim__cmp-text" x="164.8" y="126" text-anchor="middle" fill="var(--color-fg)">Short jobs wait for the whole queue</text><text class="anim__cmp-text anim__text-on-accent" id="anim-cmp-left-inverted-210-1" x="164.8" y="126" text-anchor="middle" opacity="0">Short jobs wait for the whole queue</text><rect class="anim__cmp-box" id="anim-cmp-right-210-1" x="345.6" y="96" width="305.6" height="52" rx="8"></rect><rect class="anim__cmp-box anim__cmp-box-active" id="anim-cmp-right-active-210-1" x="345.6" y="96" width="305.6" height="52" rx="8" fill="var(--anim-cmp-active)" opacity="0"></rect><text class="anim__cmp-text" x="498.4" y="126" text-anchor="middle" fill="var(--color-fg)">Short jobs finish early</text><text class="anim__cmp-text anim__text-on-accent" id="anim-cmp-right-inverted-210-1" x="498.4" y="126" text-anchor="middle" opacity="0">Short jobs finish early</text></g></svg><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 900, "steps": [{"targets": ["#anim-cmp-left-active-210-0", "#anim-cmp-left-inverted-210-0", "#anim-cmp-right-active-210-0", "#anim-cmp-right-inverted-210-0"], "props": {"opacity": [0, 1]}, "duration": 350, "ease": "outQuad"}, {"targets": ["#anim-cmp-left-active-210-0", "#anim-cmp-left-inverted-210-0", "#anim-cmp-right-active-210-0", "#anim-cmp-right-inverted-210-0"], "props": {"opacity": 0}, "duration": 350, "ease": "outQuad"}, {"targets": ["#anim-cmp-left-active-210-1", "#anim-cmp-left-inverted-210-1", "#anim-cmp-right-active-210-1", "#anim-cmp-right-inverted-210-1"], "props": {"opacity": [0, 1]}, "duration": 350, "ease": "outQuad"}, {"targets": ["#anim-cmp-left-active-210-1", "#anim-cmp-left-inverted-210-1", "#anim-cmp-right-active-210-1", "#anim-cmp-right-inverted-210-1"], "props": {"opacity": 0}, "duration": 350, "ease": "outQuad"}, {"kind": "set", "targets": ["#anim-cmp-left-active-210-0", "#anim-cmp-left-active-210-1", "#anim-cmp-right-active-210-0", "#anim-cmp-right-active-210-1", "#anim-cmp-left-inverted-210-0", "#anim-cmp-left-inverted-210-1", "#anim-cmp-right-inverted-210-0", "#anim-cmp-right-inverted-210-1"], "props": {"opacity": 0}}]}</script><ol class="anim__cmp-static"><li>A long job blocks everything behind it — Each job gets a fixed slice</li><li>Short jobs wait for the whole queue — Short jobs finish early</li></ol></div>
 <details class="quiz" data-quiz="round-robin-q1" open>
 <summary class="quiz__q">Halving the quantum on an interactive system usually has which effect?</summary>
 <ol class="quiz__options">

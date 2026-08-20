@@ -388,6 +388,21 @@ def test_new_animate_patterns_define_their_tokens_and_static_fallbacks():
         assert selector in tail, f"{selector} has no reduced-motion fallback"
 
 
+def test_new_patterns_reveal_under_reduced_motion_and_print():
+    """Every element the timeline reveals starts hidden via an inline
+    attribute (opacity="0", full stroke-dashoffset). Under
+    prefers-reduced-motion and in print the timeline never runs, so CSS must
+    force them visible or the diagram renders blank -- a silent failure no
+    Python renderer test catches on its own.
+    """
+    layout = (ASSETS / "base" / "layout.css").read_text(encoding="utf-8")
+    printcss = (ASSETS / "print.css").read_text(encoding="utf-8")
+    reduced = "".join(layout.split("@media (prefers-reduced-motion: reduce)")[1:])
+    for pattern in ("build-up", "compare", "split-merge"):
+        assert f"anim--{pattern}" in reduced, f"{pattern} has no reduced-motion reveal"
+        assert f"anim--{pattern}" in printcss, f"{pattern} has no print reveal"
+
+
 def test_reduced_motion_static_lists_for_the_new_patterns_get_list_styling():
     """The three OLDER patterns' reduced-motion static-list reveals (.anim__array-steps-static,
     .anim__path-steps-static, .anim__state-steps-static) all set list-style: decimal plus

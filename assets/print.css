@@ -45,24 +45,43 @@
     padding-inline-start: 1.5em !important; margin: 0 !important;
   }
 
-  /* Same reasoning as the reduced-motion rule in layout.css: the timeline never
-     runs on paper, so pipeline/layer-stack/transform's animated elements would
-     otherwise print blank -- inline opacity="0" and stroke-dashoffset override. */
+  /* Same reasoning as the reduced-motion rule in layout.css: the timeline
+     never runs on paper, so pipeline/layer-stack/transform/split-merge's
+     animated elements would otherwise print blank -- inline opacity="0" and
+     stroke-dashoffset override. */
   .anim--pipeline .anim__pipe-line,
-  .anim--transform .anim__xform-line {
+  .anim--transform .anim__xform-line,
+  .anim--split-merge .anim__split-line {
     stroke-dashoffset: 0 !important;
   }
   /* :not(.anim__layer-box-active) excludes the accent highlight overlay --
      same reasoning as layout.css's reduced-motion rule: only one layer is
      ever highlighted during playback, so printing every one "active" would
-     misrepresent the sequence the static list already narrates. */
+     misrepresent the sequence the static list already narrates. compare's
+     flash and split-merge's merged-active overlay get the same exclusion for
+     the same reason: neither is a lasting state. build-up's wash DOES persist
+     (every part stays lit once it joins the whole), so its rect gets no such
+     exclusion, just the fill-opacity fallback used elsewhere on paper. */
   .anim--layer-stack .anim__layer-box:not(.anim__layer-box-active),
-  .anim--transform .anim__xform-step {
+  .anim--transform .anim__xform-step,
+  .anim--compare .anim__cmp-box-active,
+  .anim--split-merge .anim__split-box-active {
     opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-base,
+  .anim--split-merge .anim__split-box:not(.anim__split-box-active) {
+    opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-rect,
+  .anim--split-merge .anim__split-box.anim__visited {
+    fill-opacity: .12 !important;
   }
   .anim--pipeline .anim__pipeline-static,
   .anim--layer-stack .anim__layer-static,
-  .anim--transform .anim__xform-static {
+  .anim--transform .anim__xform-static,
+  .anim--build-up .anim__build-static,
+  .anim--compare .anim__cmp-static,
+  .anim--split-merge .anim__split-static {
     display: block !important; list-style: decimal !important;
     padding-inline-start: 1.5em !important; margin: 0 !important;
   }

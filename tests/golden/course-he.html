@@ -344,6 +344,13 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   --anim-xform-idle: var(--color-surface);
   --anim-xform-active: var(--color-accent);
 }
+.anim__compare {
+  --anim-cmp-active: var(--color-accent);
+}
+.anim__split-merge {
+  --anim-split-idle: var(--color-surface);
+  --anim-split-active: var(--color-accent);
+}
 /* Text sitting on a box the timeline fills with --color-accent must invert to
    the accent's own contrast colour, in step with the fill. Measured across all
    three themes: --color-fg on accent scores 1.82:1 to 3.83:1 and --color-muted
@@ -467,43 +474,57 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
    the text down to fit. */
 .anim__pipeline,
 .anim__layer-stack,
-.anim__transform {
+.anim__transform,
+.anim__build-up,
+.anim__compare,
+.anim__split-merge {
   max-width: 100%;
   height: auto;
 }
 .anim--pipeline,
 .anim--layer-stack,
-.anim--transform {
+.anim--transform,
+.anim--build-up,
+.anim--compare,
+.anim--split-merge {
   overflow-x: auto;
 }
 
 .anim__pipe-box,
 .anim__layer-box,
-.anim__xform-box {
+.anim__xform-box,
+.anim__build-base,
+.anim__cmp-box,
+.anim__split-box {
   stroke: var(--color-border);
   stroke-width: 1;
 }
 
 .anim__pipe-line,
-.anim__xform-line {
+.anim__xform-line,
+.anim__split-line {
   stroke: var(--color-muted);
   stroke-width: 2;
   fill: none;
 }
 
-/* No `fill` in either of these two rules: pipeline/layer-stack/transform each
-   flash a box to a solid --color-accent fill, and the label sitting on it must
-   invert to --color-accent-contrast while that flash is active (--color-fg
-   scores 1.82:1-3.83:1 against accent across the themes, --color-muted
-   1.04:1-1.34:1 -- both fail the 4.5:1 floor). A stacked, pre-inverted copy of
-   each label is the ONLY thing whose OPACITY the timeline animates -- never a
-   `fill` tween between two var() tokens, which animejs's colour detector
-   cannot interpolate (see .anim__text-on-accent above) -- so the base colour
-   must come from each element's own inline fill="..." attribute, which a
-   stylesheet `fill` declaration here would outrank and permanently override. */
+/* No `fill` in these rules: pipeline/layer-stack/transform/build-up/compare/
+   split-merge each flash a box to a solid --color-accent fill, and the label
+   sitting on it must invert to --color-accent-contrast while that flash is
+   active (--color-fg scores 1.82:1-3.83:1 against accent across the themes,
+   --color-muted 1.04:1-1.34:1 -- both fail the 4.5:1 floor). A stacked,
+   pre-inverted copy of each label is the ONLY thing whose OPACITY the
+   timeline animates -- never a `fill` tween between two var() tokens, which
+   animejs's colour detector cannot interpolate (see .anim__text-on-accent
+   above) -- so the base colour must come from each element's own inline
+   fill="..." attribute, which a stylesheet `fill` declaration here would
+   outrank and permanently override. */
 .anim__pipe-name,
 .anim__layer-name,
-.anim__xform-label {
+.anim__xform-label,
+.anim__build-name,
+.anim__cmp-text,
+.anim__split-name {
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 600;
@@ -511,7 +532,9 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 
 .anim__pipe-change,
 .anim__layer-adds,
-.anim__xform-step-text {
+.anim__xform-step-text,
+.anim__build-contrib,
+.anim__split-what {
   font-family: var(--font-body);
   font-size: 11px;
 }
@@ -524,12 +547,28 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   fill: var(--color-accent);
 }
 
+.anim__cmp-heading {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  fill: var(--color-muted);
+}
+.anim__cmp-divider {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
 /* The static <ol> lists are the print/reduced-motion presentation only; during
    normal animated playback the SVG carries the meaning. Same toggle-pair
    pattern as .anim__state-steps-static. */
 .anim__pipeline-static,
 .anim__layer-static,
-.anim__xform-static {
+.anim__xform-static,
+.anim__build-static,
+.anim__cmp-static,
+.anim__split-static {
   display: none;
 }
 
@@ -538,7 +577,8 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
      be forced visible -- inline opacity="0" and stroke-dashoffset would
      otherwise leave these diagrams blank. Every stage/layer/step shows at once. */
   .anim--pipeline .anim__pipe-line,
-  .anim--transform .anim__xform-line {
+  .anim--transform .anim__xform-line,
+  .anim--split-merge .anim__split-line {
     stroke-dashoffset: 0 !important;
   }
 
@@ -549,15 +589,37 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
      revealed stack the static <ol> narrates, not every accent flash
      overlapping at once. The inverted text pair needs no matching exclusion:
      it inherits visibility from its own opacity="0", which this rule never
-     touches, and only the plain (always-shown) copy is targeted here anyway. */
+     touches, and only the plain (always-shown) copy is targeted here anyway.
+     compare's active overlay and split-merge's merged-active overlay get the
+     same exclusion: a comparison's flash is a momentary contrast, not a
+     lasting state, and the merged box's "solid accent" look is the animated
+     PAYOFF once every branch has landed -- neither belongs in a static
+     picture that shows every element at once. build-up's wash IS meant to
+     persist (every part stays lit once it joins the whole, unlike a layer's
+     single active tier), so .anim__build-rect gets no such exclusion. */
   .anim--layer-stack .anim__layer-box:not(.anim__layer-box-active),
-  .anim--transform .anim__xform-step {
+  .anim--transform .anim__xform-step,
+  .anim--compare .anim__cmp-box-active,
+  .anim--split-merge .anim__split-box-active {
     opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-base,
+  .anim--split-merge .anim__split-box:not(.anim__split-box-active) {
+    opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-rect {
+    fill-opacity: var(--anim-visited-strength, .12) !important;
+  }
+  .anim--split-merge .anim__split-box.anim__visited {
+    fill-opacity: var(--anim-visited-strength, .12) !important;
   }
 
   .anim--pipeline .anim__pipeline-static,
   .anim--layer-stack .anim__layer-static,
-  .anim--transform .anim__xform-static {
+  .anim--transform .anim__xform-static,
+  .anim--build-up .anim__build-static,
+  .anim--compare .anim__cmp-static,
+  .anim--split-merge .anim__split-static {
     display: block; list-style: decimal; padding-inline-start: var(--space-6); margin: 0;
   }
 }
@@ -609,24 +671,43 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
     padding-inline-start: 1.5em !important; margin: 0 !important;
   }
 
-  /* Same reasoning as the reduced-motion rule in layout.css: the timeline never
-     runs on paper, so pipeline/layer-stack/transform's animated elements would
-     otherwise print blank -- inline opacity="0" and stroke-dashoffset override. */
+  /* Same reasoning as the reduced-motion rule in layout.css: the timeline
+     never runs on paper, so pipeline/layer-stack/transform/split-merge's
+     animated elements would otherwise print blank -- inline opacity="0" and
+     stroke-dashoffset override. */
   .anim--pipeline .anim__pipe-line,
-  .anim--transform .anim__xform-line {
+  .anim--transform .anim__xform-line,
+  .anim--split-merge .anim__split-line {
     stroke-dashoffset: 0 !important;
   }
   /* :not(.anim__layer-box-active) excludes the accent highlight overlay --
      same reasoning as layout.css's reduced-motion rule: only one layer is
      ever highlighted during playback, so printing every one "active" would
-     misrepresent the sequence the static list already narrates. */
+     misrepresent the sequence the static list already narrates. compare's
+     flash and split-merge's merged-active overlay get the same exclusion for
+     the same reason: neither is a lasting state. build-up's wash DOES persist
+     (every part stays lit once it joins the whole), so its rect gets no such
+     exclusion, just the fill-opacity fallback used elsewhere on paper. */
   .anim--layer-stack .anim__layer-box:not(.anim__layer-box-active),
-  .anim--transform .anim__xform-step {
+  .anim--transform .anim__xform-step,
+  .anim--compare .anim__cmp-box-active,
+  .anim--split-merge .anim__split-box-active {
     opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-base,
+  .anim--split-merge .anim__split-box:not(.anim__split-box-active) {
+    opacity: 1 !important;
+  }
+  .anim--build-up .anim__build-rect,
+  .anim--split-merge .anim__split-box.anim__visited {
+    fill-opacity: .12 !important;
   }
   .anim--pipeline .anim__pipeline-static,
   .anim--layer-stack .anim__layer-static,
-  .anim--transform .anim__xform-static {
+  .anim--transform .anim__xform-static,
+  .anim--build-up .anim__build-static,
+  .anim--compare .anim__cmp-static,
+  .anim--split-merge .anim__split-static {
     display: block !important; list-style: decimal !important;
     padding-inline-start: 1.5em !important; margin: 0 !important;
   }
@@ -690,7 +771,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   B --&gt;|פגיעה| C[כתובת פיזית]
   B --&gt;|החטאה| D[מעבר בטבלת העמודים]</div>
 <figure class="figure" data-p2c-topic="tlb"><img alt="השקופית המקורית שהתרשים הזה משוחזר ממנה." src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA8AAAALQCAIAAADQFY7jAAA2XklEQVR4nO3daZhU1YH4/1tLd7PT7CDSLIIgiIAgokYW4woiRiNGnWhcRs0YTSRjJjHBJT5J1PhMNE7UTMRowDULMS6oGBUUDQgmguzNTjd0IztIb1X1f1HPr/893YgcQNbP55XeW3Xr3O433z6cOjeWyWQiAABg98QP9AAAAOBQIqABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAghoAAAIIKABACCAgAYAgAACGgAAAhzsAV1aWnrqqafm5ubm5+dPnDhxd94ye/bsTp065ebmDho0qKSkJIqi119/vUWLFrm5ud/85je/5PHuY4fuyAEADlcHe0C3bNnyrLPOSqVSW7ZsefXVV6uqqr7wLVOmTCkqKkqlUl/96ldbtWoVRVEmk6mqqqqqqkqlUqEDSKVSS5cu3YM37hN7M3IAAL4MB3tAx+Px4cOHt2zZMpPJTJs2bfXq1bt+/bZt2yZNmpRKpZo3bz58+PB4fK9ucP78+Zdeeuktt9xSVla2N9cBAOCwkTzQA/hivXr1GjBgwKRJk5YvXz5jxoxOnTrt4sULFiz45z//GUVR3759TzjhhOzBwYMH//Of/0yn040bN979z507d+7555+/fPnys88+ey+GDwDAYeVgn4GOoqhRo0ajRo1KJpNlZWWTJk3a9SqOt956a926dclkcuTIkdW53KBBgy5dunTt2rVNmza7/7llZWU7duzYq6EDAHDYOQRmoKMoGjp0aMeOHQsLC99///2VK1d26dJlpy/bvHnza6+9lkql2rdv/9WvfjXoIyoqKhYtWhSPx7t27Zqbm7svRr0r27ZtW7FixZYtW5LJZNu2bdu3b7+Xq00+T0lJyapVq5o1a3b00Ufn5eXVPJVOp1esWFFaWtqyZctOnTolEokvvNpnn322evXqjRs3tm3btkOHDrs55lQqtWzZss2bNx911FGtW7eu9UFlZWWFhYU7duwoKCjYnb9w0un0unXr1qxZ07Rp044dO+7mGPbz7xcAOJxlDgWVlZXXXnttLBarV6/e008//XkvmzZtWsuWLWOx2De+8Y2ysrLq4wsWLBg7duxtt902YcKE6oMlJSXDhw/v0KHDNddc89FHH/Xv3z8Wi8Visd69e7/99ttvv/32b3/722bNmkVRdNJJJ7388stvvvnm/Pnzs+8dN27csGHDhg0b9uqrr9YdxsaNG2+44YYhQ4Zccsklq1evrnlq27Ztjz322MCBA2s2XCwWa9269dVXXz1nzpxal5o0aVKTJk1isdhll122Oz+ojz766KabbvqP//iPDz/8cOnSpV/72teqPyg/P//SSy/94IMPMplMKpWaOHHi8ccfn63PWCzWoUOHe++9d9u2bZ935XfeeedrX/ta9aR+LBbr2LHj2LFjS0pKar0ylUo99dRTN9xww9ixYz/99NNXXnmlV69esVgs+64uXbr86Ec/Ki4uzmQyW7duveOOO1q2bJm9ZjKZPPnkk1999dVUKrXTMaxZs+ZHP/pR165dq4edn58/dOjQ8ePH79ixo9aLd/H7ffrpp0eMGDFkyJDrr79+w4YNO/2sFStWjB49etevAQCOTIdGQGcymRdffLFRo0axWOyKK64oLy+v+4JUKnXXXXfF4/H69es/88wzNU/tNEPXrFlz4oknRlF0xhlnnHPOOdnCi6LomGOOefTRRxs1alTrL41YLHbjjTdmP2js2LHxeDyRSPz+97+vO5KSkpKBAwdGUVRQULB48eLq42vXrv3a1762ixnTNm3avPTSS1848l3405/+VL9+/by8vIcffnjIkCHVN1WtWbNmzz777MSJE5s3b17rVCKRuOqqq7Zu3VrrmmVlZWPHjq1fv37dAcdisV69es2YMaPm66uqqrJ/7Rx77LFPPPFE3UnlWCzWv3//Tz755Hvf+14yWfvfQJo0aTJu3Li6t/bWW2917dq17h1lRz5y5Mjly5fXfP0ufr/Tpk076aSTsj+Nt99+e6c/yT/84Q95eXnxePw///M/Py/oAYAj06GxhCOKokGDBh133HEffvjhP/7xj+XLlx977LG1XrBp06Y333wznU4fc8wxp5122u5feebMmeXl5Z07d+7du/eiRYtOPvnkDh06NGrUKJ1Ol5WVpdPpZDJZr169eDxer169PR5/KpW67777/va3v6XT6TZt2vz7v//7ueeee/TRR5eVlc2cOfN///d/33vvvZKSkrvuuqt///7t2rXb4w+KoiidTj/yyCOLFi3q0qXLNddcc8IJJ6xZs+a3v/3tRx99tHHjxttuuy0nJ2fTpk0DBw781re+1bFjx0WLFj366KOLFy9+9tlnBwwY8J3vfKfmpR544IH77ruvoqKifv36F1100QUXXNCqVavCwsJnnnnm3XffnTdv3nXXXffCCy9079691jA+/fTTu+66a/369Wecccbll1/epk2bDz/88NFHH123bt1HH310xRVXLFu2LJlMjh49+oILLqhfv/5bb731+9//fsuWLXffffeJJ57Yt2/f6kvNnDnzmmuuWb58eSwW69ev36233nryySd/+umn77333rhx4xYvXvzyyy9XVFQ89dRTdXu97u93wIABw4cPnzVr1ubNm994443BgwfX+qumvLw8e8FmzZqNHDnyS1pdAwAcqg50we+uVCp1xx13xOPx3NzcJ598su4L3n777WbNmsVisVtuuaWqqqrmqV3PQEdR1K9fv2XLlmUymbKysup/r585c2a2xs4+++yaaxv2bAZ6/vz5nTt3jqKodevWb775Zq23fPrpp2eccUYsFqtfv/6f/vSnXY98F7Iz0NmbOv744+fNm1d9auHChT169Mieisfjl1566caNG6vPfvDBB9lqHzRoUGlpafXxadOmtW3bNoqiFi1aPPfcczXnYsvKyn784x/n5ubG4/Gbb765srIye7x6Bjr7Qddee23NWe3x48c3aNAgO4yGDRs+8sgj1dfM/o2Rk5MTj8dvv/326uNbt2698MILY7FYMpn89re/XWuOfPny5aeffnr27N133139rl3/fqdPn5795Q4cOLDuKpRPPvmkY8eOsVjsrLPO2rJly+785AGAI8chM7UWj8fPO++8li1bVlZWTpo0qby8vObZdDr9xhtvbN68uWnTpiNHjtyd78NVSyQSo0ePzu6Ol5eXl133vM/Nmzdv7dq12SY7/fTTa51t0aJFdnVHeXn5vHnz0un0Xn5cvXr1xowZc9xxx1Uf6dq169ChQ7Nde/TRR99+++35+fnVZ/v27du/f/8oigoLCwsLC7MHU6nUhAkTSkpKksnkTTfddMkll9Sci83Ly7vtttvOPPPMTCbzl7/85ZNPPqk7jC5dunz/+9+vuR5m2LBhxxxzTBRFsVjs7LPPvvLKK6uvmf0Vt27dOp1Of/DBB1u3bs0enzFjxjvvvJPJZPr27Tt27Nhaq2s6duz4i1/8olWrVlVVVU8//fSyZctqjWGnv99evXoNHDgwFostXLjw448/rvWWKVOmFBcXJ5PJUaNGBW19CAAcCQ6ZgI6i6Pjjjx8wYEAURTNmzKjVSZ9++ml2/cbxxx9fPe+4mxo2bNinT599OdCdueiii4qLi2fNmnXPPffsdBeI1q1bJ5PJTCbz6aef7v3HFRQUDB06tOaReDxeUFCQ/SLdwIEDa624yMnJOeqoo2Kx2Pbt24uLi7MHi4qKsuXavn37Sy+9tO5KhqZNm15++eW5ubklJSXTpk2rdTYWi5122mndunWrebBRo0bZbw0mk8nzzz+/YcOGNc/m5+dns37t2rWbN2+OoiidTv/973/fsmVLIpG4+OKLd7q4pX///tkF36tWrZo1a1atszv9/TZs2PDCCy/MycnZunXr66+/XvMvlu3bt7/yyitVVVUdOnQI3csFADgSHEoB3ahRowsuuCCZTK5evfq9996reeqjjz5atGhRIpEYPnx43a/HfeFlO3TosE9HunP5+fn9+vXLLuSoqby8fPr06dk/AKIoqqys3PvP6ty5c+vWrWsdrF+/fjagjzvuuJycnJqnsjucRFGUTqerHxu+dOnStWvXRlHUrVu3goKCnX7Qscce27Rp01QqNWvWrFrPG4/H43379q31NcFkMpn9+6FRo0bZqeidns2uxIiiqKKiYs6cOel0ulGjRtk58rrq1at36qmnZufvZ86cWWv+/vN+v0OHDu3UqVM6nX777bdLS0urj8+fPz/7LJ6hQ4d27dp1p58IABzJDpkvEWYNGzasY8eOS5YsmTRp0r/9279VN9/rr7++ZcuWtm3b7sFTA3Nzc3e6xcSXJJ1OL1iwYOrUqQsWLFi2bNnSpUuXLFlS/cSWne4yESoWi7Vp06buVx6rL964ceO608l1jxQXF2/bti2KomnTplWvn66lqqoqu6q4qKiorKys5oxyMpmsO2GcLfgoinJycqoXQ9c9W2379u3r16+Poqh+/frVG97V1b59+5ycnPLy8qKiomx5V/u832/Hjh2HDRu2ePHixYsXz5o1a8SIEdnjf//730tLSxs2bJh9fM/nfSIAcMQ6xPqgS5cugwcPXrJkycyZM5csWdKrV68oitauXfvOO+9EUTRw4MCaq353U05OTtCa6T1WXl4+fvz4xx577OOPP671PMW8vLw2bdoUFRXt/ernrF1vGLKbmb5169bseHbs2FFUVLTrF2/fvr28vLxmQCcSib1/ZElVVVV2vXsikdjFTdWrVy/7rMqKiopapz7v95tIJC688MJnn31269atr7322rnnnptIJDZt2vT666+nUqmePXsOGjRoLwcPAByWDrGATiaTF1xwwQsvvLBmzZqpU6dmA/rDDz8sLCzMyckZOXJk3UnNA6LWJGgURVu3br311luffPLJ7DqHxo0bH3vssccdd1zPnj1PPPHEk0466Y033rjqqqv2VUDvk5ns7PxrLBY744wzzj///F1fc9dz3nszhuwDFCsrK7PT4TtVVlZWVVUVi8XqbuC9CyeddNLxxx///vvvT5kyZe3ate3bt58zZ87HH3+cSCRGjBixiwlvAOBIdogFdBRFgwYN6tGjx6xZs15//fWrrroqLy9v0qRJ27dv79atW62vzX15qruw1mYg1Qc/++yzWgdfeOGFCRMmZB8zftddd1166aW1tnfYsWPHvqrnfaVJkybZdRFt27a9+eab9888fS3169fP7puxY8eOmiuVa1m9enVFRUUsFmvRosXuV3uzZs1GjBgxffr0pUuXzpgxY9SoUa+//vqmTZvatGkzfPhw2z8DADt16CVCq1atzjvvvFgsNnPmzMLCwtWrV7/77rtRFJ1++ukdO3bcDwOIx+PZhQqZTKa0tLRu9RYVFdVKvc8++2zixInl5eU5OTk/+tGPrrvuulr1nE6nV6xYkb3UwZPRnTp1atKkSSaTWbBgweftDbJmzZrJkyfPnTt3F9PDe6NevXo9evSIx+Pbt2+fMWPGTn84FRUV06dPz2QyiUSi+vnkuyMej59zzjlt2rT57LPPXn311ZKSksmTJ2cymUGDBvXs2XOf3gcAcPg49AI6u1twixYtSktLp0yZMn369GXLljVs2HDkyJH79itfiUQiO5dZVVVVq9sKCgpycnIymcycOXNqbZqRTqcnTZq0YcOGmgervwnXoEGDus9QjKJoy5YtU6dOrd6Fo+4KkAOiU6dOXbp0iaJo4cKFtbY9yUqn0w8//PC5557bu3fvMWPG1NqFY5+Ix+ODBw9u0KBBOp1+8cUXV69eXfc18+bNmzZtWiaTad26deiOhMcdd9zJJ58cRdG0adNee+21hQsX5ubmXnjhhQfJWiAA4CB06AV0FEW9e/ceMGBAVVXVK6+8MnHixLKysu7du+/zr3zl5eVlFy1s2LCh1vRq796927Ztm8lk3n///dmzZ9c8NW3atHHjxtVKyfr162ennCsqKrZs2VLrg9Lp9B/+8Id//OMf2f/dvHnzQRLQrVq1uvDCC5PJ5Pbt2++7774VK1bUesGUKVOefPLJdDrdtGnTiy+++Eta43HKKaeccMIJURR98sknv/jFL7Zv317z7NatW++7776ioqJYLHb66aeHzhw3aNDgwgsvzM3NXbp06X333bdly5Zjjjlm8ODB+/IGAIDDyyEZ0NUbQk+ZMuWll16KxWLnnHNOq1at9u2nNGjQILtUY/78+WPHjn344YcXLFiQPdW9e/fzzjsvHo8XFxffdNNNU6dOTaVS69at+81vfnP55ZeXlpa2bNmy5krcBg0aDBkyJLtNxBNPPJHdXDmKonQ6PWvWrOuvv/6HP/xhdie77H5wGzdu3Lf3sseuvPLKk046KYqimTNnXnzxxa+++mpZWVkURdu3b3/88cevvPLKNWvWxOPx0aNHDxky5EsaQ6tWrb7//e83adIklUr97ne/GzlyZHYtR/an981vfvOPf/xj9mkvt956a/Ybh0EGDx7cpUuX8vLyhQsXRlF05pln7p99wQGAQ9Sh9yXCrDPOOKOgoGDJkiVRFLVs2fLL+MpX27ZtTzzxxMWLF5eXl48bNy4nJ+exxx7LboecTCZvu+22WbNmzZw588MPP8zGcfbZH4lE4uqrr47H47/73e+qLxWPx6+88spXX331gw8+mDRp0nHHHdetW7dYLLZy5crsKuqWLVv+8Ic//POf/zx79uzCwsKFCxfu878H9ky7du1+/etfX3XVVfPnz89ully/fv1WrVpt2LBh+/btmUwmHo+PGjXqnnvu2fXGeXtp1KhRd999909+8pPt27e//fbbp556avPmzSsrK6tn61u1avXAAw8MHDhwDy7eoUOHM888c8GCBZlMpmnTpqNGjTogX5cEAA4Vh+QMdPT/NoTOPnejX79+2X/i37fy8vLuvPPOoUOHZnMqlUple716AM8999zXv/717CP9qqqqMplMw4YNx4wZc//999etyQ4dOjz99NOjR4/Ozc3dtGnThx9+OGPGjLVr1+bl5V166aVvvvnmHXfcccstt9SrV2/9+vXjxo3LTvQeDAYMGPDKK69Uf/Fxx44dK1euzK5pKSgouP/++8ePH1/3qYf7ViKRuOWWW1588cWvfOUrOTk52fn+TZs2ZTKZ3NzcESNGvPzyy5deeukeX3zkyJFNmjSJoqhv3779+vXbp2MHAA43sYNkue1BK51Or1q1qqioqH79+t27d6/73bLCwsKpU6euWbMmPz//nHPO+cKHPy9ZsuS9995bvXp1PB7v3Lnz4MGDjzrqqOypqqqq0tLSqqqq3NzcVq1aHWzzoBs3bpw6deqyZcu2bduWn59/wgknDBw48EudeN6pwsLCmTNnrl27Nh6PH3XUUaecckr79u338povvPDCt771raqqql/96lc33XTTPhknAHC4EtAc6SoqKq6//vo//OEPvXv3fumllwoKCg70iACAg9qhuoQD9pW5c+e++eabiURi9OjRRx999IEeDgBwsBPQHNHWrl3705/+tLi4uEePHldccYWnDwIAX+hQ3YUD9sbMmTNvvPHGVCq1fPnyTZs25ebm3nDDDZ06dTrQ4wIADgECmiNRs2bN1q9fv3z58iiKksnklVdeefXVVx/oQQEAhwYBzZGoRYsWZ5555vvvv9+hQ4dvfOMbl1122R48gQUAODLZhQMAAAL4yhQAAAQQ0AAAEEBAAwBAAAENAAABBDQAAAQQ0AAAEEBAAwBAAAENAAABBDQAAAQ42AP6lVdeadasWW6gvLy8e++9N4qi4uLiE088MTc3t02bNu++++5ufuiyZcu6d+9e97L16tVr167dCSeccN555911111z5sz5Mm8dAICDUfJAD+ALZDKZqqqqysrKoHfF4/F0Op397+zbq6qqgq6QSqV2+qFr165du3btnDlzXnvttXvvvfeSSy65995727dvH3RxAAAOXQd7QLdo0eIrX/nKjh07ah0vKipasmRJFEXt2rXr1q1brbPxeLygoGDvPz03N/eEE05o2LBh9n8zmUxlZeW2bdtWrVq1efPm8vLyp59+urCw8Pnnn98nHwcAwMHvYA/oU045ZdKkSXWP33fffbfffnsmkznnnHN+97vfJRKJL+PTmzVr9thjj/Xv37/W8bKyspdeeun2228vLCycMWPGL37xi4cffjiZPNh/mAAA7L2DfQ30walevXqXXHLJww8/nJ+fn06nJ0+evHz58gM9KAAA9gcBvedOPPHE7OqR9evXr1ix4kAPBwCA/UFA77m8vLxGjRpFUZRKpcrKyg70cAAA2B8E9J5bt27d6tWroyhq3LixjTgAAI4QAnoPbd269YEHHli2bFksFvvqV7/ao0ePAz0iAAD2BxtH7Ep5eflbb71VWFhYfSSdTn/66aezZ8+eMmVK9vipp556991316tX78ANEwCA/UdA78qmTZt+8IMffN7ZnJycK6+88uc//3nr1q3356gAADiALOHYc5WVlS+88MJPfvKTlStXHuixAACwn5iB3pUmTZp8+9vfbteuXfWRqqqqTZs2zZs3b86cOUuXLt26devjjz/+3nvvjR8/vu7zVgAAOPwI6F2pX7/+JZdcstMyTqfTU6ZMue222z766KMFCxZ897vf/dOf/tS2bdv9P0gAAPYnSzj2UDweHzZs2PPPP9+rV69MJjNjxoy//e1vB3pQAAB86QT0XuncufPw4cPj8XhVVdWUKVMO9HAAAPjSCei9Eo/HW7ZsGUVRJpPZvHnzgR4OAABfOgG9V6qqqhYuXJjJZGKxWH5+/oEeDgAAXzoBvVdeffXVv/3tb5lMJpFIDBw48EAPBwCAL51dOPZERUXF7NmzJ0yY8OSTT2ZXbnTr1m3EiBEHelwAAHzpjpSA3rp165gxY5o0abKL13Tv3v2RRx6peWTjxo033XRTw4YNq4+k0+mNGzcuWbJk27Zt1Qdbt2597733HnPMMft82AAAHGyOlICurKycOXPmrl9T91uAFRUV06dP38VbksnkmWee+fOf/7xfv357O0QAAA4FR0pA7xOxWCyZTDZq1KhNmzbdunU76aSTRo0adfzxx8fjlpIDABwpYplM5kCPAQAADhmmTgEAIICABgCAAAIaAAACCGgAAAggoAEAIICABgCAAAIaAAACCGgAAAggoAEAIICABgCAAAIaAAACCGgAAAggoAEAIICABgCAAAIaAAACJA/0ANgtZWVln3zySWlpaceOHXv06JFIJA70iAAAjlCHxgz0qlWr+vTpk7szeXl5bdq06dOnz/Dhw++8887Zs2cf6MHuY6lU6umnn+7Ro8fAgQNHjBhx0UUXrV69en8OIJ1O33bbbXl5eQ0bNnz22Wf350cDAByEDo2AjqKoqqqqcmcqKipKS0tnz549adKkn/70pyeffPI111xTUlJyoMe7z0yePPnmm29esWJFJpOJoqh9+/b5+fn7eQzpdDr780+n07VOpVKppUuXplKp/TwkAIAD5RBbwpGTk9O7d+/GjRtXH8lkMmVlZSUlJUVFRVVVVWVlZU8++eSqVasmTJjQpk2bAzjUfaKqquqZZ57ZtGlTLBY78cQTb7zxxs6dO9e8/QNr/vz5Y8eOLSsre/755xs2bHighwMAsD8cYgHduHHjBx988PTTT697qrCw8Fe/+tUTTzxRVlb2zjvvPPLII3feeWc8fshMse/U5s2bCwsLM5lMfn7+/ffff8YZZxzoEf3/5s6de/755y9fvvzss88+0GMBANh/Du2+rKlr164PPfTQd77znUQiUVVV9dJLLx0GCzkqKip27NgRRVHr1q27dOlyoIfzf5SVlWXHBgBwRDnEZqB3LZlMjh49evz48SUlJStWrCgsLGzXrl3dl5WUlKxevbqioqJBgwYFBQXNmjXbnYtv2rRpxYoVsVjs2GOPrVev3m4OacOGDatXr66srOzcuXPz5s0DbiaKoijKZDLZ5cXJZHLXO2/s2U0BABDqsAroKIpat26dn59fUlJSUVGxadOmmqeWL1/+8MMPT5w4ccWKFdVfhkskEscee+w3v/nNG2+8cafRmUqlJk6c+OCDD06fPr2qqiqKovz8/Msuu+y//uu/5s+ff8cdd2Qymbvvvnv48OE131VWVvbUU089/vjj//rXv7LvysnJGTBgwE033XTJJZfk5uZ+4Y1s3rz517/+9eLFi4uLi6MoWrt27Y9//OP69es3bdr0u9/9bvv27ffspp544okJEyZEUXTbbbedd955tT5006ZNP/zhDxcsWNC6detf/epX1Z9Sy/r16+fMmbNo0aKKioooijZu3PjOO+/Uq1evffv2PXr0+MJbAwA4tGUOBStXruzZs2cURc2bN586deouXrl48eJOnTpFUdS4ceNXXnml+vjUqVOPOeaYz/shxGKxwYMHL1++vNbVtm3bNmbMmLy8vLqv79u37913352bm5uTkzNhwoSa78ouC97p8utkMnn55ZevX7/+C2+5uLi4b9++da/Qrl27f/3rX3t2U6lUauzYsfF4PJFI/P73v6/7oSUlJQMHDoyiqKCgYPHixdXvGjNmTDwer77Tl156qVGjRnU/7sYbb/zC+wIAONQdbjPQ8+bNW79+fRRFjRo1Ouqoo7IHi4uLx4wZs2TJkuxeFjfccMPJJ5+cn5+/bt26yZMnP/LII6tWrXrvvfceeuihX/7yl9UrJVKp1K9//ev/+Z//qaioaNOmza233jp8+PDi4uJnn332ueee+/jjj+fNm1dZWZlM/p+f4bp162644YbJkydnMpn27dtfffXVp556ajwenz59+pNPPrl8+fLnn3++QYMGDz30UIMGDXZxI/Xr17/gggt69OjxxhtvbNiwoVmzZuecc052Bjo7qbxnN7VPJJPJRo0apdPpsrKydDqdTCbr1asXj8d3f2ULAMAh7EAX/G7ZzRno4uLiM844IxaLxWKxs88+e8uWLdnj48aNy83NjcViQ4YMWbNmTa13TZ06Nbvh3XHHHZfdbjlr5syZ2TUMbdu2zQZxVmVl5WOPPVa9GXPNGehUKvWzn/0sJycnFouddNJJCxcurPlBK1asGDZsWCwWa9KkyV//+tfdufGioqLevXtHUdSzZ8+VK1fWPLUHN7WvZqCrfz7Zjzj77LO3bdu2O7cDAHAYOBx24SgvL589e/Yvf/nLM8888+23385kMg0bNvzWt76V3S85lUp98MEHlZWVubm51157bdu2bWu9vX///gMGDIiiqLS0dNWqVdmD6XR6woQJxcXFiUTi+uuvr7l/XDKZvO66626++eZac89RFBUVFT333HOVlZUtWrS4//77jz322JpnCwoK7rvvvqOOOmrr1q2PP/74tm3b9viW9+ymAADYe4dYQG/YsGHw4MGx/6tevXp9+vT5wQ9+MG/evEwmk5eX973vfe+iiy7KviWRSPz2t79dvXr11KlTR44cWfeaeXl5LVu2jMViNb93WFJS8s4772QymbZt21500UW1FjQnEokrrrgiu9i6phkzZhQWFmYXHw8aNKjuZ/Xr12/YsGFRFP3zn/9cunTpHv8c9uymAADYe4dYQO9aLBY7/vjjn3zyybvuuqvmN//i8fhRRx01cODAug/BXr9+/auvvrpgwYIoitLpdPUjqZcuXZqduO3evftON2Du3Llz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QEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAEAAAQ0AAAEENAAABBDQAAAQQEADAECA/w9ejZSZJFeLTQAAAABJRU5ErkJggg=="><figcaption>השקופית המקורית שהתרשים הזה משוחזר ממנה.</figcaption></figure>
-<div class="anim anim--state-toggle"><div class="anim__state anim__state--before" id="anim-state-before-24"><span class="anim__state-label">Before</span>הכתובת הווירטואלית לפני התרגום</div><div class="anim__state anim__state--after" id="anim-state-after-24"><span class="anim__state-label">After</span>הכתובת הפיזית אחרי התרגום</div><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 0, "steps": [{"targets": ["#anim-state-before-24"], "props": {"opacity": [1, 0]}, "duration": 4000, "ease": "inOutQuad"}, {"targets": ["#anim-state-after-24"], "props": {"opacity": [0, 1]}, "duration": 4000, "ease": "inOutQuad", "position": "\u003c\u003c"}, {"kind": "set", "targets": ["#anim-state-before-24"], "props": {"opacity": 1}}, {"kind": "set", "targets": ["#anim-state-after-24"], "props": {"opacity": 0}}]}</script></div>
+<div class="anim anim--build-up"><svg class="anim__build-up" dir="ltr" width="344" height="160" viewBox="0 0 344 160"><g class="anim__build-part"><rect class="anim__build-base" id="anim-build-base-24-0" x="12" y="12" width="320" height="40" rx="8" opacity="0"></rect><rect class="anim__build-rect anim__visited" id="anim-build-rect-24-0" x="12" y="12" width="320" height="40" rx="8" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__build-name" x="24" y="36" fill="var(--color-fg)">אוגרים</text><text class="anim__build-name anim__text-on-accent" id="anim-build-name-24-0" x="24" y="36" opacity="0">אוגרים</text><text class="anim__build-contrib" x="320" y="36" text-anchor="end" fill="var(--color-muted)">הגישה המהירה ביותר</text><text class="anim__build-contrib anim__text-on-accent" id="anim-build-contrib-24-0" x="320" y="36" text-anchor="end" opacity="0">הגישה המהירה ביותר</text></g><g class="anim__build-part"><rect class="anim__build-base" id="anim-build-base-24-1" x="12" y="60" width="320" height="40" rx="8" opacity="0"></rect><rect class="anim__build-rect anim__visited" id="anim-build-rect-24-1" x="12" y="60" width="320" height="40" rx="8" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__build-name" x="24" y="84" fill="var(--color-fg)">מטמון</text><text class="anim__build-name anim__text-on-accent" id="anim-build-name-24-1" x="24" y="84" opacity="0">מטמון</text><text class="anim__build-contrib" x="320" y="84" text-anchor="end" fill="var(--color-muted)">מאוזן בין מהירות לגודל</text><text class="anim__build-contrib anim__text-on-accent" id="anim-build-contrib-24-1" x="320" y="84" text-anchor="end" opacity="0">מאוזן בין מהירות לגודל</text></g><g class="anim__build-part"><rect class="anim__build-base" id="anim-build-base-24-2" x="12" y="108" width="320" height="40" rx="8" opacity="0"></rect><rect class="anim__build-rect anim__visited" id="anim-build-rect-24-2" x="12" y="108" width="320" height="40" rx="8" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__build-name" x="24" y="132" fill="var(--color-fg)">זיכרון ראשי</text><text class="anim__build-name anim__text-on-accent" id="anim-build-name-24-2" x="24" y="132" opacity="0">זיכרון ראשי</text><text class="anim__build-contrib" x="320" y="132" text-anchor="end" fill="var(--color-muted)">איטי אבל גדול</text><text class="anim__build-contrib anim__text-on-accent" id="anim-build-contrib-24-2" x="320" y="132" text-anchor="end" opacity="0">איטי אבל גדול</text></g></svg><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 900, "steps": [{"targets": ["#anim-build-base-24-0"], "props": {"opacity": [0, 1]}, "duration": 350, "ease": "outQuad"}, {"targets": ["#anim-build-rect-24-0"], "props": {"fillOpacity": [0, 1]}, "duration": 350, "ease": "outQuad", "position": "\u003c\u003c"}, {"targets": ["#anim-build-name-24-0", "#anim-build-contrib-24-0"], "props": {"opacity": [0, 1]}, "duration": 350, "ease": "outQuad", "position": "\u003c\u003c"}, {"targets": ["#anim-build-rect-24-0"], "props": {"fillOpacity": 0.14}, "duration": 400}, {"targets": ["#anim-build-name-24-0", "#anim-build-contrib-24-0"], "props": {"opacity": 0}, "duration": 250, "position": "\u003c\u003c"}, {"targets": ["#anim-build-base-24-1"], "props": {"opacity": [0, 1]}, "duration": 350, "ease": "outQuad"}, {"targets": ["#anim-build-rect-24-1"], "props": {"fillOpacity": [0, 1]}, "duration": 350, "ease": "outQuad", "position": "\u003c\u003c"}, {"targets": ["#anim-build-name-24-1", "#anim-build-contrib-24-1"], "props": {"opacity": [0, 1]}, "duration": 350, "ease": "outQuad", "position": "\u003c\u003c"}, {"targets": ["#anim-build-rect-24-1"], "props": {"fillOpacity": 0.14}, "duration": 400}, {"targets": ["#anim-build-name-24-1", "#anim-build-contrib-24-1"], "props": {"opacity": 0}, "duration": 250, "position": "\u003c\u003c"}, {"targets": ["#anim-build-base-24-2"], "props": {"opacity": [0, 1]}, "duration": 350, "ease": "outQuad"}, {"targets": ["#anim-build-rect-24-2"], "props": {"fillOpacity": [0, 1]}, "duration": 350, "ease": "outQuad", "position": "\u003c\u003c"}, {"targets": ["#anim-build-name-24-2", "#anim-build-contrib-24-2"], "props": {"opacity": [0, 1]}, "duration": 350, "ease": "outQuad", "position": "\u003c\u003c"}, {"targets": ["#anim-build-rect-24-2"], "props": {"fillOpacity": 0.14}, "duration": 400}, {"targets": ["#anim-build-name-24-2", "#anim-build-contrib-24-2"], "props": {"opacity": 0}, "duration": 250, "position": "\u003c\u003c"}, {"kind": "set", "targets": ["#anim-build-base-24-0", "#anim-build-base-24-1", "#anim-build-base-24-2"], "props": {"opacity": 0}}, {"kind": "set", "targets": ["#anim-build-rect-24-0", "#anim-build-rect-24-1", "#anim-build-rect-24-2"], "props": {"fillOpacity": 0}}, {"kind": "set", "targets": ["#anim-build-name-24-0", "#anim-build-name-24-1", "#anim-build-name-24-2", "#anim-build-contrib-24-0", "#anim-build-contrib-24-1", "#anim-build-contrib-24-2"], "props": {"opacity": 0}}]}</script><ol class="anim__build-static"><li>אוגרים — הגישה המהירה ביותר</li><li>מטמון — מאוזן בין מהירות לגודל</li><li>זיכרון ראשי — איטי אבל גדול</li></ol></div>
 <p>לדוגמה: תוכנית שקוראת שוב ושוב מאותו מערך תמצא את התרגום כבר שמור ב-TLB אחרי
 הפעם הראשונה בלבד.</p>
 <details class="quiz" data-quiz="tlb-q1" open>
@@ -715,7 +796,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 <p>לדוגמה: מערכת עם 100 מסגרות זיכרון שמריצה חמישה תהליכים שכל אחד מהם צריך 30
 מסגרות תיכנס לתרשיש — 150 חורג מ-100 — עוד לפני שהמעבד עשה עבודה שימושית.</p>
 <div class="anim anim--state-toggle"><div class="anim__state anim__state--before" id="anim-state-before-27"><span class="anim__state-label">Before</span>קבוצת העבודה בתוך הזיכרון הפיזי</div><div class="anim__state anim__state--after" id="anim-state-after-27"><span class="anim__state-label">After</span>קבוצת העבודה מוחלפת (thrashing)</div><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 0, "steps": [{"targets": ["#anim-state-before-27"], "props": {"opacity": [1, 0]}, "duration": 4000, "ease": "inOutQuad"}, {"targets": ["#anim-state-after-27"], "props": {"opacity": [0, 1]}, "duration": 4000, "ease": "inOutQuad", "position": "\u003c\u003c"}, {"kind": "set", "targets": ["#anim-state-before-27"], "props": {"opacity": 1}}, {"kind": "set", "targets": ["#anim-state-after-27"], "props": {"opacity": 0}}]}</script></div>
-<div class="anim anim--pipeline"><svg class="anim__pipeline" dir="ltr" width="656.8" height="112" viewBox="0 0 656.8 112"><line class="anim__pipe-line" id="anim-pipe-line-28-0" x1="181.6" y1="56" x2="237.6" y2="56" stroke-dasharray="56" stroke-dashoffset="56"></line><line class="anim__pipe-line" id="anim-pipe-line-28-1" x1="419.2" y1="56" x2="475.2" y2="56" stroke-dasharray="56" stroke-dashoffset="56"></line><g class="anim__pipe-stage"><rect class="anim__pipe-box" x="0" y="24" width="181.6" height="64" rx="8" fill="var(--anim-pipe-idle)"></rect><rect class="anim__pipe-box anim__pipe-box-active" id="anim-pipe-rect-28-0" x="0" y="24" width="181.6" height="64" rx="8" fill="var(--anim-pipe-active)" opacity="0"></rect><text class="anim__pipe-name" x="90.8" y="52" text-anchor="middle" fill="var(--color-fg)">בקשת קלט/פלט</text><text class="anim__pipe-name anim__text-on-accent" id="anim-pipe-name-28-0" x="90.8" y="52" text-anchor="middle" opacity="0">בקשת קלט/פלט</text><text class="anim__pipe-change" x="90.8" y="70" text-anchor="middle" fill="var(--color-muted)">התהליך מבקש נתון</text><text class="anim__pipe-change anim__text-on-accent" id="anim-pipe-change-28-0" x="90.8" y="70" text-anchor="middle" opacity="0">התהליך מבקש נתון</text></g><g class="anim__pipe-stage"><rect class="anim__pipe-box" x="237.6" y="24" width="181.6" height="64" rx="8" fill="var(--anim-pipe-idle)"></rect><rect class="anim__pipe-box anim__pipe-box-active" id="anim-pipe-rect-28-1" x="237.6" y="24" width="181.6" height="64" rx="8" fill="var(--anim-pipe-active)" opacity="0"></rect><text class="anim__pipe-name" x="328.4" y="52" text-anchor="middle" fill="var(--color-fg)">חיפוש במטמון</text><text class="anim__pipe-name anim__text-on-accent" id="anim-pipe-name-28-1" x="328.4" y="52" text-anchor="middle" opacity="0">חיפוש במטמון</text><text class="anim__pipe-change" x="328.4" y="70" text-anchor="middle" fill="var(--color-muted)">בדיקה אם הנתון כבר קיים</text><text class="anim__pipe-change anim__text-on-accent" id="anim-pipe-change-28-1" x="328.4" y="70" text-anchor="middle" opacity="0">בדיקה אם הנתון כבר קיים</text></g><g class="anim__pipe-stage"><rect class="anim__pipe-box" x="475.2" y="24" width="181.6" height="64" rx="8" fill="var(--anim-pipe-idle)"></rect><rect class="anim__pipe-box anim__pipe-box-active" id="anim-pipe-rect-28-2" x="475.2" y="24" width="181.6" height="64" rx="8" fill="var(--anim-pipe-active)" opacity="0"></rect><text class="anim__pipe-name" x="566" y="52" text-anchor="middle" fill="var(--color-fg)">קריאה מהדיסק</text><text class="anim__pipe-name anim__text-on-accent" id="anim-pipe-name-28-2" x="566" y="52" text-anchor="middle" opacity="0">קריאה מהדיסק</text><text class="anim__pipe-change" x="566" y="70" text-anchor="middle" fill="var(--color-muted)">שליפה איטית מהאחסון</text><text class="anim__pipe-change anim__text-on-accent" id="anim-pipe-change-28-2" x="566" y="70" text-anchor="middle" opacity="0">שליפה איטית מהאחסון</text></g></svg><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 800, "steps": [{"targets": ["#anim-pipe-rect-28-0", "#anim-pipe-name-28-0", "#anim-pipe-change-28-0"], "props": {"opacity": [0, 1]}, "duration": 400, "ease": "outQuad"}, {"targets": ["#anim-pipe-line-28-0"], "props": {"strokeDashoffset": [56, 0]}, "duration": 1000, "ease": "inOutQuad"}, {"targets": ["#anim-pipe-rect-28-1", "#anim-pipe-name-28-1", "#anim-pipe-change-28-1"], "props": {"opacity": [0, 1]}, "duration": 400, "ease": "outQuad"}, {"targets": ["#anim-pipe-rect-28-0", "#anim-pipe-name-28-0", "#anim-pipe-change-28-0"], "props": {"opacity": 0}, "duration": 400, "ease": "outQuad", "position": "\u003c\u003c"}, {"targets": ["#anim-pipe-line-28-1"], "props": {"strokeDashoffset": [56, 0]}, "duration": 1000, "ease": "inOutQuad"}, {"targets": ["#anim-pipe-rect-28-2", "#anim-pipe-name-28-2", "#anim-pipe-change-28-2"], "props": {"opacity": [0, 1]}, "duration": 400, "ease": "outQuad"}, {"targets": ["#anim-pipe-rect-28-1", "#anim-pipe-name-28-1", "#anim-pipe-change-28-1"], "props": {"opacity": 0}, "duration": 400, "ease": "outQuad", "position": "\u003c\u003c"}, {"kind": "set", "targets": ["#anim-pipe-rect-28-0", "#anim-pipe-rect-28-1", "#anim-pipe-rect-28-2", "#anim-pipe-name-28-0", "#anim-pipe-name-28-1", "#anim-pipe-name-28-2", "#anim-pipe-change-28-0", "#anim-pipe-change-28-1", "#anim-pipe-change-28-2"], "props": {"opacity": 0}}, {"kind": "set", "targets": ["#anim-pipe-line-28-0", "#anim-pipe-line-28-1"], "props": {"strokeDashoffset": 56}}]}</script><ol class="anim__pipeline-static"><li>בקשת קלט/פלט — התהליך מבקש נתון</li><li>חיפוש במטמון — בדיקה אם הנתון כבר קיים</li><li>קריאה מהדיסק — שליפה איטית מהאחסון</li></ol></div>
+<div class="anim anim--split-merge"><svg class="anim__split-merge" dir="ltr" width="363.2" height="244" viewBox="0 0 363.2 244"><path class="anim__split-line anim__split-line-out" id="anim-split-out-28-0" fill="none" d="M 181.6 48.0 C 181.6 70.0, 93.6 70.0, 93.6 92.0" stroke-dasharray="103.2" stroke-dashoffset="103.2"></path><path class="anim__split-line anim__split-line-out" id="anim-split-out-28-1" fill="none" d="M 181.6 48.0 C 181.6 70.0, 275.2 70.0, 275.2 92.0" stroke-dasharray="108.3" stroke-dashoffset="108.3"></path><path class="anim__split-line anim__split-line-in" id="anim-split-in-28-0" fill="none" d="M 93.6 140.0 C 93.6 162.0, 181.6 162.0, 181.6 184.0" stroke-dasharray="103.2" stroke-dashoffset="103.2"></path><path class="anim__split-line anim__split-line-in" id="anim-split-in-28-1" fill="none" d="M 275.2 140.0 C 275.2 162.0, 181.6 162.0, 181.6 184.0" stroke-dasharray="108.3" stroke-dashoffset="108.3"></path><g class="anim__split-endpoint"><rect class="anim__split-box" x="105.6" y="12" width="152" height="36" rx="8" fill="var(--anim-split-idle)"></rect><text class="anim__split-name" x="181.6" y="34" text-anchor="middle" fill="var(--color-fg)">בקשת קלט/פלט</text></g><g class="anim__split-endpoint"><rect class="anim__split-box anim__visited" id="anim-split-branch-28-0" x="12" y="92" width="163.2" height="48" rx="8" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__split-name" x="93.6" y="116" text-anchor="middle" fill="var(--color-fg)">נתיב מהיר</text><text class="anim__split-what" x="93.6" y="130" text-anchor="middle" fill="var(--color-muted)">הנתון כבר במטמון</text></g><g class="anim__split-endpoint"><rect class="anim__split-box anim__visited" id="anim-split-branch-28-1" x="199.2" y="92" width="152" height="48" rx="8" fill="var(--color-accent)" fill-opacity="0"></rect><text class="anim__split-name" x="275.2" y="116" text-anchor="middle" fill="var(--color-fg)">נתיב איטי</text><text class="anim__split-what" x="275.2" y="130" text-anchor="middle" fill="var(--color-muted)">קריאה מהדיסק</text></g><g class="anim__split-endpoint"><rect class="anim__split-box" x="105.6" y="184" width="152" height="48" rx="8" fill="var(--anim-split-idle)"></rect><text class="anim__split-name" x="181.6" y="212" text-anchor="middle" fill="var(--color-fg)">הנתון מוחזר לתהליך</text><rect class="anim__split-box anim__split-box-active" id="anim-split-merged-active-28" x="105.6" y="184" width="152" height="48" rx="8" fill="var(--anim-split-active)" opacity="0"></rect><text class="anim__split-name anim__text-on-accent" id="anim-split-merged-inverted-28" x="181.6" y="212" text-anchor="middle" opacity="0">הנתון מוחזר לתהליך</text></g></svg><script type="application/json" class="anim__timeline">{"loop": true, "loopDelay": 900, "steps": [{"targets": ["#anim-split-out-28-0"], "props": {"strokeDashoffset": [103.21453292400876, 0]}, "duration": 500, "ease": "outQuad"}, {"targets": ["#anim-split-out-28-1"], "props": {"strokeDashoffset": [108.289470143349, 0]}, "duration": 500, "ease": "outQuad", "position": "\u003c\u003c"}, {"targets": ["#anim-split-branch-28-0"], "props": {"fillOpacity": [0, 1]}, "duration": 400, "ease": "outQuad"}, {"targets": ["#anim-split-branch-28-1"], "props": {"fillOpacity": [0, 1]}, "duration": 400, "ease": "outQuad", "position": "\u003c\u003c"}, {"targets": ["#anim-split-in-28-0"], "props": {"strokeDashoffset": [103.21453292400876, 0]}, "duration": 500, "ease": "outQuad"}, {"targets": ["#anim-split-in-28-1"], "props": {"strokeDashoffset": [108.28947014334898, 0]}, "duration": 500, "ease": "outQuad", "position": "\u003c\u003c"}, {"targets": ["#anim-split-merged-active-28", "#anim-split-merged-inverted-28"], "props": {"opacity": [0, 1]}, "duration": 500, "ease": "outQuad"}, {"kind": "set", "targets": ["#anim-split-out-28-0", "#anim-split-out-28-1"], "props": {"strokeDashoffset": [103.21453292400876, 108.289470143349]}}, {"kind": "set", "targets": ["#anim-split-branch-28-0", "#anim-split-branch-28-1"], "props": {"fillOpacity": 0}}, {"kind": "set", "targets": ["#anim-split-in-28-0", "#anim-split-in-28-1"], "props": {"strokeDashoffset": [103.21453292400876, 108.28947014334898]}}, {"kind": "set", "targets": ["#anim-split-merged-active-28", "#anim-split-merged-inverted-28"], "props": {"opacity": 0}}]}</script><ol class="anim__split-static"><li>נתיב מהיר — הנתון כבר במטמון</li><li>נתיב איטי — קריאה מהדיסק</li></ol></div>
 <details class="quiz" data-quiz="thrashing-q1" open>
 <summary class="quiz__q">מה קורה בפועל כשמערכת נכנסת לתרשיש?</summary>
 <ol class="quiz__options">

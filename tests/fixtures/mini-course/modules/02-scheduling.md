@@ -27,9 +27,12 @@ transitions:
 ```
 
 ```animate
-pattern: state-toggle
-before: First-come, first-served
-after: Round robin
+pattern: compare
+left: First-come, first-served
+right: Round robin
+steps:
+  - A long job blocks everything behind it | Each job gets a fixed slice
+  - Short jobs wait for the whole queue | Short jobs finish early
 ```
 
 ```quiz

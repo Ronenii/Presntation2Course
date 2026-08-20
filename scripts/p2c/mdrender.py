@@ -94,11 +94,17 @@ def _figure_html(source: str, caption: str, topic_id: str | None) -> str:
 STEP_SECONDS = 2
 
 _ANIMATE_KEY = re.compile(
-    r"^(?P<key>pattern|before|after|caption|direction|from|to):\s*(?P<value>.*)$"
+    r"^(?P<key>pattern|before|after|caption|direction|from|to"
+    r"|whole|left|right|source|merged):\s*(?P<value>.*)$"
 )
 _ANIMATE_STEP = re.compile(r"^\s*-\s*(?P<text>.+)$")
 _TRANSITION = re.compile(r"^(?P<from>.+?)\s*->\s*(?P<to>.+?):\s*(?P<action>.+)$")
 _STAGE = re.compile(r"^(?P<name>.+?):\s*(?P<change>.+)$")
+# Split on the first UNESCAPED "|": a compare row's two halves may legitimately
+# contain a literal "\|" the author wants rendered, so a plain str.split("|")
+# would cut the wrong text in two. "(?<!\\)" is a negative lookbehind for the
+# escape character itself.
+_COMPARE_ROW = re.compile(r"^(?P<left>.+?)(?<!\\)\|(?P<right>.+)$")
 
 # Matches "A --> B", "A -->|label| B", "A --- B", "A -.-> B", "A ==> B",
 # with or without a node label: real course diagrams are written
@@ -152,22 +158,35 @@ class Animate:
     from_entity: str = ""
     to_entity: str = ""
     steps: list[str] = field(default_factory=list)
+    whole: str = ""
+    parts: list[tuple[str, str]] = field(default_factory=list)
+    left: str = ""
+    right: str = ""
+    rows: list[tuple[str, str]] = field(default_factory=list)
+    source: str = ""
+    merged: str = ""
+    branches: list[tuple[str, str]] = field(default_factory=list)
 
 
 _LIST_HEADERS = {
     "states:": "states", "transitions:": "transitions",
     "stages:": "stages", "layers:": "layers", "steps:": "steps",
+    "parts:": "parts", "branches:": "branches",
 }
 
 
-_PATTERNS = ("state-machine", "state-toggle", "pipeline", "layer-stack", "transform")
+_PATTERNS = (
+    "state-machine", "state-toggle", "pipeline", "layer-stack", "transform",
+    "build-up", "compare", "split-merge",
+)
 
 
 def _require_known_pattern(pattern: str | None) -> None:
     if pattern not in _PATTERNS:
         raise AnimateError(
             "animate pattern must be 'state-machine', 'state-toggle', 'pipeline', "
-            f"'layer-stack', or 'transform', got {pattern!r}"
+            "'layer-stack', 'transform', 'build-up', 'compare', or 'split-merge', "
+            f"got {pattern!r}"
         )
 
 
@@ -180,15 +199,23 @@ def parse_animate(body: str) -> Animate:
     stages_raw: list[str] = []
     layers_raw: list[str] = []
     steps_raw: list[str] = []
+    parts_raw: list[str] = []
+    branches_raw: list[str] = []
     caption: str | None = None
     direction: str | None = None
     from_value: str | None = None
     to_value: str | None = None
+    whole_value: str | None = None
+    left_value: str | None = None
+    right_value: str | None = None
+    source_value: str | None = None
+    merged_value: str | None = None
     section: str | None = None
 
     lists = {
         "states": states_raw, "transitions": transitions_raw,
         "stages": stages_raw, "layers": layers_raw, "steps": steps_raw,
+        "parts": parts_raw, "branches": branches_raw,
     }
 
     for raw in body.split("\n"):
@@ -223,6 +250,16 @@ def parse_animate(body: str) -> Animate:
                 from_value = value
             elif name == "to":
                 to_value = value
+            elif name == "whole":
+                whole_value = value
+            elif name == "left":
+                left_value = value
+            elif name == "right":
+                right_value = value
+            elif name == "source":
+                source_value = value
+            elif name == "merged":
+                merged_value = value
             else:
                 caption = value
             continue
@@ -239,10 +276,13 @@ def parse_animate(body: str) -> Animate:
         if (
             before or after or caption
             or stages_raw or layers_raw or steps_raw or direction or from_value or to_value
+            or parts_raw or branches_raw or whole_value or left_value or right_value
+            or source_value or merged_value
         ):
             raise AnimateError(
                 "state-machine does not use 'before:'/'after:'/'caption:'/'stages:'/"
-                "'layers:'/'steps:'/'direction:'/'from:'/'to:'"
+                "'layers:'/'steps:'/'direction:'/'from:'/'to:'/'whole:'/'parts:'/"
+                "'left:'/'right:'/'source:'/'merged:'/'branches:'"
             )
         states = states_raw
         if len(states) < 2:
@@ -296,20 +336,26 @@ def parse_animate(body: str) -> Animate:
         if (
             states_raw or transitions_raw or caption
             or stages_raw or layers_raw or steps_raw or direction or from_value or to_value
+            or parts_raw or branches_raw or whole_value or left_value or right_value
+            or source_value or merged_value
         ):
             raise AnimateError(
                 "state-toggle does not use 'states:'/'transitions:'/'caption:'/"
-                "'stages:'/'layers:'/'steps:'/'direction:'/'from:'/'to:'"
+                "'stages:'/'layers:'/'steps:'/'direction:'/'from:'/'to:'/'whole:'/"
+                "'parts:'/'left:'/'right:'/'source:'/'merged:'/'branches:'"
             )
     elif pattern == "pipeline":
         if (
             before or after or states_raw or transitions_raw
             or caption or layers_raw or steps_raw or direction
             or from_value or to_value
+            or parts_raw or branches_raw or whole_value or left_value or right_value
+            or source_value or merged_value
         ):
             raise AnimateError(
                 "pipeline does not use 'before:'/'after:'/'states:'/'transitions:'/"
-                "'caption:'/'layers:'/'steps:'/'direction:'/'from:'/'to:'"
+                "'caption:'/'layers:'/'steps:'/'direction:'/'from:'/'to:'/'whole:'/"
+                "'parts:'/'left:'/'right:'/'source:'/'merged:'/'branches:'"
             )
         if len(stages_raw) < 2:
             raise AnimateError("pipeline needs at least 2 stages")
@@ -328,10 +374,13 @@ def parse_animate(body: str) -> Animate:
         if (
             before or after or states_raw or transitions_raw
             or caption or stages_raw or steps_raw or from_value or to_value
+            or parts_raw or branches_raw or whole_value or left_value or right_value
+            or source_value or merged_value
         ):
             raise AnimateError(
                 "layer-stack does not use 'before:'/'after:'/'states:'/'transitions:'/"
-                "'caption:'/'stages:'/'steps:'/'from:'/'to:'"
+                "'caption:'/'stages:'/'steps:'/'from:'/'to:'/'whole:'/'parts:'/"
+                "'left:'/'right:'/'source:'/'merged:'/'branches:'"
             )
         if direction is not None and direction not in ("up", "down"):
             raise AnimateError(
@@ -356,10 +405,13 @@ def parse_animate(body: str) -> Animate:
         if (
             before or after or direction or states_raw or transitions_raw
             or caption or stages_raw or layers_raw
+            or parts_raw or branches_raw or whole_value or left_value or right_value
+            or source_value or merged_value
         ):
             raise AnimateError(
                 "transform does not use 'before:'/'after:'/'direction:'/'states:'/"
-                "'transitions:'/'caption:'/'stages:'/'layers:'"
+                "'transitions:'/'caption:'/'stages:'/'layers:'/'whole:'/'parts:'/"
+                "'left:'/'right:'/'source:'/'merged:'/'branches:'"
             )
         if not from_value or not to_value:
             raise AnimateError("transform needs both 'from:' and 'to:'")
@@ -371,12 +423,98 @@ def parse_animate(body: str) -> Animate:
             pattern=pattern, from_entity=from_value, to_entity=to_value,
             steps=list(steps_raw),
         )
+    elif pattern == "build-up":
+        if (
+            before or after or direction or states_raw or transitions_raw
+            or caption or stages_raw or layers_raw or steps_raw
+            or from_value or to_value or branches_raw
+            or left_value or right_value or source_value or merged_value
+        ):
+            raise AnimateError(
+                "build-up does not use 'before:'/'after:'/'direction:'/'states:'/"
+                "'transitions:'/'caption:'/'stages:'/'layers:'/'steps:'/'from:'/"
+                "'to:'/'left:'/'right:'/'source:'/'merged:'/'branches:'"
+            )
+        if not whole_value:
+            raise AnimateError("build-up needs 'whole:'")
+        if len(parts_raw) < 2:
+            raise AnimateError("build-up needs at least 2 parts")
+        if len(parts_raw) > 6:
+            raise AnimateError("build-up takes at most 6 parts")
+        parts: list[tuple[str, str]] = []
+        for line in parts_raw:
+            match = _STAGE.match(line)
+            if not match:
+                raise AnimateError(
+                    f"build-up part {line!r} must be written as "
+                    "'<name>: <what it contributes>'"
+                )
+            parts.append((match.group("name").strip(), match.group("change").strip()))
+        return Animate(pattern=pattern, whole=whole_value, parts=parts)
+    elif pattern == "compare":
+        if (
+            before or after or direction or states_raw or transitions_raw
+            or caption or stages_raw or layers_raw
+            or from_value or to_value or parts_raw or branches_raw
+            or whole_value or source_value or merged_value
+        ):
+            raise AnimateError(
+                "compare does not use 'before:'/'after:'/'direction:'/'states:'/"
+                "'transitions:'/'caption:'/'stages:'/'layers:'/'from:'/'to:'/"
+                "'whole:'/'parts:'/'source:'/'merged:'/'branches:'"
+            )
+        if not left_value or not right_value:
+            raise AnimateError("compare needs both 'left:' and 'right:'")
+        if not steps_raw:
+            raise AnimateError("compare needs at least 1 step")
+        if len(steps_raw) > 5:
+            raise AnimateError("compare takes at most 5 steps")
+        rows: list[tuple[str, str]] = []
+        for line in steps_raw:
+            match = _COMPARE_ROW.match(line)
+            if not match:
+                raise AnimateError(
+                    f"compare row {line!r} must be written as '<left text> | <right text>'"
+                )
+            rows.append((match.group("left").strip(), match.group("right").strip()))
+        return Animate(pattern=pattern, left=left_value, right=right_value, rows=rows)
+    elif pattern == "split-merge":
+        if (
+            before or after or direction or states_raw or transitions_raw
+            or caption or stages_raw or layers_raw or steps_raw
+            or from_value or to_value or parts_raw
+            or whole_value or left_value or right_value
+        ):
+            raise AnimateError(
+                "split-merge does not use 'before:'/'after:'/'direction:'/'states:'/"
+                "'transitions:'/'caption:'/'stages:'/'layers:'/'steps:'/'from:'/"
+                "'to:'/'whole:'/'parts:'/'left:'/'right:'"
+            )
+        if not source_value or not merged_value:
+            raise AnimateError("split-merge needs both 'source:' and 'merged:'")
+        if len(branches_raw) < 2:
+            raise AnimateError("split-merge needs at least 2 branches")
+        if len(branches_raw) > 4:
+            raise AnimateError("split-merge takes at most 4 branches")
+        branches: list[tuple[str, str]] = []
+        for line in branches_raw:
+            match = _STAGE.match(line)
+            if not match:
+                raise AnimateError(
+                    f"split-merge branch {line!r} must be written as "
+                    "'<name>: <what it does>'"
+                )
+            branches.append((match.group("name").strip(), match.group("change").strip()))
+        return Animate(
+            pattern=pattern, source=source_value, merged=merged_value, branches=branches,
+        )
     else:
-        # The whitelist above admits exactly five patterns and every one of them
-        # is handled by a branch, so reaching here means a pattern was added to
-        # the whitelist without a parse branch. Raise rather than fall through:
-        # the previous version ended in a bare `else` that parsed the last
-        # pattern, which would silently mis-parse any newly whitelisted name.
+        # The whitelist above admits exactly eight patterns and every one of
+        # them is handled by a branch, so reaching here means a pattern was
+        # added to the whitelist without a parse branch. Raise rather than
+        # fall through: an earlier version ended in a bare `else` that parsed
+        # the last pattern, which would silently mis-parse any newly
+        # whitelisted name.
         raise AnimateError(f"animate pattern {pattern!r} has no parser branch")
 
     return Animate(pattern=pattern, before=before or "", after=after or "")
@@ -396,6 +534,22 @@ _XFORM_BOX_WIDTH = 200
 _XFORM_BOX_HEIGHT = 40
 _XFORM_RUNG_GAP = 32  # vertical space between one step's rung and the next
 _XFORM_TOP_MARGIN = 12
+
+_BUILD_ROW_WIDTH = 320
+_BUILD_ROW_HEIGHT = 40
+_BUILD_ROW_GAP = 8
+_BUILD_MARGIN = 12
+
+_CMP_ROW_HEIGHT = 52
+_CMP_GUTTER = 28
+_CMP_MARGIN = 12
+
+_SPLIT_BOX_WIDTH = 152
+_SPLIT_BOX_HEIGHT = 48
+_SPLIT_SOURCE_HEIGHT = 36
+_SPLIT_MARGIN = 12
+_SPLIT_BRANCH_GAP = 24  # horizontal clearance between two adjacent branch boxes
+_SPLIT_ROW_GAP = 44  # vertical space between source/branches and branches/merged
 
 _STATE_BOX_HEIGHT = 44
 _STATE_BOX_MIN_WIDTH = 96  # a two-letter state still reads as a box, not a chip
@@ -458,7 +612,13 @@ def _animate_html(anim: Animate, token: str) -> str:
         return _pipeline_html(anim, token)
     if anim.pattern == "layer-stack":
         return _layer_stack_html(anim, token)
-    return _transform_html(anim, token)
+    if anim.pattern == "transform":
+        return _transform_html(anim, token)
+    if anim.pattern == "build-up":
+        return _build_up_html(anim, token)
+    if anim.pattern == "compare":
+        return _compare_html(anim, token)
+    return _split_merge_html(anim, token)
 
 
 def _ring_positions(count: int, cx: float, cy: float, radius: float) -> list[tuple[float, float]]:
@@ -1326,6 +1486,466 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
         f"{''.join(rows_html)}</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
         f'<ol class="anim__layer-static">{static_lines}</ol></div>'
+    )
+
+
+def _build_up_html(anim: Animate, token: str) -> str:
+    """A whole assembling from its parts, in authored order, top to bottom.
+
+    Each part fades in, takes the accent briefly as it lands, then settles to
+    the faint accent wash and KEEPS it -- unlike layer-stack, where only one
+    tier is ever "active" at a time, every part here stays lit once it has
+    joined the whole, so the accumulated structure reads at a glance.
+    """
+    token_seed = re.sub(r"\D", "", token) or "0"
+    count = len(anim.parts)
+    base_ids = [f"anim-build-base-{token_seed}-{i}" for i in range(count)]
+    rect_ids = [f"anim-build-rect-{token_seed}-{i}" for i in range(count)]
+    name_text_ids = [f"anim-build-name-{token_seed}-{i}" for i in range(count)]
+    contrib_text_ids = [f"anim-build-contrib-{token_seed}-{i}" for i in range(count)]
+
+    row_width = max(
+        _BUILD_ROW_WIDTH,
+        max(
+            (len(name) + len(contrib)) * _STATE_LABEL_CHAR_WIDTH
+            for name, contrib in anim.parts
+        ) + 4 * _STATE_LABEL_CHIP_PAD_X,
+    )
+    total_width = row_width + _BUILD_MARGIN * 2
+    total_height = (
+        _BUILD_MARGIN * 2 + count * _BUILD_ROW_HEIGHT + (count - 1) * _BUILD_ROW_GAP
+    )
+
+    rows_html = []
+    for i, (name, contrib) in enumerate(anim.parts):
+        y = _BUILD_MARGIN + i * (_BUILD_ROW_HEIGHT + _BUILD_ROW_GAP)
+        name_x = _BUILD_MARGIN + 12
+        contrib_x = _BUILD_MARGIN + row_width - 12
+        text_y = y + _BUILD_ROW_HEIGHT / 2 + 4
+        # The base rect reveals the row's existence (opacity 0->1); the second,
+        # stacked rect on top of it is the accent wash whose FILL-OPACITY the
+        # timeline animates -- same .anim__visited convention as state-machine,
+        # so the settle never needs a `fill` tween between two var() tokens,
+        # which animejs's colour detector cannot interpolate.
+        rows_html.append(
+            f'<g class="anim__build-part">'
+            f'<rect class="anim__build-base" id="{base_ids[i]}" x="{_BUILD_MARGIN}" y="{y:g}" '
+            f'width="{row_width:g}" height="{_BUILD_ROW_HEIGHT}" rx="8" '
+            f'opacity="0"></rect>'
+            f'<rect class="anim__build-rect anim__visited" id="{rect_ids[i]}" '
+            f'x="{_BUILD_MARGIN}" y="{y:g}" width="{row_width:g}" '
+            f'height="{_BUILD_ROW_HEIGHT}" rx="8" fill="var(--color-accent)" '
+            f'fill-opacity="0"></rect>'
+            f'<text class="anim__build-name" x="{name_x}" y="{text_y:g}" '
+            f'fill="var(--color-fg)">{html.escape(name)}</text>'
+            f'<text class="anim__build-name anim__text-on-accent" '
+            f'id="{name_text_ids[i]}" x="{name_x}" y="{text_y:g}" opacity="0">'
+            f'{html.escape(name)}</text>'
+            f'<text class="anim__build-contrib" x="{contrib_x}" y="{text_y:g}" '
+            f'text-anchor="end" fill="var(--color-muted)">{html.escape(contrib)}</text>'
+            f'<text class="anim__build-contrib anim__text-on-accent" '
+            f'id="{contrib_text_ids[i]}" x="{contrib_x}" y="{text_y:g}" '
+            f'text-anchor="end" opacity="0">{html.escape(contrib)}</text>'
+            f'</g>'
+        )
+
+    steps_json: list[dict] = []
+    for i in range(count):
+        steps_json.append({
+            "targets": [f"#{base_ids[i]}"],
+            "props": {"opacity": [0, 1]},
+            "duration": 350,
+            "ease": "outQuad",
+        })
+        steps_json.append({
+            "targets": [f"#{rect_ids[i]}"],
+            "props": {"fillOpacity": [0, 1]},
+            "duration": 350,
+            "ease": "outQuad",
+            "position": "<<",
+        })
+        steps_json.append({
+            "targets": [f"#{name_text_ids[i]}", f"#{contrib_text_ids[i]}"],
+            "props": {"opacity": [0, 1]},
+            "duration": 350,
+            "ease": "outQuad",
+            "position": "<<",
+        })
+        steps_json.append({
+            "targets": [f"#{rect_ids[i]}"],
+            "props": {"fillOpacity": _STATE_VISITED_OPACITY},
+            "duration": 400,
+        })
+        steps_json.append({
+            "targets": [f"#{name_text_ids[i]}", f"#{contrib_text_ids[i]}"],
+            "props": {"opacity": 0},
+            "duration": 250,
+            "position": "<<",
+        })
+
+    steps_json.append({
+        "kind": "set", "targets": [f"#{b}" for b in base_ids], "props": {"opacity": 0},
+    })
+    steps_json.append({
+        "kind": "set", "targets": [f"#{r}" for r in rect_ids], "props": {"fillOpacity": 0},
+    })
+    steps_json.append({
+        "kind": "set",
+        "targets": [f"#{t}" for t in name_text_ids] + [f"#{t}" for t in contrib_text_ids],
+        "props": {"opacity": 0},
+    })
+
+    timeline_json = _timeline_island_json(
+        {"loop": True, "loopDelay": 900, "steps": steps_json}
+    )
+    static_lines = "".join(
+        f"<li>{html.escape(n)} — {html.escape(c)}</li>" for n, c in anim.parts
+    )
+    return (
+        '<div class="anim anim--build-up">'
+        f'<svg class="anim__build-up" dir="ltr" '
+        f'width="{total_width:g}" height="{total_height:g}" '
+        f'viewBox="0 0 {total_width:g} {total_height:g}">'
+        f"{''.join(rows_html)}</svg>"
+        f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
+        f'<ol class="anim__build-static">{static_lines}</ol></div>'
+    )
+
+
+def _compare_html(anim: Animate, token: str) -> str:
+    """Two tracks advancing in lockstep, so the contrast lands row by row.
+
+    Both columns' boxes flash the accent TOGETHER on the same row, then fade
+    back to idle -- unlike build-up or state-machine's visited wash, a
+    comparison's point is the momentary contrast at each row, not an
+    accumulating structure, so nothing here is meant to stay lit.
+    """
+    token_seed = re.sub(r"\D", "", token) or "0"
+    count = len(anim.rows)
+    left_rect_ids = [f"anim-cmp-left-{token_seed}-{i}" for i in range(count)]
+    right_rect_ids = [f"anim-cmp-right-{token_seed}-{i}" for i in range(count)]
+    left_active_ids = [f"anim-cmp-left-active-{token_seed}-{i}" for i in range(count)]
+    right_active_ids = [f"anim-cmp-right-active-{token_seed}-{i}" for i in range(count)]
+    left_text_ids = [f"anim-cmp-left-text-{token_seed}-{i}" for i in range(count)]
+    right_text_ids = [f"anim-cmp-right-text-{token_seed}-{i}" for i in range(count)]
+    left_inverted_ids = [f"anim-cmp-left-inverted-{token_seed}-{i}" for i in range(count)]
+    right_inverted_ids = [f"anim-cmp-right-inverted-{token_seed}-{i}" for i in range(count)]
+
+    col_width = max(
+        _CMP_ROW_HEIGHT * 3,
+        max(
+            max(len(lt), len(rt)) for lt, rt in anim.rows
+        ) * _STATE_LABEL_CHAR_WIDTH + 4 * _STATE_LABEL_CHIP_PAD_X,
+    )
+    header_height = 24
+    total_width = col_width * 2 + _CMP_GUTTER + _CMP_MARGIN * 2
+    total_height = (
+        _CMP_MARGIN + header_height + count * _CMP_ROW_HEIGHT
+        + (count - 1) * 8 + _CMP_MARGIN
+    )
+    left_x = _CMP_MARGIN
+    right_x = _CMP_MARGIN + col_width + _CMP_GUTTER
+    divider_x = left_x + col_width + _CMP_GUTTER / 2
+
+    headers_html = (
+        f'<text class="anim__cmp-heading" x="{left_x + col_width / 2:g}" '
+        f'y="{_CMP_MARGIN + 14:g}" text-anchor="middle">{html.escape(anim.left)}</text>'
+        f'<text class="anim__cmp-heading" x="{right_x + col_width / 2:g}" '
+        f'y="{_CMP_MARGIN + 14:g}" text-anchor="middle">{html.escape(anim.right)}</text>'
+        f'<line class="anim__cmp-divider" x1="{divider_x:g}" y1="{_CMP_MARGIN:g}" '
+        f'x2="{divider_x:g}" y2="{total_height - _CMP_MARGIN:g}"></line>'
+    )
+
+    def cell(x: float, y: float, text: str, rect_id: str, active_id: str, inv_id: str) -> str:
+        text_x = x + col_width / 2
+        text_y = y + _CMP_ROW_HEIGHT / 2 + 4
+        return (
+            f'<rect class="anim__cmp-box" id="{rect_id}" x="{x:g}" y="{y:g}" '
+            f'width="{col_width:g}" height="{_CMP_ROW_HEIGHT}" rx="8"></rect>'
+            f'<rect class="anim__cmp-box anim__cmp-box-active" id="{active_id}" '
+            f'x="{x:g}" y="{y:g}" width="{col_width:g}" height="{_CMP_ROW_HEIGHT}" '
+            f'rx="8" fill="var(--anim-cmp-active)" opacity="0"></rect>'
+            f'<text class="anim__cmp-text" x="{text_x:g}" y="{text_y:g}" '
+            f'text-anchor="middle" fill="var(--color-fg)">{html.escape(text)}</text>'
+            f'<text class="anim__cmp-text anim__text-on-accent" id="{inv_id}" '
+            f'x="{text_x:g}" y="{text_y:g}" text-anchor="middle" opacity="0">'
+            f'{html.escape(text)}</text>'
+        )
+
+    rows_html = []
+    for i, (left_text, right_text) in enumerate(anim.rows):
+        y = _CMP_MARGIN + header_height + i * (_CMP_ROW_HEIGHT + 8)
+        rows_html.append(
+            '<g class="anim__cmp-row">'
+            + cell(left_x, y, left_text, left_rect_ids[i], left_active_ids[i], left_inverted_ids[i])
+            + cell(right_x, y, right_text, right_rect_ids[i], right_active_ids[i], right_inverted_ids[i])
+            + "</g>"
+        )
+
+    steps_json: list[dict] = []
+    for i in range(count):
+        flash_targets = [
+            f"#{left_active_ids[i]}", f"#{left_inverted_ids[i]}",
+            f"#{right_active_ids[i]}", f"#{right_inverted_ids[i]}",
+        ]
+        steps_json.append({
+            "targets": flash_targets,
+            "props": {"opacity": [0, 1]},
+            "duration": 350,
+            "ease": "outQuad",
+        })
+        steps_json.append({
+            "targets": flash_targets,
+            "props": {"opacity": 0},
+            "duration": 350,
+            "ease": "outQuad",
+        })
+
+    steps_json.append({
+        "kind": "set",
+        "targets": (
+            [f"#{a}" for a in left_active_ids] + [f"#{a}" for a in right_active_ids]
+            + [f"#{t}" for t in left_inverted_ids] + [f"#{t}" for t in right_inverted_ids]
+        ),
+        "props": {"opacity": 0},
+    })
+
+    timeline_json = _timeline_island_json(
+        {"loop": True, "loopDelay": 900, "steps": steps_json}
+    )
+    static_lines = "".join(
+        f"<li>{html.escape(lt)} — {html.escape(rt)}</li>" for lt, rt in anim.rows
+    )
+    return (
+        '<div class="anim anim--compare">'
+        f'<svg class="anim__compare" dir="ltr" '
+        f'width="{total_width:g}" height="{total_height:g}" '
+        f'viewBox="0 0 {total_width:g} {total_height:g}">'
+        f"{headers_html}{''.join(rows_html)}</svg>"
+        f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
+        f'<ol class="anim__cmp-static">{static_lines}</ol></div>'
+    )
+
+
+def _cubic_length(
+    p0: tuple[float, float], c1: tuple[float, float],
+    c2: tuple[float, float], p3: tuple[float, float], samples: int = 40,
+) -> float:
+    """Approximate arc length by summing chord lengths between sampled points.
+
+    A cubic Bezier's arc length has no closed form. 40 samples is comfortably
+    under a pixel of error at the coordinate magnitudes this renderer works in
+    -- the same trade-off _state_machine_html's binary search already makes.
+    Computed at RENDER time in Python rather than the client calling
+    getTotalLength(), so stroke-dasharray/dashoffset are static, correct
+    values in the markup from the first frame.
+    """
+    def at(t: float) -> tuple[float, float]:
+        mt = 1 - t
+        x = (
+            mt ** 3 * p0[0] + 3 * mt ** 2 * t * c1[0]
+            + 3 * mt * t ** 2 * c2[0] + t ** 3 * p3[0]
+        )
+        y = (
+            mt ** 3 * p0[1] + 3 * mt ** 2 * t * c1[1]
+            + 3 * mt * t ** 2 * c2[1] + t ** 3 * p3[1]
+        )
+        return (x, y)
+
+    length = 0.0
+    prev = at(0.0)
+    for i in range(1, samples + 1):
+        point = at(i / samples)
+        length += math.hypot(point[0] - prev[0], point[1] - prev[1])
+        prev = point
+    return length
+
+
+def _split_merge_html(anim: Animate, token: str) -> str:
+    """One thing dividing into parallel branches, then recombining.
+
+    Fan-out connectors draw from the source to each branch; fan-in connectors
+    draw from each branch back to the merged result. Branch boxes settle to
+    the faint accent wash (they do work, but are not the conclusion); the
+    merged box takes the solid accent with inverted text, since it is.
+    """
+    token_seed = re.sub(r"\D", "", token) or "0"
+    count = len(anim.branches)
+    branch_rect_ids = [f"anim-split-branch-{token_seed}-{i}" for i in range(count)]
+    fan_out_ids = [f"anim-split-out-{token_seed}-{i}" for i in range(count)]
+    fan_in_ids = [f"anim-split-in-{token_seed}-{i}" for i in range(count)]
+    merged_active_id = f"anim-split-merged-active-{token_seed}"
+    merged_inverted_id = f"anim-split-merged-inverted-{token_seed}"
+
+    branch_widths = [
+        max(
+            _SPLIT_BOX_WIDTH,
+            max(len(name), len(what)) * _STATE_LABEL_CHAR_WIDTH + 2 * _STATE_BOX_PAD_X,
+        )
+        for name, what in anim.branches
+    ]
+    row_width = sum(branch_widths) + (count - 1) * _SPLIT_BRANCH_GAP
+    total_width = max(row_width, _SPLIT_BOX_WIDTH * 2) + _SPLIT_MARGIN * 2
+    source_y = _SPLIT_MARGIN
+    branch_y = source_y + _SPLIT_SOURCE_HEIGHT + _SPLIT_ROW_GAP
+    merged_y = branch_y + _SPLIT_BOX_HEIGHT + _SPLIT_ROW_GAP
+    total_height = merged_y + _SPLIT_BOX_HEIGHT + _SPLIT_MARGIN
+
+    center_x = total_width / 2
+    source_center = (center_x, source_y + _SPLIT_SOURCE_HEIGHT / 2)
+    merged_center = (center_x, merged_y + _SPLIT_BOX_HEIGHT / 2)
+
+    branch_xs = []
+    x = (total_width - row_width) / 2
+    for width in branch_widths:
+        branch_xs.append(x)
+        x += width + _SPLIT_BRANCH_GAP
+
+    source_html = (
+        f'<g class="anim__split-endpoint">'
+        f'<rect class="anim__split-box" x="{center_x - _SPLIT_BOX_WIDTH / 2:g}" '
+        f'y="{source_y:g}" width="{_SPLIT_BOX_WIDTH}" height="{_SPLIT_SOURCE_HEIGHT}" '
+        f'rx="8" fill="var(--anim-split-idle)"></rect>'
+        f'<text class="anim__split-name" x="{center_x:g}" '
+        f'y="{source_y + _SPLIT_SOURCE_HEIGHT / 2 + 4:g}" text-anchor="middle" '
+        f'fill="var(--color-fg)">{html.escape(anim.source)}</text>'
+        f'</g>'
+    )
+
+    connectors_out = []
+    connectors_in = []
+    branches_html = []
+    fan_out_lengths = []
+    fan_in_lengths = []
+    for i, ((name, what), bx) in enumerate(zip(anim.branches, branch_xs)):
+        branch_center = (bx + branch_widths[i] / 2, branch_y + _SPLIT_BOX_HEIGHT / 2)
+        out_p0 = (source_center[0], source_y + _SPLIT_SOURCE_HEIGHT)
+        out_p3 = (branch_center[0], branch_y)
+        out_mid_y = (out_p0[1] + out_p3[1]) / 2
+        out_c1 = (out_p0[0], out_mid_y)
+        out_c2 = (out_p3[0], out_mid_y)
+        out_length = _cubic_length(out_p0, out_c1, out_c2, out_p3)
+        fan_out_lengths.append(out_length)
+        connectors_out.append(
+            f'<path class="anim__split-line anim__split-line-out" id="{fan_out_ids[i]}" '
+            f'fill="none" d="M {out_p0[0]:.1f} {out_p0[1]:.1f} '
+            f'C {out_c1[0]:.1f} {out_c1[1]:.1f}, {out_c2[0]:.1f} {out_c2[1]:.1f}, '
+            f'{out_p3[0]:.1f} {out_p3[1]:.1f}" '
+            f'stroke-dasharray="{out_length:.1f}" stroke-dashoffset="{out_length:.1f}"></path>'
+        )
+
+        in_p0 = (branch_center[0], branch_y + _SPLIT_BOX_HEIGHT)
+        in_p3 = (merged_center[0], merged_y)
+        in_mid_y = (in_p0[1] + in_p3[1]) / 2
+        in_c1 = (in_p0[0], in_mid_y)
+        in_c2 = (in_p3[0], in_mid_y)
+        in_length = _cubic_length(in_p0, in_c1, in_c2, in_p3)
+        fan_in_lengths.append(in_length)
+        connectors_in.append(
+            f'<path class="anim__split-line anim__split-line-in" id="{fan_in_ids[i]}" '
+            f'fill="none" d="M {in_p0[0]:.1f} {in_p0[1]:.1f} '
+            f'C {in_c1[0]:.1f} {in_c1[1]:.1f}, {in_c2[0]:.1f} {in_c2[1]:.1f}, '
+            f'{in_p3[0]:.1f} {in_p3[1]:.1f}" '
+            f'stroke-dasharray="{in_length:.1f}" stroke-dashoffset="{in_length:.1f}"></path>'
+        )
+
+        branches_html.append(
+            f'<g class="anim__split-endpoint">'
+            f'<rect class="anim__split-box anim__visited" id="{branch_rect_ids[i]}" '
+            f'x="{bx:g}" y="{branch_y:g}" width="{branch_widths[i]:g}" '
+            f'height="{_SPLIT_BOX_HEIGHT}" rx="8" fill="var(--color-accent)" '
+            f'fill-opacity="0"></rect>'
+            f'<text class="anim__split-name" x="{branch_center[0]:g}" '
+            f'y="{branch_y + _SPLIT_BOX_HEIGHT / 2:g}" text-anchor="middle" '
+            f'fill="var(--color-fg)">{html.escape(name)}</text>'
+            f'<text class="anim__split-what" x="{branch_center[0]:g}" '
+            f'y="{branch_y + _SPLIT_BOX_HEIGHT / 2 + 14:g}" text-anchor="middle" '
+            f'fill="var(--color-muted)">{html.escape(what)}</text>'
+            f'</g>'
+        )
+
+    merged_html = (
+        f'<g class="anim__split-endpoint">'
+        f'<rect class="anim__split-box" x="{center_x - _SPLIT_BOX_WIDTH / 2:g}" '
+        f'y="{merged_y:g}" width="{_SPLIT_BOX_WIDTH}" height="{_SPLIT_BOX_HEIGHT}" '
+        f'rx="8" fill="var(--anim-split-idle)"></rect>'
+        f'<text class="anim__split-name" x="{center_x:g}" '
+        f'y="{merged_y + _SPLIT_BOX_HEIGHT / 2 + 4:g}" text-anchor="middle" '
+        f'fill="var(--color-fg)">{html.escape(anim.merged)}</text>'
+        f'<rect class="anim__split-box anim__split-box-active" id="{merged_active_id}" '
+        f'x="{center_x - _SPLIT_BOX_WIDTH / 2:g}" y="{merged_y:g}" '
+        f'width="{_SPLIT_BOX_WIDTH}" height="{_SPLIT_BOX_HEIGHT}" rx="8" '
+        f'fill="var(--anim-split-active)" opacity="0"></rect>'
+        f'<text class="anim__split-name anim__text-on-accent" id="{merged_inverted_id}" '
+        f'x="{center_x:g}" y="{merged_y + _SPLIT_BOX_HEIGHT / 2 + 4:g}" '
+        f'text-anchor="middle" opacity="0">{html.escape(anim.merged)}</text>'
+        f'</g>'
+    )
+
+    steps_json: list[dict] = []
+    for i in range(count):
+        steps_json.append({
+            "targets": [f"#{fan_out_ids[i]}"],
+            "props": {"strokeDashoffset": [fan_out_lengths[i], 0]},
+            "duration": 500,
+            "ease": "outQuad",
+            **({"position": "<<"} if i > 0 else {}),
+        })
+    for i in range(count):
+        steps_json.append({
+            "targets": [f"#{branch_rect_ids[i]}"],
+            "props": {"fillOpacity": [0, 1]},
+            "duration": 400,
+            "ease": "outQuad",
+            **({"position": "<<"} if i > 0 else {}),
+        })
+    for i in range(count):
+        steps_json.append({
+            "targets": [f"#{fan_in_ids[i]}"],
+            "props": {"strokeDashoffset": [fan_in_lengths[i], 0]},
+            "duration": 500,
+            "ease": "outQuad",
+            **({"position": "<<"} if i > 0 else {}),
+        })
+    steps_json.append({
+        "targets": [f"#{merged_active_id}", f"#{merged_inverted_id}"],
+        "props": {"opacity": [0, 1]},
+        "duration": 500,
+        "ease": "outQuad",
+    })
+
+    steps_json.append({
+        "kind": "set", "targets": [f"#{fid}" for fid in fan_out_ids],
+        "props": {"strokeDashoffset": fan_out_lengths},
+    })
+    steps_json.append({
+        "kind": "set", "targets": [f"#{r}" for r in branch_rect_ids],
+        "props": {"fillOpacity": 0},
+    })
+    steps_json.append({
+        "kind": "set", "targets": [f"#{fid}" for fid in fan_in_ids],
+        "props": {"strokeDashoffset": fan_in_lengths},
+    })
+    steps_json.append({
+        "kind": "set", "targets": [f"#{merged_active_id}", f"#{merged_inverted_id}"],
+        "props": {"opacity": 0},
+    })
+
+    timeline_json = _timeline_island_json(
+        {"loop": True, "loopDelay": 900, "steps": steps_json}
+    )
+    static_lines = "".join(
+        f"<li>{html.escape(n)} — {html.escape(w)}</li>" for n, w in anim.branches
+    )
+    return (
+        '<div class="anim anim--split-merge">'
+        f'<svg class="anim__split-merge" dir="ltr" '
+        f'width="{total_width:g}" height="{total_height:g}" '
+        f'viewBox="0 0 {total_width:g} {total_height:g}">'
+        f"{''.join(connectors_out)}{''.join(connectors_in)}"
+        f"{source_html}{''.join(branches_html)}{merged_html}</svg>"
+        f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
+        f'<ol class="anim__split-static">{static_lines}</ol></div>'
     )
 
 
