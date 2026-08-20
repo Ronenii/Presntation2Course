@@ -520,6 +520,10 @@ _XFORM_BOX_WIDTH = 200
 _XFORM_BOX_HEIGHT = 40
 _XFORM_RUNG_GAP = 32  # vertical space between one step's rung and the next
 _XFORM_TOP_MARGIN = 12
+_XFORM_SPINE_MS = 1200  # time for the spine to draw from the `from` box to the `to` box
+_XFORM_RUNG_DWELL_MS = 700  # pause after a rung lands, before the next starts
+                            # arriving -- gives real prose time to be read
+_XFORM_FLASH_DWELL_MS = 900  # pause after the final flash lands, before the loop restarts
 
 _BUILD_ROW_WIDTH = 320
 _BUILD_ROW_HEIGHT = 40
@@ -2025,22 +2029,40 @@ def _transform_html(anim: Animate, token: str) -> str:
         {
             "targets": [f"#{line_id}"],
             "props": {"strokeDashoffset": [spine_length, 0]},
-            "duration": STEP_SECONDS * 1000,
+            "duration": _XFORM_SPINE_MS,
             "ease": "inOutQuad",
         }
     ]
     for step_id in step_ids:
+        # Each rung fades in, then holds before the next one starts arriving
+        # (the dwell has no position, so it appends after the fade-in above
+        # finishes) -- long enough to read a real phrase before the next rung
+        # lands, rather than the whole derivation finishing before a reader
+        # can register it.
         steps_json.append({
             "targets": [f"#{step_id}"],
             "props": {"opacity": [0, 1]},
             "duration": 400,
             "ease": "outQuad",
         })
+        steps_json.append({
+            "targets": [f"#{step_id}"],
+            "props": {"opacity": 1},
+            "duration": _XFORM_RUNG_DWELL_MS,
+        })
+    # No position: appends only once every rung above (the last one's dwell)
+    # has finished, so the destination box's accent flash -- and the final
+    # form it reveals -- never starts until every previous step has appeared.
     steps_json.append({
         "targets": [f"#{to_active_id}", f"#{to_inverted_id}"],
         "props": {"opacity": [0, 1]},
         "duration": 500,
         "ease": "outQuad",
+    })
+    steps_json.append({
+        "targets": [f"#{to_active_id}"],
+        "props": {"opacity": 1},
+        "duration": _XFORM_FLASH_DWELL_MS,
     })
 
     steps_json.append({
@@ -2056,7 +2078,7 @@ def _transform_html(anim: Animate, token: str) -> str:
     })
 
     timeline_json = _timeline_island_json(
-        {"loop": True, "loopDelay": 900, "steps": steps_json}
+        {"loop": True, "loopDelay": 400, "steps": steps_json}
     )
     static_steps = "".join(f"<li>{html.escape(s)}</li>" for s in anim.steps)
     return (
