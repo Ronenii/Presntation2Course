@@ -536,6 +536,8 @@ _BUILD_DWELL_MS = 400  # pause after a part settles, before the next starts
 _CMP_ROW_HEIGHT = 52
 _CMP_GUTTER = 28
 _CMP_MARGIN = 12
+_CMP_ROW_HOLD_MS = 500  # how long a row's flash stays fully lit before fading
+_CMP_ROW_GAP_MS = 500  # pause after a row fades out, before the next flashes in
 
 _SPLIT_BOX_WIDTH = 152
 _SPLIT_BOX_HEIGHT = 48
@@ -1676,9 +1678,19 @@ def _compare_html(anim: Animate, token: str) -> str:
         })
         steps_json.append({
             "targets": flash_targets,
+            "props": {"opacity": 1},
+            "duration": _CMP_ROW_HOLD_MS,
+        })
+        steps_json.append({
+            "targets": flash_targets,
             "props": {"opacity": 0},
             "duration": 350,
             "ease": "outQuad",
+        })
+        steps_json.append({
+            "targets": flash_targets,
+            "props": {"opacity": 0},
+            "duration": _CMP_ROW_GAP_MS,
         })
 
     steps_json.append({
@@ -1691,7 +1703,7 @@ def _compare_html(anim: Animate, token: str) -> str:
     })
 
     timeline_json = _timeline_island_json(
-        {"loop": True, "loopDelay": 900, "steps": steps_json}
+        {"loop": True, "loopDelay": 400, "steps": steps_json}
     )
     static_lines = "".join(
         f"<li>{html.escape(lt)} — {html.escape(rt)}</li>" for lt, rt in anim.rows
