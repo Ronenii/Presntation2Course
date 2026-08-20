@@ -514,20 +514,67 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   font-size: 11px;
 }
 
-/* .anim__layer-adds and .anim__build-contrib are the only two classes the
-   renderer gives text-anchor="end" (a fixed-width row's second column,
-   right-aligned against the SVG's own dir="ltr"). Per the SVG/CSS bidi
-   rules, an "end" anchor resolves against the PARAGRAPH direction -- which
-   these elements inherit as ltr from the SVG root, not from their own
-   Hebrew/Arabic content -- so the Unicode Bidi Algorithm reorders trailing
-   neutral characters (spaces, punctuation) to the wrong side of the anchor
-   and the run spills past the box's edge. unicode-bidi: plaintext makes each
-   element resolve its OWN paragraph direction from its first strong
-   character (Unicode's P2/P3 rules), independent of the SVG's dir and
-   without the renderer needing to know the course's language at all. */
-.anim__layer-adds,
-.anim__build-contrib {
-  unicode-bidi: plaintext;
+/* Every animate label renders raw author content into an SVG the renderer
+   always marks dir="ltr" (diagram geometry -- arrows, stacking order -- is
+   spatial, not textual, and stays LTR regardless of course language). Two
+   things go wrong for Hebrew/Arabic content on an RTL course, and BOTH must
+   be fixed together or fixing one breaks the other:
+
+   1. `direction` (inherited ltr from the SVG root) controls how the run's
+      own characters reorder, so a label needs direction: rtl to shape its
+      glyphs correctly -- unicode-bidi: plaintext does NOT do this: per the
+      SVG spec, `direction` only takes effect once unicode-bidi is `embed`
+      or `bidi-override`; plaintext is a third, unrelated mode that doesn't
+      reliably drive text-anchor in current engines.
+
+   2. Once direction: rtl is set, text-anchor="start"/"end" FLIPS which way
+      the run extends from its x coordinate (verified with a real Chromium
+      render, getBBox() before/after): "start" now extends LEFTWARD from x
+      instead of rightward, and "end" now extends RIGHTWARD instead of
+      leftward. The renderer's x coordinates were chosen assuming the LTR
+      extension direction (a "start"-anchored name sits at the row's LEFT
+      inset expecting rightward growth; an "end"-anchored second column
+      sits at the RIGHT inset expecting leftward growth) -- so direction:
+      rtl alone just moves the overflow from one edge to the other. The
+      anchor keyword has to flip too, to match.
+
+   text-anchor="middle" is unaffected by either problem (centering doesn't
+   depend on extension direction) and needs no anchor override -- only
+   direction+unicode-bidi, to shape the glyph run itself correctly.
+   .anim__pipe-name, .anim__xform-label, .anim__state-name,
+   .anim__state-transition-label, .anim__split-name, .anim__split-what,
+   .anim__cmp-text, and .anim__cmp-heading are all text-anchor: middle
+   (verified against the renderer's own markup and this file's earlier
+   rules), so only the two genuinely start/end-anchored pairs below need
+   the anchor flip.
+
+   [dir="rtl"] mirrors the existing convention this file already uses for
+   the drawer's mirrored offset above: these rules apply only on an RTL
+   course, never touching an English one. */
+[dir="rtl"] .anim__layer-name,
+[dir="rtl"] .anim__build-name,
+[dir="rtl"] .anim__xform-step-text {
+  direction: rtl;
+  unicode-bidi: embed;
+  text-anchor: end;
+}
+[dir="rtl"] .anim__layer-adds,
+[dir="rtl"] .anim__build-contrib {
+  direction: rtl;
+  unicode-bidi: embed;
+  text-anchor: start;
+}
+[dir="rtl"] .anim__pipe-name,
+[dir="rtl"] .anim__xform-label,
+[dir="rtl"] .anim__state-name,
+[dir="rtl"] .anim__state-transition-label,
+[dir="rtl"] .anim__split-name,
+[dir="rtl"] .anim__split-what,
+[dir="rtl"] .anim__cmp-text,
+[dir="rtl"] .anim__cmp-heading,
+[dir="rtl"] .anim__pipe-change {
+  direction: rtl;
+  unicode-bidi: embed;
 }
 
 .anim__xform-step-text {
