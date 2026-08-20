@@ -392,18 +392,10 @@ _LAYER_HEIGHT = 44
 _LAYER_GAP = 12
 _LAYER_TOP_MARGIN = 20
 
-_XFORM_BOX_WIDTH = 180
-_XFORM_BOX_HEIGHT = 60
-_XFORM_GAP = 120  # MINIMUM room between the two endpoint boxes for the step labels --
-                  # widened per-block below when a step's authored text needs more
-                  # (see _transform_html), so this is a floor, not the final gap.
-_XFORM_TOP_MARGIN = 24
-_XFORM_STEP_BG_HEIGHT = 20  # matches _STATE_LABEL_CHIP_HEIGHT's own 12 + 2*pad recipe
-                            # (12 + 2*_STATE_LABEL_CHIP_PAD_Y at pad=4 would be 20; kept
-                            # as its own constant, not reused verbatim, since a wider
-                            # mask reads better with a touch more vertical breathing
-                            # room than a state-machine transition chip needs) and stays
-                            # divisible by 4 per this branch's layout-constant rule.
+_XFORM_BOX_WIDTH = 200
+_XFORM_BOX_HEIGHT = 40
+_XFORM_RUNG_GAP = 32  # vertical space between one step's rung and the next
+_XFORM_TOP_MARGIN = 12
 
 _STATE_BOX_HEIGHT = 44
 _STATE_BOX_MIN_WIDTH = 96  # a two-letter state still reads as a box, not a chip
@@ -1338,11 +1330,14 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
 
 
 def _transform_html(anim: Animate, token: str) -> str:
-    """One entity becomes another; each step's label appears over the connector.
+    """One entity becomes another through a vertical spine of accumulating steps.
 
-    The two endpoint boxes are permanent structure. What animates is the
-    connector drawing itself and the step labels appearing in order over it,
-    with the destination box taking the accent only once the last step lands.
+    The spine draws downward from the `from` box to the `to` box. Each step
+    lands as a rung on that spine and STAYS -- unlike the old horizontal
+    connector, where steps flashed on and off in the same position and only
+    ever one was visible, so the sequence (the entire teaching point) could
+    never be seen at once. The `to` box takes the accent, with its label
+    inverted, only once every rung is present.
     """
     token_seed = re.sub(r"\D", "", token) or "0"
     from_id = f"anim-xform-from-{token_seed}"
@@ -1352,46 +1347,51 @@ def _transform_html(anim: Animate, token: str) -> str:
     to_active_id = f"anim-xform-to-active-{token_seed}"
     to_inverted_id = f"anim-xform-to-inverted-{token_seed}"
 
-    # Each step's mask must be at least as wide as its own authored text -- reusing
-    # _state_machine_html's exact "estimate width from character count" approach
-    # (_STATE_LABEL_CHAR_WIDTH, _STATE_LABEL_CHIP_PAD_X) rather than inventing a
-    # second sizing mechanism. The connector's gap is then widened, if needed, to
-    # the WIDEST step's mask plus a further _STATE_LABEL_CHIP_PAD_X of clearance
-    # on each side (so the mask itself never touches an endpoint box), so the
-    # longest authored step never overhangs the mask meant to keep the connector
-    # from bleeding through its text (_XFORM_GAP remains the floor for short steps).
-    step_widths = [
-        len(text) * _STATE_LABEL_CHAR_WIDTH + 2 * _STATE_LABEL_CHIP_PAD_X
-        for text in anim.steps
+    # A rung's text sits to the right of the spine and can run wider than the
+    # endpoint boxes above and below it -- reusing _state_machine_html's own
+    # "estimate width from character count" approach rather than inventing a
+    # second one. The SVG's width grows to fit the widest rung so long text is
+    # never clipped.
+    step_text_widths = [
+        len(text) * _STATE_LABEL_CHAR_WIDTH for text in anim.steps
     ]
-    widest_step = max(step_widths, default=0)
-    gap = max(_XFORM_GAP, widest_step + 2 * _STATE_LABEL_CHIP_PAD_X)
+    widest_step_text = max(step_text_widths, default=0)
 
-    box_center_y = _XFORM_TOP_MARGIN + _XFORM_BOX_HEIGHT / 2
-    total_width = _XFORM_BOX_WIDTH * 2 + gap
-    total_height = _XFORM_TOP_MARGIN * 2 + _XFORM_BOX_HEIGHT
-    line_x1 = _XFORM_BOX_WIDTH
-    line_x2 = _XFORM_BOX_WIDTH + gap
-    label_center_x = line_x1 + gap / 2
+    spine_x = _XFORM_BOX_WIDTH / 2
+    rung_text_x = _XFORM_BOX_WIDTH + 24
+    total_width = max(
+        _XFORM_BOX_WIDTH, rung_text_x + widest_step_text + _XFORM_TOP_MARGIN
+    )
+
+    box_top_y = _XFORM_TOP_MARGIN
+    box_bottom_y = box_top_y + _XFORM_BOX_HEIGHT
+    spine_top_y = box_bottom_y
+    rung_ys = [
+        spine_top_y + _XFORM_RUNG_GAP * (i + 1) for i in range(len(anim.steps))
+    ]
+    spine_bottom_y = spine_top_y + _XFORM_RUNG_GAP * (len(anim.steps) + 1)
+    to_box_top_y = spine_bottom_y
+    total_height = to_box_top_y + _XFORM_BOX_HEIGHT + _XFORM_TOP_MARGIN
+    spine_length = spine_bottom_y - spine_top_y
 
     # The `to` endpoint gets a second, stacked accent rect and a pre-inverted
-    # label, whose OPACITY the timeline animates once the last step lands --
+    # label, whose OPACITY the timeline animates once the last rung lands --
     # never a `fill` tween between two var() tokens, which animejs's colour
     # detector cannot interpolate (see .anim__text-on-accent's comment). Only
     # `to` needs this; `from` never changes fill. Both `active_id` and
     # `inverted_id` are None for `from`, where they're unused.
     def endpoint(
-        box_id: str, x: float, label: str,
+        box_id: str, y: float, label: str,
         active_id: str | None = None, inverted_id: str | None = None,
     ) -> str:
-        label_x = x + _XFORM_BOX_WIDTH / 2
-        label_y = box_center_y + 4
+        label_x = spine_x
+        label_y = y + _XFORM_BOX_HEIGHT / 2 + 4
         extra = ""
         if active_id is not None:
             extra = (
                 f'<rect class="anim__xform-box anim__xform-box-active" '
-                f'id="{active_id}" x="{x:g}" '
-                f'y="{_XFORM_TOP_MARGIN}" width="{_XFORM_BOX_WIDTH}" '
+                f'id="{active_id}" x="0" '
+                f'y="{y:g}" width="{_XFORM_BOX_WIDTH}" '
                 f'height="{_XFORM_BOX_HEIGHT}" rx="8" '
                 f'fill="var(--anim-xform-active)" opacity="0"></rect>'
                 f'<text class="anim__xform-label anim__text-on-accent" '
@@ -1400,8 +1400,8 @@ def _transform_html(anim: Animate, token: str) -> str:
             )
         return (
             f'<g class="anim__xform-endpoint">'
-            f'<rect class="anim__xform-box" id="{box_id}" x="{x:g}" '
-            f'y="{_XFORM_TOP_MARGIN}" width="{_XFORM_BOX_WIDTH}" '
+            f'<rect class="anim__xform-box" id="{box_id}" x="0" '
+            f'y="{y:g}" width="{_XFORM_BOX_WIDTH}" '
             f'height="{_XFORM_BOX_HEIGHT}" rx="8" '
             f'fill="var(--anim-xform-idle)"></rect>'
             f'<text class="anim__xform-label" x="{label_x:g}" '
@@ -1411,48 +1411,35 @@ def _transform_html(anim: Animate, token: str) -> str:
             f'</g>'
         )
 
-    # Step labels sit ABOVE the connector with a visible gap (diagram-design
-    # rule 2: never let a label sit on its line), each over its own opaque mask
-    # rect so the connector cannot bleed through the text.
-    labels_html = []
-    for i, text in enumerate(anim.steps):
-        mask_width = step_widths[i]
-        labels_html.append(
+    # Each rung is a dot on the spine plus its own left-aligned text, at its
+    # own y -- the accumulating structure this redesign exists to show. Rungs
+    # paint after the spine but before the endpoints settle, so a rung is
+    # never mistaken for part of either box.
+    rungs_html = []
+    for i, (text, y) in enumerate(zip(anim.steps, rung_ys)):
+        rungs_html.append(
             f'<g class="anim__xform-step" id="{step_ids[i]}" opacity="0">'
-            f'<rect class="anim__xform-step-bg" x="{label_center_x - mask_width / 2:g}" '
-            f'y="{box_center_y - 26:g}" width="{mask_width:g}" '
-            f'height="{_XFORM_STEP_BG_HEIGHT}" rx="2"></rect>'
-            f'<text class="anim__xform-step-text" x="{label_center_x:g}" '
-            f'y="{box_center_y - 13:g}" text-anchor="middle">'
-            f'{html.escape(text)}</text>'
+            f'<circle class="anim__xform-step-dot" cx="{spine_x:g}" cy="{y:g}" r="5"></circle>'
+            f'<text class="anim__xform-step-text" x="{rung_text_x:g}" y="{y + 4:g}" '
+            f'text-anchor="start">{html.escape(text)}</text>'
             f'</g>'
         )
 
     steps_json: list[dict] = [
         {
             "targets": [f"#{line_id}"],
-            "props": {"strokeDashoffset": [gap, 0]},
+            "props": {"strokeDashoffset": [spine_length, 0]},
             "duration": STEP_SECONDS * 1000,
             "ease": "inOutQuad",
         }
     ]
-    for i, step_id in enumerate(step_ids):
+    for step_id in step_ids:
         steps_json.append({
             "targets": [f"#{step_id}"],
             "props": {"opacity": [0, 1]},
             "duration": 400,
             "ease": "outQuad",
         })
-        if i > 0:
-            steps_json.append({
-                "targets": [f"#{step_ids[i - 1]}"],
-                "props": {"opacity": 0},
-                "duration": 400,
-                "ease": "outQuad",
-                # "<<" starts together with the reveal above; a bare "<" would
-                # wait for it to finish first (anime.js v4's real semantics).
-                "position": "<<",
-            })
     steps_json.append({
         "targets": [f"#{to_active_id}", f"#{to_inverted_id}"],
         "props": {"opacity": [0, 1]},
@@ -1465,7 +1452,7 @@ def _transform_html(anim: Animate, token: str) -> str:
     })
     steps_json.append({
         "kind": "set", "targets": [f"#{line_id}"],
-        "props": {"strokeDashoffset": gap},
+        "props": {"strokeDashoffset": spine_length},
     })
     steps_json.append({
         "kind": "set", "targets": [f"#{to_active_id}", f"#{to_inverted_id}"],
@@ -1481,12 +1468,13 @@ def _transform_html(anim: Animate, token: str) -> str:
         f'<svg class="anim__transform" dir="ltr" '
         f'width="{total_width:g}" height="{total_height:g}" '
         f'viewBox="0 0 {total_width:g} {total_height:g}">'
-        f'<line class="anim__xform-line" id="{line_id}" x1="{line_x1:g}" '
-        f'y1="{box_center_y:g}" x2="{line_x2:g}" y2="{box_center_y:g}" '
-        f'stroke-dasharray="{gap:g}" stroke-dashoffset="{gap:g}"></line>'
-        f'{endpoint(from_id, 0, anim.from_entity)}'
-        f'{endpoint(to_id, _XFORM_BOX_WIDTH + gap, anim.to_entity, to_active_id, to_inverted_id)}'
-        f"{''.join(labels_html)}</svg>"
+        f'<line class="anim__xform-line" id="{line_id}" x1="{spine_x:g}" '
+        f'y1="{spine_top_y:g}" x2="{spine_x:g}" y2="{spine_bottom_y:g}" '
+        f'stroke-dasharray="{spine_length:g}" stroke-dashoffset="{spine_length:g}"></line>'
+        f'{endpoint(from_id, box_top_y, anim.from_entity)}'
+        f"{''.join(rungs_html)}"
+        f'{endpoint(to_id, to_box_top_y, anim.to_entity, to_active_id, to_inverted_id)}'
+        "</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
         f'<ol class="anim__xform-static">{static_steps}</ol></div>'
     )

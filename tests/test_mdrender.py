@@ -18,8 +18,7 @@ from p2c.mdrender import (
     _STATE_LABEL_CHIP_PAD_X,
     _XFORM_BOX_HEIGHT,
     _XFORM_BOX_WIDTH,
-    _XFORM_GAP,
-    _XFORM_STEP_BG_HEIGHT,
+    _XFORM_RUNG_GAP,
     _XFORM_TOP_MARGIN,
     _state_machine_html,
     Animate,
@@ -792,10 +791,6 @@ def test_pipeline_box_width_grows_to_fit_a_long_stage_description():
     )
 
 
-def test_xform_step_bg_height_is_divisible_by_four():
-    assert _XFORM_STEP_BG_HEIGHT % 4 == 0
-
-
 def test_layer_stack_parses_layers_bottom_up_and_defaults_direction_up():
     anim = parse_animate(
         "pattern: layer-stack\n"
@@ -1016,8 +1011,76 @@ def test_transform_timeline_resets_animated_properties():
 
 
 def test_transform_constants_are_divisible_by_four():
-    for value in (_XFORM_BOX_WIDTH, _XFORM_BOX_HEIGHT, _XFORM_GAP, _XFORM_TOP_MARGIN):
+    for value in (_XFORM_BOX_WIDTH, _XFORM_BOX_HEIGHT, _XFORM_RUNG_GAP, _XFORM_TOP_MARGIN):
         assert value % 4 == 0
+
+
+def _xf():
+    return parse_animate(
+        "pattern: transform\nfrom: Latin aqua\nto: French eau\n"
+        "steps:\n  - Intervocalic weakening\n  - Loss of the final vowel\n  - Vowel fronting\n"
+    )
+
+
+def test_transform_steps_accumulate_rather_than_replace():
+    """The old renderer flashed one step label on and off in a single fixed
+    position over a horizontal connector, so only ever one was visible and the
+    sequence itself -- the whole teaching point -- could never be seen at once.
+    The redesign lands each step as its own rung on a vertical spine and never
+    fades it back out: no non-`set` step may animate a step group's opacity
+    down to 0.
+    """
+    out = _transform_html(_xf(), "ANIMTOKEN1")
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    fades = [
+        s for s in data["steps"]
+        if s.get("kind") != "set"
+        and "step" in str(s.get("targets"))
+        and (s.get("props") or {}).get("opacity") == 0
+    ]
+    assert fades == []
+
+
+def test_transform_every_step_has_its_own_position():
+    out = _transform_html(_xf(), "ANIMTOKEN1")
+    ys = re.findall(r'anim__xform-step[^>]*\bcy="([\d.]+)"', out)
+    assert len(set(ys)) == 3, "each rung must sit at its own height on the spine"
+
+
+def test_transform_result_text_inverts_on_accent():
+    """The result box fills with the accent once every rung has landed, so its
+    label must invert to stay legible (--color-fg on solid accent measures
+    1.82:1-3.83:1 across the themes, below the 4.5:1 floor). Per the
+    anim__text-on-accent convention used everywhere else in this file, that is
+    a stacked, pre-inverted <text> whose OPACITY the timeline animates -- never
+    a `fill` tween between two var() tokens, which animejs's colour detector
+    cannot interpolate.
+    """
+    out = _transform_html(_xf(), "ANIMTOKEN1")
+    assert "anim__text-on-accent" in out
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    inverts = [
+        s for s in data["steps"]
+        if "opacity" in (s.get("props") or {})
+        and "inverted" in str(s.get("targets"))
+    ]
+    assert inverts, "the result box fills with accent, so its text must invert"
+
+
+def test_transform_resets_every_animated_property():
+    out = _transform_html(_xf(), "ANIMTOKEN1")
+    data = json.loads(
+        re.search(r'class="anim__timeline">(.*?)</script>', out, re.S).group(1)
+    )
+    animated = {p for s in data["steps"] if s.get("kind") != "set"
+                for p in (s.get("props") or {})}
+    reset = {p for s in data["steps"] if s.get("kind") == "set"
+             for p in (s.get("props") or {})}
+    assert animated <= reset
 
 
 @pytest.mark.parametrize(
