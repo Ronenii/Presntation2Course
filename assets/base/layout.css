@@ -447,53 +447,34 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 
 /* Every animate label renders raw author content into an SVG the renderer
    always marks dir="ltr" (diagram geometry -- arrows, stacking order -- is
-   spatial, not textual, and stays LTR regardless of course language). Two
-   things go wrong for Hebrew/Arabic content on an RTL course, and BOTH must
-   be fixed together or fixing one breaks the other:
+   spatial, not textual, and stays LTR regardless of course language).
+   `direction` (inherited ltr from the SVG root) controls how a run's own
+   characters reorder, so a Hebrew/Arabic label needs direction: rtl to
+   shape correctly -- unicode-bidi: plaintext does NOT do this: per the SVG
+   spec, `direction` only takes effect once unicode-bidi is `embed` or
+   `bidi-override`; plaintext is a third, unrelated mode that doesn't
+   reliably drive text layout in current engines.
 
-   1. `direction` (inherited ltr from the SVG root) controls how the run's
-      own characters reorder, so a label needs direction: rtl to shape its
-      glyphs correctly -- unicode-bidi: plaintext does NOT do this: per the
-      SVG spec, `direction` only takes effect once unicode-bidi is `embed`
-      or `bidi-override`; plaintext is a third, unrelated mode that doesn't
-      reliably drive text-anchor in current engines.
-
-   2. Once direction: rtl is set, text-anchor="start"/"end" FLIPS which way
-      the run extends from its x coordinate (verified with a real Chromium
-      render, getBBox() before/after): "start" now extends LEFTWARD from x
-      instead of rightward, and "end" now extends RIGHTWARD instead of
-      leftward. The renderer's x coordinates were chosen assuming the LTR
-      extension direction (a "start"-anchored name sits at the row's LEFT
-      inset expecting rightward growth; an "end"-anchored second column
-      sits at the RIGHT inset expecting leftward growth) -- so direction:
-      rtl alone just moves the overflow from one edge to the other. The
-      anchor keyword has to flip too, to match.
-
-   text-anchor="middle" is unaffected by either problem (centering doesn't
-   depend on extension direction) and needs no anchor override -- only
-   direction+unicode-bidi, to shape the glyph run itself correctly.
-   .anim__pipe-name, .anim__xform-label, .anim__state-name,
-   .anim__state-transition-label, .anim__split-name, .anim__split-what,
-   .anim__cmp-text, and .anim__cmp-heading are all text-anchor: middle
-   (verified against the renderer's own markup and this file's earlier
-   rules), so only the two genuinely start/end-anchored pairs below need
-   the anchor flip.
+   Once direction: rtl is set, text-anchor="start"/"end" FLIPS which way the
+   run extends from its x coordinate (verified with a real Chromium render,
+   getBBox() before/after): "start" extends LEFTWARD instead of rightward,
+   "end" extends RIGHTWARD instead of leftward. layer-stack's and build-up's
+   row text is centered (text-anchor: middle, unaffected by this -- see
+   _layer_stack_html/_build_up_html for why a left/right name+caption split
+   was replaced with a centered, stacked pair instead of also flipping their
+   anchors: swapping which SIDE a name vs. caption sits on needs the
+   renderer to know the course's language, which mdrender.py deliberately
+   does not). .anim__xform-step-text is the one label still genuinely
+   start-anchored (a single value beside a spine dot, not a name+caption
+   pair), so it alone gets the anchor flip too.
 
    [dir="rtl"] mirrors the existing convention this file already uses for
    the drawer's mirrored offset above: these rules apply only on an RTL
    course, never touching an English one. */
-[dir="rtl"] .anim__layer-name,
-[dir="rtl"] .anim__build-name,
 [dir="rtl"] .anim__xform-step-text {
   direction: rtl;
   unicode-bidi: embed;
   text-anchor: end;
-}
-[dir="rtl"] .anim__layer-adds,
-[dir="rtl"] .anim__build-contrib {
-  direction: rtl;
-  unicode-bidi: embed;
-  text-anchor: start;
 }
 [dir="rtl"] .anim__pipe-name,
 [dir="rtl"] .anim__xform-label,
@@ -503,7 +484,11 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 [dir="rtl"] .anim__split-what,
 [dir="rtl"] .anim__cmp-text,
 [dir="rtl"] .anim__cmp-heading,
-[dir="rtl"] .anim__pipe-change {
+[dir="rtl"] .anim__pipe-change,
+[dir="rtl"] .anim__layer-name,
+[dir="rtl"] .anim__layer-adds,
+[dir="rtl"] .anim__build-name,
+[dir="rtl"] .anim__build-contrib {
   direction: rtl;
   unicode-bidi: embed;
 }

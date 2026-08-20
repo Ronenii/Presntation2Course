@@ -508,7 +508,7 @@ _PIPE_GAP = 56  # horizontal gap between stage boxes; also each connector's leng
 _PIPE_TOP_MARGIN = 24
 
 _LAYER_WIDTH = 260
-_LAYER_HEIGHT = 44
+_LAYER_HEIGHT = 52
 _LAYER_GAP = 12
 _LAYER_TOP_MARGIN = 20
 _LAYER_DWELL_MS = 700  # pause after a row's highlight lands, before the next
@@ -526,7 +526,7 @@ _XFORM_RUNG_DWELL_MS = 700  # pause after a rung lands, before the next starts
 _XFORM_FLASH_DWELL_MS = 900  # pause after the final flash lands, before the loop restarts
 
 _BUILD_ROW_WIDTH = 320
-_BUILD_ROW_HEIGHT = 40
+_BUILD_ROW_HEIGHT = 48
 _BUILD_ROW_GAP = 8
 _BUILD_MARGIN = 12
 _BUILD_DWELL_MS = 400  # pause after a part settles, before the next starts
@@ -1347,9 +1347,15 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
     rows_html = []
     for i, (name, adds) in enumerate(anim.layers):
         y = layer_y(i)
-        name_x = _LAYER_TOP_MARGIN + 12
-        adds_x = _LAYER_TOP_MARGIN + _LAYER_WIDTH - 12
-        text_y = y + _LAYER_HEIGHT / 2 + 4
+        # Centered and stacked -- name above, description below -- rather
+        # than a left/right pair: a left/right split bakes in an LTR reading
+        # order (name-then-caption runs left-to-right) that has no correct
+        # mirror in plain SVG/CSS for RTL content without either duplicating
+        # every pattern's markup per direction or mirroring the whole row and
+        # every glyph run back, both worse than just not needing to know.
+        center_x = _LAYER_TOP_MARGIN + _LAYER_WIDTH / 2
+        name_y = y + _LAYER_HEIGHT / 2 - 3
+        adds_y = y + _LAYER_HEIGHT / 2 + 15
         # The row's own reveal (the GROUP's opacity, 0->1) is a separate
         # property from its accent HIGHLIGHT (a second, stacked rect whose
         # opacity is animated, never a `fill` tween between two var() tokens --
@@ -1368,16 +1374,16 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
             f'x="{_LAYER_TOP_MARGIN}" y="{y:g}" width="{_LAYER_WIDTH}" '
             f'height="{_LAYER_HEIGHT}" rx="6" fill="var(--anim-layer-active)" '
             f'opacity="0"></rect>'
-            f'<text class="anim__layer-name" x="{name_x}" y="{text_y:g}" '
-            f'fill="var(--color-fg)">{html.escape(name)}</text>'
+            f'<text class="anim__layer-name" x="{center_x:g}" y="{name_y:g}" '
+            f'text-anchor="middle" fill="var(--color-fg)">{html.escape(name)}</text>'
             f'<text class="anim__layer-name anim__text-on-accent" '
-            f'id="{name_text_ids[i]}" x="{name_x}" y="{text_y:g}" opacity="0">'
-            f'{html.escape(name)}</text>'
-            f'<text class="anim__layer-adds" x="{adds_x}" y="{text_y:g}" '
-            f'text-anchor="end" fill="var(--color-muted)">{html.escape(adds)}</text>'
+            f'id="{name_text_ids[i]}" x="{center_x:g}" y="{name_y:g}" '
+            f'text-anchor="middle" opacity="0">{html.escape(name)}</text>'
+            f'<text class="anim__layer-adds" x="{center_x:g}" y="{adds_y:g}" '
+            f'text-anchor="middle" fill="var(--color-muted)">{html.escape(adds)}</text>'
             f'<text class="anim__layer-adds anim__text-on-accent" '
-            f'id="{adds_text_ids[i]}" x="{adds_x}" y="{text_y:g}" '
-            f'text-anchor="end" opacity="0">{html.escape(adds)}</text>'
+            f'id="{adds_text_ids[i]}" x="{center_x:g}" y="{adds_y:g}" '
+            f'text-anchor="middle" opacity="0">{html.escape(adds)}</text>'
             f'</g>'
         )
 
@@ -1477,7 +1483,7 @@ def _build_up_html(anim: Animate, token: str) -> str:
     row_width = max(
         _BUILD_ROW_WIDTH,
         max(
-            (len(name) + len(contrib)) * _STATE_LABEL_CHAR_WIDTH
+            max(len(name), len(contrib)) * _STATE_LABEL_CHAR_WIDTH
             for name, contrib in anim.parts
         ) + 4 * _STATE_LABEL_CHIP_PAD_X,
     )
@@ -1489,9 +1495,15 @@ def _build_up_html(anim: Animate, token: str) -> str:
     rows_html = []
     for i, (name, contrib) in enumerate(anim.parts):
         y = _BUILD_MARGIN + i * (_BUILD_ROW_HEIGHT + _BUILD_ROW_GAP)
-        name_x = _BUILD_MARGIN + 12
-        contrib_x = _BUILD_MARGIN + row_width - 12
-        text_y = y + _BUILD_ROW_HEIGHT / 2 + 4
+        # Centered and stacked -- name above, description below -- rather
+        # than a left/right pair: a left/right split bakes in an LTR reading
+        # order (name-then-caption runs left-to-right) that has no correct
+        # mirror in plain SVG/CSS for RTL content without either duplicating
+        # every pattern's markup per direction or mirroring the whole row and
+        # every glyph run back, both worse than just not needing to know.
+        center_x = _BUILD_MARGIN + row_width / 2
+        name_y = y + _BUILD_ROW_HEIGHT / 2 - 3
+        contrib_y = y + _BUILD_ROW_HEIGHT / 2 + 15
         # The GROUP's own opacity (0->1) reveals the whole part -- box and both
         # text lines together -- as one unit; there is nothing to read before
         # this fires. The stacked rect inside it is the accent wash whose
@@ -1507,16 +1519,16 @@ def _build_up_html(anim: Animate, token: str) -> str:
             f'x="{_BUILD_MARGIN}" y="{y:g}" width="{row_width:g}" '
             f'height="{_BUILD_ROW_HEIGHT}" rx="8" fill="var(--color-accent)" '
             f'fill-opacity="0"></rect>'
-            f'<text class="anim__build-name" x="{name_x}" y="{text_y:g}" '
-            f'fill="var(--color-fg)">{html.escape(name)}</text>'
+            f'<text class="anim__build-name" x="{center_x:g}" y="{name_y:g}" '
+            f'text-anchor="middle" fill="var(--color-fg)">{html.escape(name)}</text>'
             f'<text class="anim__build-name anim__text-on-accent" '
-            f'id="{name_text_ids[i]}" x="{name_x}" y="{text_y:g}" opacity="0">'
-            f'{html.escape(name)}</text>'
-            f'<text class="anim__build-contrib" x="{contrib_x}" y="{text_y:g}" '
-            f'text-anchor="end" fill="var(--color-muted)">{html.escape(contrib)}</text>'
+            f'id="{name_text_ids[i]}" x="{center_x:g}" y="{name_y:g}" '
+            f'text-anchor="middle" opacity="0">{html.escape(name)}</text>'
+            f'<text class="anim__build-contrib" x="{center_x:g}" y="{contrib_y:g}" '
+            f'text-anchor="middle" fill="var(--color-muted)">{html.escape(contrib)}</text>'
             f'<text class="anim__build-contrib anim__text-on-accent" '
-            f'id="{contrib_text_ids[i]}" x="{contrib_x}" y="{text_y:g}" '
-            f'text-anchor="end" opacity="0">{html.escape(contrib)}</text>'
+            f'id="{contrib_text_ids[i]}" x="{center_x:g}" y="{contrib_y:g}" '
+            f'text-anchor="middle" opacity="0">{html.escape(contrib)}</text>'
             f'</g>'
         )
 
