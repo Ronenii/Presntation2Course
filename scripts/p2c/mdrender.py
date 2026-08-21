@@ -173,14 +173,14 @@ _LIST_HEADERS = {
 }
 
 
-_PATTERNS = (
+ANIMATE_PATTERNS = (
     "state-machine", "pipeline", "layer-stack", "transform",
     "build-up", "compare", "split-merge",
 )
 
 
 def _require_known_pattern(pattern: str | None) -> None:
-    if pattern not in _PATTERNS:
+    if pattern not in ANIMATE_PATTERNS:
         raise AnimateError(
             "animate pattern must be 'state-machine', 'pipeline', "
             "'layer-stack', 'transform', 'build-up', 'compare', or 'split-merge', "
@@ -507,7 +507,6 @@ _PIPE_BOX_HEIGHT = 64
 _PIPE_GAP = 56  # horizontal gap between stage boxes; also each connector's length
 _PIPE_TOP_MARGIN = 24
 
-_LAYER_WIDTH = 260
 _LAYER_HEIGHT = 52
 _LAYER_GAP = 12
 _LAYER_TOP_MARGIN = 20
@@ -525,7 +524,6 @@ _XFORM_RUNG_DWELL_MS = 700  # pause after a rung lands, before the next starts
                             # arriving -- gives real prose time to be read
 _XFORM_FLASH_DWELL_MS = 900  # pause after the final flash lands, before the loop restarts
 
-_BUILD_ROW_WIDTH = 320
 _BUILD_ROW_HEIGHT = 48
 _BUILD_ROW_GAP = 8
 _BUILD_MARGIN = 12
@@ -578,6 +576,65 @@ _STATE_VISITED_OPACITY = 0.14  # the faint accent wash a visited state settles t
                                # Mirrors --anim-visited-strength in layout.css,
                                # which the reduced-motion and print blocks use
                                # where no timeline runs to apply this.
+
+# The content column is 70ch wide (--measure in layout.css), which is ~700px at
+# the 16px body size. An animate SVG is scaled to fit that column by
+# `max-width: 100%`, so a viewBox WIDER than this is not merely cropped -- it is
+# shrunk, and every glyph in it shrinks with it. A 2126px-wide pipeline scaled
+# into 700px renders its 13px labels at ~4.3px: unreadable. So no pattern may
+# ever let authored prose widen its canvas past this budget. Prose that does not
+# fit on one line is WRAPPED onto more lines and the box grows in HEIGHT, where
+# there is no scaling penalty at all.
+_ANIM_CONTENT_WIDTH = 700
+
+_ANIM_LINE_HEIGHT = 14  # baseline-to-baseline for a wrapped prose line, at the
+                        # 11px font the description classes use
+
+
+def _wrap_by_width(text: str, max_width: float, char_width: float) -> list[str]:
+    """Greedily break `text` into lines that each estimate under `max_width`.
+
+    SVG `<text>` does not wrap, and SVG cannot measure a real glyph run at
+    render time, so width is estimated from character count the same way
+    _STATE_NAME_CHAR_WIDTH already does for state boxes. A word longer than
+    the whole budget is left on its own overlong line rather than being
+    hyphenated mid-glyph -- a single long token (a URL, a formula) is rare and
+    better slightly wide than silently mangled, and this also guarantees the
+    loop always consumes a word and can never spin.
+    """
+    max_chars = max(1, int(max_width / char_width))
+    words = text.split()
+    if not words:
+        return [""]
+    lines: list[str] = []
+    current = words[0]
+    for word in words[1:]:
+        candidate = f"{current} {word}"
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return lines
+
+
+def _tspans(lines: list[str], x: float, line_height: float) -> str:
+    """Render wrapped lines as `<tspan>`s sharing one parent `<text>`.
+
+    Each tspan repeats `x` and steps `dy` by one line height; the first has
+    `dy="0"` so the parent's own `y` positions the first line. Every tspan
+    must restate `x` -- omitting it makes the renderer continue from the
+    previous tspan's advance width, which staircases the block to the right.
+    Wrapping happens INSIDE one `<text>` element so the existing
+    plain-plus-pre-inverted opacity-swap pairs keep working unchanged: each
+    copy stays a single animatable target with a single id.
+    """
+    return "".join(
+        f'<tspan x="{x:g}" dy="{0 if i == 0 else line_height:g}">'
+        f"{html.escape(line)}</tspan>"
+        for i, line in enumerate(lines)
+    )
 
 
 def _timeline_island_json(timeline: dict) -> str:
@@ -737,13 +794,38 @@ def _state_machine_html(anim: Animate, token: str) -> str:
     label_ids = [f"anim-state-label-{token_seed}-{i}" for i in range(len(anim.transitions))]
     marker_id = f"anim-state-marker-{token_seed}"
 
-    box_widths = [
-        max(
-            _STATE_BOX_MIN_WIDTH,
-            len(name) * _STATE_NAME_CHAR_WIDTH + 2 * _STATE_BOX_PAD_X,
+    # A state's name is wrapped to a bounded box rather than being allowed to
+    # set the box's width from its own length: the ring's radius is derived
+    # from the WIDEST box (see the chord calculation below), so one long state
+    # name inflated the whole ring past the content column, where the SVG was
+    # then scaled down and every glyph with it. Wrapping caps the width and
+    # spends the name's length on box HEIGHT instead, which the ring geometry
+    # does not multiply.
+    _STATE_BOX_MAX_WIDTH = 200
+    wrapped_names = [
+        _wrap_by_width(
+            name,
+            _STATE_BOX_MAX_WIDTH - 2 * _STATE_BOX_PAD_X,
+            _STATE_NAME_CHAR_WIDTH,
         )
         for name in anim.states
     ]
+    box_widths = [
+        min(
+            _STATE_BOX_MAX_WIDTH,
+            max(
+                _STATE_BOX_MIN_WIDTH,
+                max(len(line) for line in lines) * _STATE_NAME_CHAR_WIDTH
+                + 2 * _STATE_BOX_PAD_X,
+            ),
+        )
+        for lines in wrapped_names
+    ]
+    box_height = max(
+        _STATE_BOX_HEIGHT,
+        max(len(lines) for lines in wrapped_names) * _ANIM_LINE_HEIGHT
+        + 2 * _STATE_LABEL_CHIP_PAD_X,
+    )
 
     # The ring must be big enough that adjacent boxes do not collide. Neighbours
     # sit 2*pi/count apart, so the chord between their centres is
@@ -811,7 +893,7 @@ def _state_machine_html(anim: Animate, token: str) -> str:
         last_c1, last_c2, last_end = pieces[-1]
         piece_start = pieces[-2][2] if len(pieces) > 1 else start
         box_x = centers[to_i][0] - box_widths[to_i] / 2
-        box_y = centers[to_i][1] - _STATE_BOX_HEIGHT / 2
+        box_y = centers[to_i][1] - box_height / 2
         arrow_clearance = 6  # visible gap between the arrowhead's tip and the box edge
         # Binary search for the crossing rather than a coarse fixed step: a
         # linear scan's last "outside" SAMPLE can sit several pixels short of
@@ -823,7 +905,7 @@ def _state_machine_html(anim: Animate, token: str) -> str:
             mid = (outside_t + inside_t) / 2
             point = _cubic_at(piece_start, last_c1, last_c2, last_end, mid)
             if _outside_box(
-                point, box_x, box_y, box_widths[to_i], _STATE_BOX_HEIGHT,
+                point, box_x, box_y, box_widths[to_i], box_height,
                 margin=arrow_clearance,
             ):
                 outside_t = mid
@@ -892,13 +974,19 @@ def _state_machine_html(anim: Animate, token: str) -> str:
 
     boxes_html = []
     box_rects: list[tuple[float, float, float, float]] = []
-    for i, name in enumerate(anim.states):
+    for i, name_lines in enumerate(wrapped_names):
         width = box_widths[i]
         x = centers[i][0] - width / 2
-        y = centers[i][1] - _STATE_BOX_HEIGHT / 2
-        extents.append((x, y, x + width, y + _STATE_BOX_HEIGHT))
-        box_rects.append((x, y, width, _STATE_BOX_HEIGHT))
-        label_x, label_y = centers[i][0], centers[i][1] + 5
+        y = centers[i][1] - box_height / 2
+        extents.append((x, y, x + width, y + box_height))
+        box_rects.append((x, y, width, box_height))
+        label_x = centers[i][0]
+        # First line's baseline, offset up by half the wrapped block's height
+        # so the whole block stays optically centred in the box.
+        label_y = (
+            centers[i][1] + 5 - (len(name_lines) - 1) * _ANIM_LINE_HEIGHT / 2
+        )
+        name_spans = _tspans(name_lines, label_x, _ANIM_LINE_HEIGHT)
         # Two stacked <text> elements, not one whose `fill` is animated between
         # "var(--color-fg)" and "var(--color-accent-contrast)". anime.js only
         # recognises hex/rgb()/rgba()/hsl() as colour values (see its isCol
@@ -911,18 +999,18 @@ def _state_machine_html(anim: Animate, token: str) -> str:
         boxes_html.append(
             f'<g class="anim__state-box">'
             f'<rect class="anim__state-base" x="{x:.1f}" y="{y:.1f}" '
-            f'width="{width:.1f}" height="{_STATE_BOX_HEIGHT}" rx="10"></rect>'
+            f'width="{width:.1f}" height="{box_height:g}" rx="10"></rect>'
             f'<rect class="anim__state-rect anim__visited" id="{rect_ids[i]}" '
             f'x="{x:.1f}" y="{y:.1f}" '
-            f'width="{width:.1f}" height="{_STATE_BOX_HEIGHT}" rx="10" '
+            f'width="{width:.1f}" height="{box_height:g}" rx="10" '
             f'fill="var(--color-accent)" fill-opacity="0"></rect>'
             f'<text class="anim__state-name" '
             f'x="{label_x:.1f}" y="{label_y:.1f}" '
-            f'fill="var(--color-fg)">{html.escape(name)}</text>'
+            f'fill="var(--color-fg)">{name_spans}</text>'
             f'<text class="anim__state-name anim__state-name-inverted" '
             f'id="{text_ids[i]}" '
             f'x="{label_x:.1f}" y="{label_y:.1f}" opacity="0" '
-            f'fill="var(--color-accent-contrast)">{html.escape(name)}</text>'
+            f'fill="var(--color-accent-contrast)">{name_spans}</text>'
             "</g>"
         )
     # Labels paint LAST: authored prose stays legible above everything. Each sits
@@ -1176,26 +1264,44 @@ def _pipeline_html(anim: Animate, token: str) -> str:
     change_text_ids = [f"anim-pipe-change-{token_seed}-{i}" for i in range(len(anim.stages))]
     line_ids = [f"anim-pipe-line-{token_seed}-{i}" for i in range(len(anim.stages) - 1)]
 
-    # Every box must be at least as wide as its OWN longest line (name or
-    # change) needs, or authored prose overflows into the neighbouring box and
-    # across the connector -- reusing _state_machine_html's own "estimate width
-    # from character count" approach (_STATE_LABEL_CHAR_WIDTH,
-    # _STATE_LABEL_CHIP_PAD_X) rather than inventing a second mechanism. Every
-    # box in the row is then sized to the WIDEST stage, not just its own text,
-    # so the row reads as one consistent grid rather than a jagged staircase of
-    # differently sized boxes; _PIPE_BOX_WIDTH remains the floor for short text.
+    # The row's total width is FIXED by the content column, and each box gets an
+    # equal share of what is left after the connectors -- the opposite of the
+    # original approach, which sized each box to its own longest string and let
+    # the row grow without bound (a 62-char caption across 3 stages reached
+    # 2126px, which `max-width: 100%` then scaled into the ~700px column,
+    # rendering 13px labels at ~4.3px). Prose that does not fit the resulting
+    # box is WRAPPED onto more lines and the box grows in HEIGHT, where there is
+    # no scaling penalty. _PIPE_BOX_WIDTH stays the floor: with 6 stages the
+    # equal share falls below it, and a narrower box would wrap prose to a
+    # useless one-or-two-words-per-line ribbon, so the row is allowed to exceed
+    # the column in that one case and `overflow-x: auto` on .anim--pipeline
+    # gives it a scrollbar at full size rather than shrinking the text.
+    gaps_total = (len(anim.stages) - 1) * _PIPE_GAP
     box_width = max(
-        [_PIPE_BOX_WIDTH]
-        + [
-            max(len(name), len(change)) * _STATE_LABEL_CHAR_WIDTH
-            + 2 * _STATE_LABEL_CHIP_PAD_X
-            for name, change in anim.stages
-        ]
+        _PIPE_BOX_WIDTH,
+        (_ANIM_CONTENT_WIDTH - gaps_total) / len(anim.stages),
     )
 
-    box_center_y = _PIPE_TOP_MARGIN + _PIPE_BOX_HEIGHT / 2
-    total_width = len(anim.stages) * box_width + (len(anim.stages) - 1) * _PIPE_GAP
-    total_height = _PIPE_TOP_MARGIN * 2 + _PIPE_BOX_HEIGHT
+    # Wrap both lines of every stage to the box's inner width, then size the
+    # box's HEIGHT to the tallest stage so all boxes in the row stay a uniform
+    # grid (a jagged row of differently tall boxes reads as unrelated cards).
+    inner_width = box_width - 2 * _STATE_LABEL_CHIP_PAD_X
+    wrapped = [
+        (
+            _wrap_by_width(name, inner_width, _STATE_NAME_CHAR_WIDTH),
+            _wrap_by_width(change, inner_width, _STATE_LABEL_CHAR_WIDTH),
+        )
+        for name, change in anim.stages
+    ]
+    max_lines = max(len(n) + len(c) for n, c in wrapped)
+    box_height = max(
+        _PIPE_BOX_HEIGHT,
+        max_lines * _ANIM_LINE_HEIGHT + 2 * _STATE_LABEL_CHIP_PAD_X,
+    )
+
+    box_center_y = _PIPE_TOP_MARGIN + box_height / 2
+    total_width = len(anim.stages) * box_width + gaps_total
+    total_height = _PIPE_TOP_MARGIN * 2 + box_height
 
     def box_x(i: int) -> float:
         return i * (box_width + _PIPE_GAP)
@@ -1217,9 +1323,19 @@ def _pipeline_html(anim: Animate, token: str) -> str:
         )
 
     boxes_html = []
-    for i, (name, change) in enumerate(anim.stages):
+    for i, (name_lines, change_lines) in enumerate(wrapped):
         x = box_x(i)
         center_x = x + box_width / 2
+        # Both wrapped runs are laid out as one vertical block centred in the
+        # box: the name's lines first, then the change's. `block_top` is the
+        # baseline of the FIRST line, so the whole block's optical centre lands
+        # on the box's centre regardless of how many lines each run took.
+        n_lines = len(name_lines) + len(change_lines)
+        block_top = box_center_y - (n_lines - 1) * _ANIM_LINE_HEIGHT / 2
+        name_y = block_top
+        change_y = block_top + len(name_lines) * _ANIM_LINE_HEIGHT
+        name_spans = _tspans(name_lines, center_x, _ANIM_LINE_HEIGHT)
+        change_spans = _tspans(change_lines, center_x, _ANIM_LINE_HEIGHT)
         # Two rects (idle base + accent overlay whose OPACITY is animated, never
         # its FILL between two var() tokens -- animejs's colour detector only
         # recognises hex/rgb()/rgba()/hsl(), so a bare var(--anim-pipe-active)
@@ -1234,26 +1350,26 @@ def _pipeline_html(anim: Animate, token: str) -> str:
             f'<g class="anim__pipe-stage">'
             f'<rect class="anim__pipe-box" x="{x:g}" '
             f'y="{_PIPE_TOP_MARGIN}" width="{box_width:g}" '
-            f'height="{_PIPE_BOX_HEIGHT}" rx="8" '
+            f'height="{box_height:g}" rx="8" '
             f'fill="var(--anim-pipe-idle)"></rect>'
             f'<rect class="anim__pipe-box anim__pipe-box-active" id="{rect_ids[i]}" '
             f'x="{x:g}" y="{_PIPE_TOP_MARGIN}" width="{box_width:g}" '
-            f'height="{_PIPE_BOX_HEIGHT}" rx="8" '
+            f'height="{box_height:g}" rx="8" '
             f'fill="var(--anim-pipe-active)" opacity="0"></rect>'
             f'<text class="anim__pipe-name" x="{center_x:g}" '
-            f'y="{box_center_y - 4:g}" text-anchor="middle" '
-            f'fill="var(--color-fg)">{html.escape(name)}</text>'
+            f'y="{name_y:g}" text-anchor="middle" '
+            f'fill="var(--color-fg)">{name_spans}</text>'
             f'<text class="anim__pipe-name anim__text-on-accent" '
             f'id="{name_text_ids[i]}" x="{center_x:g}" '
-            f'y="{box_center_y - 4:g}" text-anchor="middle" opacity="0">'
-            f'{html.escape(name)}</text>'
+            f'y="{name_y:g}" text-anchor="middle" opacity="0">'
+            f'{name_spans}</text>'
             f'<text class="anim__pipe-change" x="{center_x:g}" '
-            f'y="{box_center_y + 14:g}" text-anchor="middle" '
-            f'fill="var(--color-muted)">{html.escape(change)}</text>'
+            f'y="{change_y:g}" text-anchor="middle" '
+            f'fill="var(--color-muted)">{change_spans}</text>'
             f'<text class="anim__pipe-change anim__text-on-accent" '
             f'id="{change_text_ids[i]}" x="{center_x:g}" '
-            f'y="{box_center_y + 14:g}" text-anchor="middle" opacity="0">'
-            f'{html.escape(change)}</text>'
+            f'y="{change_y:g}" text-anchor="middle" opacity="0">'
+            f'{change_spans}</text>'
             f'</g>'
         )
 
@@ -1336,16 +1452,39 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
     active_rect_ids = [f"anim-layer-active-{token_seed}-{i}" for i in range(count)]
     name_text_ids = [f"anim-layer-name-{token_seed}-{i}" for i in range(count)]
     adds_text_ids = [f"anim-layer-adds-{token_seed}-{i}" for i in range(count)]
-    total_height = _LAYER_TOP_MARGIN * 2 + count * _LAYER_HEIGHT + (count - 1) * _LAYER_GAP
-    total_width = _LAYER_WIDTH + _LAYER_TOP_MARGIN * 2
+    # This row used to be a FIXED 260px with nothing wrapped to it, so prose
+    # simply ran off both edges of the box and out of the viewBox (a 62-char
+    # caption spilled 73px past the canvas and was clipped by the SVG). The row
+    # now takes the full content column and its prose wraps into it, growing the
+    # row's HEIGHT -- the same rule every other pattern follows.
+    total_width = _ANIM_CONTENT_WIDTH
+    row_width = total_width - _LAYER_TOP_MARGIN * 2
+    inner_width = row_width - 4 * _STATE_LABEL_CHIP_PAD_X
+    wrapped = [
+        (
+            _wrap_by_width(name, inner_width, _STATE_NAME_CHAR_WIDTH),
+            _wrap_by_width(adds, inner_width, _STATE_LABEL_CHAR_WIDTH),
+        )
+        for name, adds in anim.layers
+    ]
+    # Uniform row height across the stack, so the tiers read as a stack rather
+    # than a ragged pile.
+    row_height = max(
+        _LAYER_HEIGHT,
+        max(len(n) + len(a) for n, a in wrapped) * _ANIM_LINE_HEIGHT
+        + 2 * _STATE_LABEL_CHIP_PAD_X,
+    )
+    total_height = (
+        _LAYER_TOP_MARGIN * 2 + count * row_height + (count - 1) * _LAYER_GAP
+    )
 
     def layer_y(i: int) -> float:
         # i == 0 is the bottom layer: count it down from the stack's base.
         from_top = count - 1 - i
-        return _LAYER_TOP_MARGIN + from_top * (_LAYER_HEIGHT + _LAYER_GAP)
+        return _LAYER_TOP_MARGIN + from_top * (row_height + _LAYER_GAP)
 
     rows_html = []
-    for i, (name, adds) in enumerate(anim.layers):
+    for i, (name_lines, adds_lines) in enumerate(wrapped):
         y = layer_y(i)
         # Centered and stacked -- name above, description below -- rather
         # than a left/right pair: a left/right split bakes in an LTR reading
@@ -1353,9 +1492,13 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
         # mirror in plain SVG/CSS for RTL content without either duplicating
         # every pattern's markup per direction or mirroring the whole row and
         # every glyph run back, both worse than just not needing to know.
-        center_x = _LAYER_TOP_MARGIN + _LAYER_WIDTH / 2
-        name_y = y + _LAYER_HEIGHT / 2 - 3
-        adds_y = y + _LAYER_HEIGHT / 2 + 15
+        center_x = _LAYER_TOP_MARGIN + row_width / 2
+        n_lines = len(name_lines) + len(adds_lines)
+        block_top = y + row_height / 2 - (n_lines - 1) * _ANIM_LINE_HEIGHT / 2
+        name_y = block_top
+        adds_y = block_top + len(name_lines) * _ANIM_LINE_HEIGHT
+        name_spans = _tspans(name_lines, center_x, _ANIM_LINE_HEIGHT)
+        adds_spans = _tspans(adds_lines, center_x, _ANIM_LINE_HEIGHT)
         # The row's own reveal (the GROUP's opacity, 0->1) is a separate
         # property from its accent HIGHLIGHT (a second, stacked rect whose
         # opacity is animated, never a `fill` tween between two var() tokens --
@@ -1367,23 +1510,23 @@ def _layer_stack_html(anim: Animate, token: str) -> str:
         rows_html.append(
             f'<g class="anim__layer-row" id="{row_group_ids[i]}" opacity="0">'
             f'<rect class="anim__layer-box" '
-            f'x="{_LAYER_TOP_MARGIN}" y="{y:g}" width="{_LAYER_WIDTH}" '
-            f'height="{_LAYER_HEIGHT}" rx="6" fill="var(--anim-layer-idle)"></rect>'
+            f'x="{_LAYER_TOP_MARGIN}" y="{y:g}" width="{row_width:g}" '
+            f'height="{row_height:g}" rx="6" fill="var(--anim-layer-idle)"></rect>'
             f'<rect class="anim__layer-box anim__layer-box-active" '
             f'id="{active_rect_ids[i]}" '
-            f'x="{_LAYER_TOP_MARGIN}" y="{y:g}" width="{_LAYER_WIDTH}" '
-            f'height="{_LAYER_HEIGHT}" rx="6" fill="var(--anim-layer-active)" '
+            f'x="{_LAYER_TOP_MARGIN}" y="{y:g}" width="{row_width:g}" '
+            f'height="{row_height:g}" rx="6" fill="var(--anim-layer-active)" '
             f'opacity="0"></rect>'
             f'<text class="anim__layer-name" x="{center_x:g}" y="{name_y:g}" '
-            f'text-anchor="middle" fill="var(--color-fg)">{html.escape(name)}</text>'
+            f'text-anchor="middle" fill="var(--color-fg)">{name_spans}</text>'
             f'<text class="anim__layer-name anim__text-on-accent" '
             f'id="{name_text_ids[i]}" x="{center_x:g}" y="{name_y:g}" '
-            f'text-anchor="middle" opacity="0">{html.escape(name)}</text>'
+            f'text-anchor="middle" opacity="0">{name_spans}</text>'
             f'<text class="anim__layer-adds" x="{center_x:g}" y="{adds_y:g}" '
-            f'text-anchor="middle" fill="var(--color-muted)">{html.escape(adds)}</text>'
+            f'text-anchor="middle" fill="var(--color-muted)">{adds_spans}</text>'
             f'<text class="anim__layer-adds anim__text-on-accent" '
             f'id="{adds_text_ids[i]}" x="{center_x:g}" y="{adds_y:g}" '
-            f'text-anchor="middle" opacity="0">{html.escape(adds)}</text>'
+            f'text-anchor="middle" opacity="0">{adds_spans}</text>'
             f'</g>'
         )
 
@@ -1480,21 +1623,34 @@ def _build_up_html(anim: Animate, token: str) -> str:
     name_text_ids = [f"anim-build-name-{token_seed}-{i}" for i in range(count)]
     contrib_text_ids = [f"anim-build-contrib-{token_seed}-{i}" for i in range(count)]
 
-    row_width = max(
-        _BUILD_ROW_WIDTH,
-        max(
-            max(len(name), len(contrib)) * _STATE_LABEL_CHAR_WIDTH
-            for name, contrib in anim.parts
-        ) + 4 * _STATE_LABEL_CHIP_PAD_X,
+    # The row is as wide as the content column allows and no wider: sizing it
+    # from the longest authored string instead let a single long caption push
+    # the canvas past the column, where `max-width: 100%` shrank every glyph
+    # in it. Long prose WRAPS and the row grows in height instead.
+    total_width = _ANIM_CONTENT_WIDTH
+    row_width = total_width - _BUILD_MARGIN * 2
+    inner_width = row_width - 4 * _STATE_LABEL_CHIP_PAD_X
+    wrapped = [
+        (
+            _wrap_by_width(name, inner_width, _STATE_NAME_CHAR_WIDTH),
+            _wrap_by_width(contrib, inner_width, _STATE_LABEL_CHAR_WIDTH),
+        )
+        for name, contrib in anim.parts
+    ]
+    # Every row is the same height -- the tallest part's -- so the accumulating
+    # stack stays a uniform grid rather than a ragged pile.
+    max_lines = max(len(n) + len(c) for n, c in wrapped)
+    row_height = max(
+        _BUILD_ROW_HEIGHT,
+        max_lines * _ANIM_LINE_HEIGHT + 2 * _STATE_LABEL_CHIP_PAD_X,
     )
-    total_width = row_width + _BUILD_MARGIN * 2
     total_height = (
-        _BUILD_MARGIN * 2 + count * _BUILD_ROW_HEIGHT + (count - 1) * _BUILD_ROW_GAP
+        _BUILD_MARGIN * 2 + count * row_height + (count - 1) * _BUILD_ROW_GAP
     )
 
     rows_html = []
-    for i, (name, contrib) in enumerate(anim.parts):
-        y = _BUILD_MARGIN + i * (_BUILD_ROW_HEIGHT + _BUILD_ROW_GAP)
+    for i, (name_lines, contrib_lines) in enumerate(wrapped):
+        y = _BUILD_MARGIN + i * (row_height + _BUILD_ROW_GAP)
         # Centered and stacked -- name above, description below -- rather
         # than a left/right pair: a left/right split bakes in an LTR reading
         # order (name-then-caption runs left-to-right) that has no correct
@@ -1502,8 +1658,14 @@ def _build_up_html(anim: Animate, token: str) -> str:
         # every pattern's markup per direction or mirroring the whole row and
         # every glyph run back, both worse than just not needing to know.
         center_x = _BUILD_MARGIN + row_width / 2
-        name_y = y + _BUILD_ROW_HEIGHT / 2 - 3
-        contrib_y = y + _BUILD_ROW_HEIGHT / 2 + 15
+        # Name block first, contribution block under it, the pair centred as
+        # one unit in the row however many lines each took.
+        n_lines = len(name_lines) + len(contrib_lines)
+        block_top = y + row_height / 2 - (n_lines - 1) * _ANIM_LINE_HEIGHT / 2
+        name_y = block_top
+        contrib_y = block_top + len(name_lines) * _ANIM_LINE_HEIGHT
+        name_spans = _tspans(name_lines, center_x, _ANIM_LINE_HEIGHT)
+        contrib_spans = _tspans(contrib_lines, center_x, _ANIM_LINE_HEIGHT)
         # The GROUP's own opacity (0->1) reveals the whole part -- box and both
         # text lines together -- as one unit; there is nothing to read before
         # this fires. The stacked rect inside it is the accent wash whose
@@ -1520,15 +1682,15 @@ def _build_up_html(anim: Animate, token: str) -> str:
             f'height="{_BUILD_ROW_HEIGHT}" rx="8" fill="var(--color-accent)" '
             f'fill-opacity="0"></rect>'
             f'<text class="anim__build-name" x="{center_x:g}" y="{name_y:g}" '
-            f'text-anchor="middle" fill="var(--color-fg)">{html.escape(name)}</text>'
+            f'text-anchor="middle" fill="var(--color-fg)">{name_spans}</text>'
             f'<text class="anim__build-name anim__text-on-accent" '
             f'id="{name_text_ids[i]}" x="{center_x:g}" y="{name_y:g}" '
-            f'text-anchor="middle" opacity="0">{html.escape(name)}</text>'
+            f'text-anchor="middle" opacity="0">{name_spans}</text>'
             f'<text class="anim__build-contrib" x="{center_x:g}" y="{contrib_y:g}" '
-            f'text-anchor="middle" fill="var(--color-muted)">{html.escape(contrib)}</text>'
+            f'text-anchor="middle" fill="var(--color-muted)">{contrib_spans}</text>'
             f'<text class="anim__build-contrib anim__text-on-accent" '
             f'id="{contrib_text_ids[i]}" x="{center_x:g}" y="{contrib_y:g}" '
-            f'text-anchor="middle" opacity="0">{html.escape(contrib)}</text>'
+            f'text-anchor="middle" opacity="0">{contrib_spans}</text>'
             f'</g>'
         )
 
@@ -1625,16 +1787,29 @@ def _compare_html(anim: Animate, token: str) -> str:
     left_inverted_ids = [f"anim-cmp-left-inverted-{token_seed}-{i}" for i in range(count)]
     right_inverted_ids = [f"anim-cmp-right-inverted-{token_seed}-{i}" for i in range(count)]
 
-    col_width = max(
-        _CMP_ROW_HEIGHT * 3,
-        max(
-            max(len(lt), len(rt)) for lt, rt in anim.rows
-        ) * _STATE_LABEL_CHAR_WIDTH + 4 * _STATE_LABEL_CHIP_PAD_X,
+    # Both columns split the content column evenly rather than being sized to
+    # the longest authored cell, which pushed the canvas past the column and
+    # shrank every glyph in it. Cell prose wraps; rows grow taller instead.
+    total_width = _ANIM_CONTENT_WIDTH
+    col_width = (total_width - _CMP_GUTTER - _CMP_MARGIN * 2) / 2
+    inner_width = col_width - 4 * _STATE_LABEL_CHIP_PAD_X
+    wrapped_rows = [
+        (
+            _wrap_by_width(lt, inner_width, _STATE_LABEL_CHAR_WIDTH),
+            _wrap_by_width(rt, inner_width, _STATE_LABEL_CHAR_WIDTH),
+        )
+        for lt, rt in anim.rows
+    ]
+    # One height for every row, so both columns stay aligned row-for-row --
+    # the entire point of a lockstep comparison.
+    max_cell_lines = max(max(len(l), len(r)) for l, r in wrapped_rows)
+    row_height = max(
+        _CMP_ROW_HEIGHT,
+        max_cell_lines * _ANIM_LINE_HEIGHT + 2 * _STATE_LABEL_CHIP_PAD_X,
     )
     header_height = 24
-    total_width = col_width * 2 + _CMP_GUTTER + _CMP_MARGIN * 2
     total_height = (
-        _CMP_MARGIN + header_height + count * _CMP_ROW_HEIGHT
+        _CMP_MARGIN + header_height + count * row_height
         + (count - 1) * 8 + _CMP_MARGIN
     )
     left_x = _CMP_MARGIN
@@ -1650,25 +1825,31 @@ def _compare_html(anim: Animate, token: str) -> str:
         f'x2="{divider_x:g}" y2="{total_height - _CMP_MARGIN:g}"></line>'
     )
 
-    def cell(x: float, y: float, text: str, rect_id: str, active_id: str, inv_id: str) -> str:
+    def cell(
+        x: float, y: float, lines: list[str],
+        rect_id: str, active_id: str, inv_id: str,
+    ) -> str:
         text_x = x + col_width / 2
-        text_y = y + _CMP_ROW_HEIGHT / 2 + 4
+        text_y = (
+            y + row_height / 2 + 4 - (len(lines) - 1) * _ANIM_LINE_HEIGHT / 2
+        )
+        spans = _tspans(lines, text_x, _ANIM_LINE_HEIGHT)
         return (
             f'<rect class="anim__cmp-box" id="{rect_id}" x="{x:g}" y="{y:g}" '
-            f'width="{col_width:g}" height="{_CMP_ROW_HEIGHT}" rx="8"></rect>'
+            f'width="{col_width:g}" height="{row_height:g}" rx="8"></rect>'
             f'<rect class="anim__cmp-box anim__cmp-box-active" id="{active_id}" '
-            f'x="{x:g}" y="{y:g}" width="{col_width:g}" height="{_CMP_ROW_HEIGHT}" '
+            f'x="{x:g}" y="{y:g}" width="{col_width:g}" height="{row_height:g}" '
             f'rx="8" fill="var(--anim-cmp-active)" opacity="0"></rect>'
             f'<text class="anim__cmp-text" x="{text_x:g}" y="{text_y:g}" '
-            f'text-anchor="middle" fill="var(--color-fg)">{html.escape(text)}</text>'
+            f'text-anchor="middle" fill="var(--color-fg)">{spans}</text>'
             f'<text class="anim__cmp-text anim__text-on-accent" id="{inv_id}" '
             f'x="{text_x:g}" y="{text_y:g}" text-anchor="middle" opacity="0">'
-            f'{html.escape(text)}</text>'
+            f'{spans}</text>'
         )
 
     rows_html = []
-    for i, (left_text, right_text) in enumerate(anim.rows):
-        y = _CMP_MARGIN + header_height + i * (_CMP_ROW_HEIGHT + 8)
+    for i, (left_text, right_text) in enumerate(wrapped_rows):
+        y = _CMP_MARGIN + header_height + i * (row_height + 8)
         rows_html.append(
             '<g class="anim__cmp-row">'
             + cell(left_x, y, left_text, left_rect_ids[i], left_active_ids[i], left_inverted_ids[i])
@@ -1781,23 +1962,57 @@ def _split_merge_html(anim: Animate, token: str) -> str:
     merged_active_id = f"anim-split-merged-active-{token_seed}"
     merged_inverted_id = f"anim-split-merged-inverted-{token_seed}"
 
-    branch_widths = [
-        max(
-            _SPLIT_BOX_WIDTH,
-            max(len(name), len(what)) * _STATE_LABEL_CHAR_WIDTH + 2 * _STATE_BOX_PAD_X,
+    # The branch row is fitted INTO the content column -- every branch takes an
+    # equal share of it -- instead of each branch being sized to its own
+    # longest string and the canvas growing to hold them all, which shrank
+    # every glyph once the row outgrew the column. Branch prose wraps and the
+    # boxes grow taller. _SPLIT_BOX_WIDTH stays the floor: with 4 branches the
+    # equal share can fall below it, and a narrower box would wrap prose to a
+    # useless ribbon, so `overflow-x: auto` gives that case a scrollbar at full
+    # size rather than shrinking the text.
+    available = _ANIM_CONTENT_WIDTH - _SPLIT_MARGIN * 2 - (count - 1) * _SPLIT_BRANCH_GAP
+    branch_width = max(_SPLIT_BOX_WIDTH, available / count)
+    branch_widths = [branch_width] * count
+    row_width = sum(branch_widths) + (count - 1) * _SPLIT_BRANCH_GAP
+    total_width = max(row_width + _SPLIT_MARGIN * 2, _ANIM_CONTENT_WIDTH)
+
+    branch_inner = branch_width - 2 * _STATE_BOX_PAD_X
+    wrapped_branches = [
+        (
+            _wrap_by_width(name, branch_inner, _STATE_NAME_CHAR_WIDTH),
+            _wrap_by_width(what, branch_inner, _STATE_LABEL_CHAR_WIDTH),
         )
         for name, what in anim.branches
     ]
-    row_width = sum(branch_widths) + (count - 1) * _SPLIT_BRANCH_GAP
-    total_width = max(row_width, _SPLIT_BOX_WIDTH * 2) + _SPLIT_MARGIN * 2
+    branch_height = max(
+        _SPLIT_BOX_HEIGHT,
+        max(len(n) + len(w) for n, w in wrapped_branches) * _ANIM_LINE_HEIGHT
+        + 2 * _STATE_LABEL_CHIP_PAD_X,
+    )
+
+    # The source and merged boxes are centred singles; they get a wider budget
+    # than a branch (half the column) since nothing sits beside them.
+    endpoint_width = max(_SPLIT_BOX_WIDTH, _ANIM_CONTENT_WIDTH / 2)
+    endpoint_inner = endpoint_width - 2 * _STATE_BOX_PAD_X
+    source_lines = _wrap_by_width(anim.source, endpoint_inner, _STATE_NAME_CHAR_WIDTH)
+    merged_lines = _wrap_by_width(anim.merged, endpoint_inner, _STATE_NAME_CHAR_WIDTH)
+    source_height = max(
+        _SPLIT_SOURCE_HEIGHT,
+        len(source_lines) * _ANIM_LINE_HEIGHT + 2 * _STATE_LABEL_CHIP_PAD_X,
+    )
+    merged_height = max(
+        _SPLIT_BOX_HEIGHT,
+        len(merged_lines) * _ANIM_LINE_HEIGHT + 2 * _STATE_LABEL_CHIP_PAD_X,
+    )
+
     source_y = _SPLIT_MARGIN
-    branch_y = source_y + _SPLIT_SOURCE_HEIGHT + _SPLIT_ROW_GAP
-    merged_y = branch_y + _SPLIT_BOX_HEIGHT + _SPLIT_ROW_GAP
-    total_height = merged_y + _SPLIT_BOX_HEIGHT + _SPLIT_MARGIN
+    branch_y = source_y + source_height + _SPLIT_ROW_GAP
+    merged_y = branch_y + branch_height + _SPLIT_ROW_GAP
+    total_height = merged_y + merged_height + _SPLIT_MARGIN
 
     center_x = total_width / 2
-    source_center = (center_x, source_y + _SPLIT_SOURCE_HEIGHT / 2)
-    merged_center = (center_x, merged_y + _SPLIT_BOX_HEIGHT / 2)
+    source_center = (center_x, source_y + source_height / 2)
+    merged_center = (center_x, merged_y + merged_height / 2)
 
     branch_xs = []
     x = (total_width - row_width) / 2
@@ -1807,12 +2022,13 @@ def _split_merge_html(anim: Animate, token: str) -> str:
 
     source_html = (
         f'<g class="anim__split-endpoint">'
-        f'<rect class="anim__split-box" x="{center_x - _SPLIT_BOX_WIDTH / 2:g}" '
-        f'y="{source_y:g}" width="{_SPLIT_BOX_WIDTH}" height="{_SPLIT_SOURCE_HEIGHT}" '
+        f'<rect class="anim__split-box" x="{center_x - endpoint_width / 2:g}" '
+        f'y="{source_y:g}" width="{endpoint_width:g}" height="{source_height:g}" '
         f'rx="8" fill="var(--anim-split-idle)"></rect>'
         f'<text class="anim__split-name" x="{center_x:g}" '
-        f'y="{source_y + _SPLIT_SOURCE_HEIGHT / 2 + 4:g}" text-anchor="middle" '
-        f'fill="var(--color-fg)">{html.escape(anim.source)}</text>'
+        f'y="{source_y + source_height / 2 + 4 - (len(source_lines) - 1) * _ANIM_LINE_HEIGHT / 2:g}" '
+        f'text-anchor="middle" '
+        f'fill="var(--color-fg)">{_tspans(source_lines, center_x, _ANIM_LINE_HEIGHT)}</text>'
         f'</g>'
     )
 
@@ -1821,9 +2037,9 @@ def _split_merge_html(anim: Animate, token: str) -> str:
     branches_html = []
     fan_out_lengths = []
     fan_in_lengths = []
-    for i, ((name, what), bx) in enumerate(zip(anim.branches, branch_xs)):
-        branch_center = (bx + branch_widths[i] / 2, branch_y + _SPLIT_BOX_HEIGHT / 2)
-        out_p0 = (source_center[0], source_y + _SPLIT_SOURCE_HEIGHT)
+    for i, ((name_lines, what_lines), bx) in enumerate(zip(wrapped_branches, branch_xs)):
+        branch_center = (bx + branch_widths[i] / 2, branch_y + branch_height / 2)
+        out_p0 = (source_center[0], source_y + source_height)
         out_p3 = (branch_center[0], branch_y)
         out_mid_y = (out_p0[1] + out_p3[1]) / 2
         out_c1 = (out_p0[0], out_mid_y)
@@ -1838,7 +2054,7 @@ def _split_merge_html(anim: Animate, token: str) -> str:
             f'stroke-dasharray="{out_length:.1f}" stroke-dashoffset="{out_length:.1f}"></path>'
         )
 
-        in_p0 = (branch_center[0], branch_y + _SPLIT_BOX_HEIGHT)
+        in_p0 = (branch_center[0], branch_y + branch_height)
         in_p3 = (merged_center[0], merged_y)
         in_mid_y = (in_p0[1] + in_p3[1]) / 2
         in_c1 = (in_p0[0], in_mid_y)
@@ -1853,36 +2069,51 @@ def _split_merge_html(anim: Animate, token: str) -> str:
             f'stroke-dasharray="{in_length:.1f}" stroke-dashoffset="{in_length:.1f}"></path>'
         )
 
+        # Name block then description block, the pair centred in the box.
+        n_lines = len(name_lines) + len(what_lines)
+        block_top = (
+            branch_y + branch_height / 2
+            - (n_lines - 1) * _ANIM_LINE_HEIGHT / 2
+        )
+        branch_name_y = block_top
+        branch_what_y = block_top + len(name_lines) * _ANIM_LINE_HEIGHT
         branches_html.append(
             f'<g class="anim__split-endpoint">'
             f'<rect class="anim__split-box anim__visited" id="{branch_rect_ids[i]}" '
             f'x="{bx:g}" y="{branch_y:g}" width="{branch_widths[i]:g}" '
-            f'height="{_SPLIT_BOX_HEIGHT}" rx="8" fill="var(--color-accent)" '
+            f'height="{branch_height:g}" rx="8" fill="var(--color-accent)" '
             f'fill-opacity="0"></rect>'
             f'<text class="anim__split-name" x="{branch_center[0]:g}" '
-            f'y="{branch_y + _SPLIT_BOX_HEIGHT / 2:g}" text-anchor="middle" '
-            f'fill="var(--color-fg)">{html.escape(name)}</text>'
+            f'y="{branch_name_y:g}" text-anchor="middle" '
+            f'fill="var(--color-fg)">'
+            f'{_tspans(name_lines, branch_center[0], _ANIM_LINE_HEIGHT)}</text>'
             f'<text class="anim__split-what" x="{branch_center[0]:g}" '
-            f'y="{branch_y + _SPLIT_BOX_HEIGHT / 2 + 14:g}" text-anchor="middle" '
-            f'fill="var(--color-muted)">{html.escape(what)}</text>'
+            f'y="{branch_what_y:g}" text-anchor="middle" '
+            f'fill="var(--color-muted)">'
+            f'{_tspans(what_lines, branch_center[0], _ANIM_LINE_HEIGHT)}</text>'
             f'</g>'
         )
 
+    merged_label_y = (
+        merged_y + merged_height / 2 + 4
+        - (len(merged_lines) - 1) * _ANIM_LINE_HEIGHT / 2
+    )
+    merged_spans = _tspans(merged_lines, center_x, _ANIM_LINE_HEIGHT)
     merged_html = (
         f'<g class="anim__split-endpoint">'
-        f'<rect class="anim__split-box" x="{center_x - _SPLIT_BOX_WIDTH / 2:g}" '
-        f'y="{merged_y:g}" width="{_SPLIT_BOX_WIDTH}" height="{_SPLIT_BOX_HEIGHT}" '
+        f'<rect class="anim__split-box" x="{center_x - endpoint_width / 2:g}" '
+        f'y="{merged_y:g}" width="{endpoint_width:g}" height="{merged_height:g}" '
         f'rx="8" fill="var(--anim-split-idle)"></rect>'
         f'<text class="anim__split-name" x="{center_x:g}" '
-        f'y="{merged_y + _SPLIT_BOX_HEIGHT / 2 + 4:g}" text-anchor="middle" '
-        f'fill="var(--color-fg)">{html.escape(anim.merged)}</text>'
+        f'y="{merged_label_y:g}" text-anchor="middle" '
+        f'fill="var(--color-fg)">{merged_spans}</text>'
         f'<rect class="anim__split-box anim__split-box-active" id="{merged_active_id}" '
-        f'x="{center_x - _SPLIT_BOX_WIDTH / 2:g}" y="{merged_y:g}" '
-        f'width="{_SPLIT_BOX_WIDTH}" height="{_SPLIT_BOX_HEIGHT}" rx="8" '
+        f'x="{center_x - endpoint_width / 2:g}" y="{merged_y:g}" '
+        f'width="{endpoint_width:g}" height="{merged_height:g}" rx="8" '
         f'fill="var(--anim-split-active)" opacity="0"></rect>'
         f'<text class="anim__split-name anim__text-on-accent" id="{merged_inverted_id}" '
-        f'x="{center_x:g}" y="{merged_y + _SPLIT_BOX_HEIGHT / 2 + 4:g}" '
-        f'text-anchor="middle" opacity="0">{html.escape(anim.merged)}</text>'
+        f'x="{center_x:g}" y="{merged_label_y:g}" '
+        f'text-anchor="middle" opacity="0">{merged_spans}</text>'
         f'</g>'
     )
 
@@ -1971,31 +2202,62 @@ def _transform_html(anim: Animate, token: str) -> str:
     to_active_id = f"anim-xform-to-active-{token_seed}"
     to_inverted_id = f"anim-xform-to-inverted-{token_seed}"
 
-    # A rung's text sits to the right of the spine and can run wider than the
-    # endpoint boxes above and below it -- reusing _state_machine_html's own
-    # "estimate width from character count" approach rather than inventing a
-    # second one. The SVG's width grows to fit the widest rung so long text is
-    # never clipped.
-    step_text_widths = [
-        len(text) * _STATE_LABEL_CHAR_WIDTH for text in anim.steps
-    ]
-    widest_step_text = max(step_text_widths, default=0)
+    # The canvas is FIXED at the content column and everything is laid out
+    # inside it. Previously the endpoint boxes were pinned at x="0" while
+    # total_width grew with the widest rung's text, which both stranded the
+    # boxes in the left third of a much wider canvas and (once the canvas
+    # outgrew the column) shrank every glyph. Rung text now wraps to the space
+    # actually available beside the spine, and the box column is centred.
+    total_width = _ANIM_CONTENT_WIDTH
 
-    spine_x = _XFORM_BOX_WIDTH / 2
-    rung_text_x = _XFORM_BOX_WIDTH + 24
-    total_width = max(
-        _XFORM_BOX_WIDTH, rung_text_x + widest_step_text + _XFORM_TOP_MARGIN
+    # The spine sits under the centred box column; rung text starts a fixed
+    # gutter to its right and wraps within whatever remains before the margin.
+    box_left_x = (total_width - _XFORM_BOX_WIDTH) / 2
+    spine_x = box_left_x + _XFORM_BOX_WIDTH / 2
+    rung_text_x = box_left_x + _XFORM_BOX_WIDTH + 24
+    rung_text_width = total_width - rung_text_x - _XFORM_TOP_MARGIN
+    wrapped_steps = [
+        _wrap_by_width(text, rung_text_width, _STATE_LABEL_CHAR_WIDTH)
+        for text in anim.steps
+    ]
+
+    # An endpoint's label wraps inside its own box (a 28-char label in a 200px
+    # box overflowed both edges), and the box grows in height to hold it.
+    from_lines = _wrap_by_width(
+        anim.from_entity,
+        _XFORM_BOX_WIDTH - 2 * _STATE_LABEL_CHIP_PAD_X,
+        _STATE_NAME_CHAR_WIDTH,
+    )
+    to_lines = _wrap_by_width(
+        anim.to_entity,
+        _XFORM_BOX_WIDTH - 2 * _STATE_LABEL_CHIP_PAD_X,
+        _STATE_NAME_CHAR_WIDTH,
+    )
+    box_height = max(
+        _XFORM_BOX_HEIGHT,
+        max(len(from_lines), len(to_lines)) * _ANIM_LINE_HEIGHT
+        + 2 * _STATE_LABEL_CHIP_PAD_X,
     )
 
-    box_top_y = _XFORM_TOP_MARGIN
-    box_bottom_y = box_top_y + _XFORM_BOX_HEIGHT
-    spine_top_y = box_bottom_y
-    rung_ys = [
-        spine_top_y + _XFORM_RUNG_GAP * (i + 1) for i in range(len(anim.steps))
+    # A rung's vertical slot must fit its own wrapped text, or two adjacent
+    # rungs' multi-line runs collide -- so each gap is the constant OR the
+    # text's height, whichever is greater.
+    rung_gaps = [
+        max(_XFORM_RUNG_GAP, len(lines) * _ANIM_LINE_HEIGHT + 8)
+        for lines in wrapped_steps
     ]
-    spine_bottom_y = spine_top_y + _XFORM_RUNG_GAP * (len(anim.steps) + 1)
+
+    box_top_y = _XFORM_TOP_MARGIN
+    box_bottom_y = box_top_y + box_height
+    spine_top_y = box_bottom_y
+    rung_ys = []
+    y_cursor = spine_top_y
+    for gap in rung_gaps:
+        y_cursor += gap
+        rung_ys.append(y_cursor)
+    spine_bottom_y = y_cursor + _XFORM_RUNG_GAP
     to_box_top_y = spine_bottom_y
-    total_height = to_box_top_y + _XFORM_BOX_HEIGHT + _XFORM_TOP_MARGIN
+    total_height = to_box_top_y + box_height + _XFORM_TOP_MARGIN
     spine_length = spine_bottom_y - spine_top_y
 
     # The `to` endpoint gets a second, stacked accent rect and a pre-inverted
@@ -2005,32 +2267,37 @@ def _transform_html(anim: Animate, token: str) -> str:
     # `to` needs this; `from` never changes fill. Both `active_id` and
     # `inverted_id` are None for `from`, where they're unused.
     def endpoint(
-        box_id: str, y: float, label: str,
+        box_id: str, y: float, lines: list[str],
         active_id: str | None = None, inverted_id: str | None = None,
     ) -> str:
         label_x = spine_x
-        label_y = y + _XFORM_BOX_HEIGHT / 2 + 4
+        # The wrapped label block is centred vertically in the box: label_y is
+        # the FIRST line's baseline, offset up by half the block's height.
+        label_y = (
+            y + box_height / 2 + 4 - (len(lines) - 1) * _ANIM_LINE_HEIGHT / 2
+        )
+        spans = _tspans(lines, label_x, _ANIM_LINE_HEIGHT)
         extra = ""
         if active_id is not None:
             extra = (
                 f'<rect class="anim__xform-box anim__xform-box-active" '
-                f'id="{active_id}" x="0" '
+                f'id="{active_id}" x="{box_left_x:g}" '
                 f'y="{y:g}" width="{_XFORM_BOX_WIDTH}" '
-                f'height="{_XFORM_BOX_HEIGHT}" rx="8" '
+                f'height="{box_height:g}" rx="8" '
                 f'fill="var(--anim-xform-active)" opacity="0"></rect>'
                 f'<text class="anim__xform-label anim__text-on-accent" '
                 f'id="{inverted_id}" x="{label_x:g}" y="{label_y:g}" '
-                f'text-anchor="middle" opacity="0">{html.escape(label)}</text>'
+                f'text-anchor="middle" opacity="0">{spans}</text>'
             )
         return (
             f'<g class="anim__xform-endpoint">'
-            f'<rect class="anim__xform-box" id="{box_id}" x="0" '
+            f'<rect class="anim__xform-box" id="{box_id}" x="{box_left_x:g}" '
             f'y="{y:g}" width="{_XFORM_BOX_WIDTH}" '
-            f'height="{_XFORM_BOX_HEIGHT}" rx="8" '
+            f'height="{box_height:g}" rx="8" '
             f'fill="var(--anim-xform-idle)"></rect>'
             f'<text class="anim__xform-label" x="{label_x:g}" '
             f'y="{label_y:g}" text-anchor="middle" '
-            f'fill="var(--color-fg)">{html.escape(label)}</text>'
+            f'fill="var(--color-fg)">{spans}</text>'
             f'{extra}'
             f'</g>'
         )
@@ -2040,12 +2307,16 @@ def _transform_html(anim: Animate, token: str) -> str:
     # paint after the spine but before the endpoints settle, so a rung is
     # never mistaken for part of either box.
     rungs_html = []
-    for i, (text, y) in enumerate(zip(anim.steps, rung_ys)):
+    for i, (lines, y) in enumerate(zip(wrapped_steps, rung_ys)):
+        # The wrapped run is centred on the rung's dot, so a two-line step
+        # still reads as belonging to that dot rather than drifting below it.
+        text_y = y + 4 - (len(lines) - 1) * _ANIM_LINE_HEIGHT / 2
         rungs_html.append(
             f'<g class="anim__xform-step" id="{step_ids[i]}" opacity="0">'
             f'<circle class="anim__xform-step-dot" cx="{spine_x:g}" cy="{y:g}" r="5"></circle>'
-            f'<text class="anim__xform-step-text" x="{rung_text_x:g}" y="{y + 4:g}" '
-            f'text-anchor="start">{html.escape(text)}</text>'
+            f'<text class="anim__xform-step-text" x="{rung_text_x:g}" y="{text_y:g}" '
+            f'text-anchor="start">'
+            f'{_tspans(lines, rung_text_x, _ANIM_LINE_HEIGHT)}</text>'
             f'</g>'
         )
 
@@ -2113,9 +2384,9 @@ def _transform_html(anim: Animate, token: str) -> str:
         f'<line class="anim__xform-line" id="{line_id}" x1="{spine_x:g}" '
         f'y1="{spine_top_y:g}" x2="{spine_x:g}" y2="{spine_bottom_y:g}" '
         f'stroke-dasharray="{spine_length:g}" stroke-dashoffset="{spine_length:g}"></line>'
-        f'{endpoint(from_id, box_top_y, anim.from_entity)}'
+        f'{endpoint(from_id, box_top_y, from_lines)}'
         f"{''.join(rungs_html)}"
-        f'{endpoint(to_id, to_box_top_y, anim.to_entity, to_active_id, to_inverted_id)}'
+        f'{endpoint(to_id, to_box_top_y, to_lines, to_active_id, to_inverted_id)}'
         "</svg>"
         f'<script type="application/json" class="anim__timeline">{timeline_json}</script>'
         f'<ol class="anim__xform-static">{static_steps}</ol></div>'
@@ -2240,6 +2511,7 @@ class Rendered:
     glossary: dict[str, str] = field(default_factory=dict)
     quizzes_per_topic: dict[str, int] = field(default_factory=dict)
     animations_per_topic: dict[str, int] = field(default_factory=dict)
+    animate_pattern_counts: dict[str, int] = field(default_factory=dict)
     linear_mermaid_topics: list[str] = field(default_factory=list)
     quiz_count: int = 0
     uses_mermaid: bool = False
@@ -2373,6 +2645,7 @@ def render_course(course_md: str) -> Rendered:
     replacements: dict[str, str] = {}
     quizzes_per_topic: dict[str, int] = {}
     animations_per_topic: dict[str, int] = {}
+    animate_pattern_counts: dict[str, int] = {}
     quiz_numbers: dict[str, int] = {}
     quiz_count = 0
     uses_mermaid = False
@@ -2433,6 +2706,9 @@ def render_course(course_md: str) -> Rendered:
                 replacements[fence.token] = ""
                 continue
             uses_animate = True
+            animate_pattern_counts[anim.pattern] = (
+                animate_pattern_counts.get(anim.pattern, 0) + 1
+            )
             if topic_id:
                 animations_per_topic[topic_id] = animations_per_topic.get(topic_id, 0) + 1
             replacements[fence.token] = _animate_html(anim, fence.token)
@@ -2479,6 +2755,7 @@ def render_course(course_md: str) -> Rendered:
         glossary=terms,
         quizzes_per_topic=quizzes_per_topic,
         animations_per_topic=animations_per_topic,
+        animate_pattern_counts=animate_pattern_counts,
         linear_mermaid_topics=linear_mermaid_topics,
         quiz_count=quiz_count,
         uses_mermaid=uses_mermaid,

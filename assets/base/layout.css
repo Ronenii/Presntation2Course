@@ -378,13 +378,24 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
    wrapper's overflow-x -- the same pattern .mermaid already uses for the same
    reason -- takes over once natural size exceeds the column, instead of scaling
    the text down to fit. */
+/* NOT max-width: 100%. That made the SVG always shrink to fit the column,
+   which meant the `overflow-x: auto` below could never fire -- an oversized
+   canvas silently scaled every glyph down instead of scrolling (a 6-stage
+   pipeline rendered its 13px labels at 8px). The renderer now fits each
+   canvas to the content column by wrapping prose and growing HEIGHT, so a
+   canvas that is STILL too wide has hit a genuine floor (6 pipeline stages,
+   4 split-merge branches) where shrinking text is the wrong trade. Those get
+   a horizontal scrollbar at full, readable size instead. `width: auto` +
+   `max-width: none` keeps the SVG at its intrinsic attribute width so the
+   wrapper actually overflows. */
 .anim__pipeline,
 .anim__layer-stack,
 .anim__transform,
 .anim__build-up,
 .anim__compare,
 .anim__split-merge {
-  max-width: 100%;
+  width: auto;
+  max-width: none;
   height: auto;
 }
 .anim--pipeline,

@@ -8,7 +8,7 @@ import math
 import re
 from dataclasses import asdict, dataclass
 
-from p2c.mdrender import Rendered
+from p2c.mdrender import ANIMATE_PATTERNS, Rendered
 from p2c.outline import iter_topics, topic_ids
 
 ROUTE_FOR_CODE = {
@@ -25,9 +25,20 @@ ROUTE_FOR_CODE = {
     "topic_unknown": "writer",
     "external_request": "build",
     "animation_floor": "writer",
+    "animate_pattern_monoculture": "writer",
 }
 
 ANIMATION_FLOOR = 0.25
+
+# Above this share of a course's animate blocks, one pattern has stopped being a
+# choice and become a default. Seven patterns exist; `pipeline` is the most
+# generic-sounding of them ("input flows through stages"), so almost any topic
+# can be narrated to fit it -- which is exactly how a course ends up with 18 of
+# 61 blocks identical and none carrying the specific relationship it teaches.
+# The threshold is deliberately loose: a course legitimately leaning on two or
+# three patterns stays well under it, and only a genuine monoculture trips it.
+_PATTERN_SHARE_CEILING = 0.5
+_PATTERN_MONOCULTURE_MIN_BLOCKS = 6  # below this, a high share is just a small n
 
 PLACEHOLDER_PATTERNS = (
     r"\bTODO\b",
@@ -152,6 +163,36 @@ def animation_floor_findings(rendered, justified_topics: set[str]) -> list[Findi
     ]
 
 
+def animate_pattern_findings(rendered) -> list[Finding]:
+    """No single animate pattern may dominate the course's animations.
+
+    A non-blocking finding: an over-used pattern makes for a monotonous course,
+    but it is a quality problem, not a broken build -- unlike a malformed block.
+    It is reported so the writer re-picks per topic instead of defaulting, which
+    is what `references/quiz-format.md`'s selection table exists to prevent.
+    """
+    counts = rendered.animate_pattern_counts
+    total = sum(counts.values())
+    if total < _PATTERN_MONOCULTURE_MIN_BLOCKS:
+        return []
+    pattern, count = max(counts.items(), key=lambda kv: kv[1])
+    if count / total <= _PATTERN_SHARE_CEILING:
+        return []
+    unused = sorted(set(ANIMATE_PATTERNS) - set(counts))
+    advice = "re-pick per topic from the selection table in references/quiz-format.md"
+    if unused:
+        advice += f" — these patterns went entirely unused: {', '.join(unused)}"
+    return [
+        _finding(
+            "animate_pattern_monoculture",
+            f"{count} of {total} animate blocks use `{pattern}` "
+            f"({round(100 * count / total)}%, ceiling "
+            f"{int(_PATTERN_SHARE_CEILING * 100)}%); {advice}",
+            is_blocking=False,
+        )
+    ]
+
+
 def validate_course(rendered: Rendered, outline: dict, html_text: str) -> list[Finding]:
     findings: list[Finding] = []
     modules = anchor_to_module(rendered, outline)
@@ -240,6 +281,7 @@ def validate_course(rendered: Rendered, outline: dict, html_text: str) -> list[F
     findings.extend(
         animation_floor_findings(rendered, set(rendered.topics_visual_justified))
     )
+    findings.extend(animate_pattern_findings(rendered))
 
     # 6: every jargon term has a glossary entry. Reported per topic (rather than
     # pooled across the whole outline) so each finding is attributable to one writer.

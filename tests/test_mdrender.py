@@ -1,3 +1,4 @@
+import html
 import json
 import math
 import re
@@ -5,10 +6,10 @@ import re
 import pytest
 
 from p2c.mdrender import (
+    _ANIM_CONTENT_WIDTH,
     _LAYER_GAP,
     _LAYER_HEIGHT,
     _LAYER_TOP_MARGIN,
-    _LAYER_WIDTH,
     _PIPE_BOX_HEIGHT,
     _PIPE_BOX_WIDTH,
     _PIPE_GAP,
@@ -16,6 +17,7 @@ from p2c.mdrender import (
     _STATE_BOX_HEIGHT,
     _STATE_LABEL_CHAR_WIDTH,
     _STATE_LABEL_CHIP_PAD_X,
+    _STATE_NAME_CHAR_WIDTH,
     _XFORM_BOX_HEIGHT,
     _XFORM_BOX_WIDTH,
     _XFORM_RUNG_GAP,
@@ -31,6 +33,8 @@ from p2c.mdrender import (
     _pipeline_html,
     _split_merge_html,
     _transform_html,
+    _tspans,
+    _wrap_by_width,
     mermaid_problem,
     parse_animate,
     parse_figure,
@@ -862,7 +866,10 @@ def test_layer_stack_timeline_resets_animated_properties():
 
 
 def test_layer_stack_constants_are_divisible_by_four():
-    for value in (_LAYER_WIDTH, _LAYER_HEIGHT, _LAYER_GAP, _LAYER_TOP_MARGIN):
+    # The row's WIDTH is no longer a constant -- it comes from the content
+    # column so prose can wrap into it (see _ANIM_CONTENT_WIDTH); only the
+    # vertical rhythm is still fixed here.
+    for value in (_LAYER_HEIGHT, _LAYER_GAP, _LAYER_TOP_MARGIN):
         assert value % 4 == 0
 
 
@@ -2120,3 +2127,267 @@ def test_animations_per_topic_counts_blocks_and_backfills_zeros():
     assert rendered.animations_per_topic["topic-a"] == 1
     # Backfilled, not absent: the floor check divides over every topic.
     assert rendered.animations_per_topic["topic-b"] == 0
+
+
+# --- Animate canvases must stay inside the content column ----------------
+#
+# Regression tests for the "animations render unreadably small" defect. Every
+# pattern sized its canvas from character count with no wrapping, so authored
+# prose could only widen the viewBox: a 62-char Hebrew caption produced a
+# 2126x112 pipeline (19:1), which `max-width: 100%` then scaled into the
+# ~700px column, rendering 13px labels at ~4.3px. The fix wraps prose and
+# grows HEIGHT instead, so these assert on the canvas geometry directly.
+
+# Real prose lengths from the course that exposed this, so the tests fail for
+# the same reason a reader's page did.
+_LONG_HE = "רק סדר, למשל הגג קרוב יותר מהרחוב — בלי יחידות, לא מספיק לגובה"
+_LONGER_HE = (
+    "אותו depth יכול לשכון בגבהים שונים לגמרי — הבלבול הזה נפתר במבט nadir"
+)
+
+
+def _svg_size(out: str) -> tuple[float, float]:
+    # The rendered width/height attributes, not the viewBox: state-machine
+    # centres its viewBox on the ring's origin, so its min-x/min-y are
+    # negative and only the last two numbers are the extent.
+    m = re.search(r'<svg[^>]*\swidth="([\d.]+)" height="([\d.]+)"', out)
+    assert m, f"no svg size found in {out[:200]}"
+    return float(m.group(1)), float(m.group(2))
+
+
+def test_wrap_by_width_breaks_on_words_and_respects_the_budget():
+    lines = _wrap_by_width("one two three four five six", 10 * 7.2, 7.2)
+    assert len(lines) > 1
+    assert all(len(line) <= 10 for line in lines)
+    # Every word survives, in order, and none is split mid-token.
+    assert " ".join(lines).split() == "one two three four five six".split()
+
+
+def test_wrap_by_width_keeps_an_overlong_word_whole():
+    # A single token wider than the whole budget must not spin the loop or be
+    # hyphenated mid-glyph.
+    lines = _wrap_by_width("supercalifragilistic", 5 * 7.2, 7.2)
+    assert lines == ["supercalifragilistic"]
+
+
+def test_tspans_restate_x_on_every_line():
+    # A tspan omitting x continues from the previous advance width, which
+    # staircases the block to the right instead of forming a left-aligned run.
+    out = _tspans(["one", "two"], 40, 14)
+    assert out.count('x="40"') == 2
+    assert 'dy="0"' in out and 'dy="14"' in out
+
+
+def test_pipeline_canvas_never_exceeds_the_content_column():
+    anim = parse_animate(
+        "pattern: pipeline\nstages:\n"
+        f"  - relative depth: {_LONG_HE}\n"
+        f"  - metric depth: {_LONG_HE}\n"
+        f"  - height: {_LONG_HE}\n"
+    )
+    out = _pipeline_html(anim, "ANIMTOKEN9")
+    width, height = _svg_size(out)
+    assert width <= _ANIM_CONTENT_WIDTH, (
+        f"pipeline widened to {width}px; scaled into the "
+        f"{_ANIM_CONTENT_WIDTH}px column this shrinks all text"
+    )
+    # The prose still has to go somewhere: it goes into height, via wrapping.
+    assert height > _PIPE_TOP_MARGIN * 2 + _PIPE_BOX_HEIGHT
+    assert "<tspan" in out
+
+
+def test_pipeline_wraps_long_prose_rather_than_truncating_it():
+    anim = parse_animate(
+        "pattern: pipeline\nstages:\n"
+        f"  - relative depth: {_LONG_HE}\n  - metric depth: short\n"
+    )
+    out = _pipeline_html(anim, "ANIMTOKEN9")
+    # Every authored word must still be present -- wrapping, not clipping.
+    for word in _LONG_HE.split():
+        assert html.escape(word) in out
+
+
+def test_transform_canvas_never_exceeds_the_content_column():
+    anim = parse_animate(
+        "pattern: transform\n"
+        "from: גובה טיסה H ומרחק depth נמדד\n"
+        "to: גובה הבניין h מעל הקרקע\n"
+        "steps:\n"
+        "  - מוודאים שהנקודה נמצאת על ציר ה-nadir (ישר מתחת למצלמה)\n"
+        "  - מחסרים את depth הנמדד מגובה הטיסה H\n"
+    )
+    out = _transform_html(anim, "ANIMTOKEN9")
+    width, _ = _svg_size(out)
+    assert width <= _ANIM_CONTENT_WIDTH
+
+
+def test_transform_centers_its_endpoint_boxes_on_the_canvas():
+    # The boxes were hardcoded at x="0" while total_width grew with the rung
+    # text, stranding them in the left third of a much wider canvas.
+    anim = parse_animate(
+        "pattern: transform\nfrom: Disparity map\nto: Metric depth\n"
+        f"steps:\n  - {_LONG_HE}\n"
+    )
+    out = _transform_html(anim, "ANIMTOKEN9")
+    width, _ = _svg_size(out)
+    # Match the <rect>s only -- a <tspan> inside the box's label also carries
+    # an x attribute, at the label's own left edge.
+    boxes = re.findall(
+        r'<rect class="anim__xform-box[^"]*"[^>]*?x="([\d.]+)"[^>]*?width="([\d.]+)"',
+        out,
+    )
+    assert boxes, "no endpoint boxes found"
+    for x_s, w_s in boxes:
+        x, box_w = float(x_s), float(w_s)
+        # Centred: the margin on the left equals the margin on the right.
+        assert abs(x - (width - x - box_w)) < 1.5, (
+            f"box at x={x} is not centred on a {width}px canvas"
+        )
+
+
+def test_transform_endpoint_labels_wrap_inside_their_box():
+    # A 28-char label in a 200px box overflowed both edges of the box.
+    anim = parse_animate(
+        "pattern: transform\n"
+        "from: גובה טיסה H ומרחק depth נמדד\n"
+        "to: גובה הבניין h מעל הקרקע\n"
+        "steps:\n  - step one\n"
+    )
+    out = _transform_html(anim, "ANIMTOKEN9")
+    assert '<tspan' in out
+
+
+def test_build_up_stacks_name_above_contribution():
+    # The stale renderer put the name and the contribution on the SAME row
+    # (name left-anchored, contribution text-anchor="end" at the right edge),
+    # so a long contribution ran straight through the name.
+    anim = parse_animate(
+        "pattern: build-up\nwhole: A whole\nparts:\n"
+        f"  - depth ≠ height: {_LONGER_HE}\n  - second part: also contributes\n"
+    )
+    out = _build_up_html(anim, "ANIMTOKEN9")
+    assert 'text-anchor="end"' not in out, (
+        "build-up must not right-anchor the contribution against the name"
+    )
+    name_y = float(re.search(r'class="anim__build-name"[^>]*y="([\d.]+)"', out).group(1))
+    contrib_y = float(
+        re.search(r'class="anim__build-contrib"[^>]*y="([\d.]+)"', out).group(1)
+    )
+    assert name_y < contrib_y, "the name must sit on the row ABOVE the contribution"
+
+
+def test_build_up_canvas_never_exceeds_the_content_column():
+    anim = parse_animate(
+        "pattern: build-up\nwhole: A whole\nparts:\n"
+        f"  - depth ≠ height: {_LONGER_HE}\n  - second: {_LONGER_HE}\n"
+    )
+    out = _build_up_html(anim, "ANIMTOKEN9")
+    width, _ = _svg_size(out)
+    assert width <= _ANIM_CONTENT_WIDTH
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "pattern: pipeline\nstages:\n  - a: " + _LONG_HE + "\n  - b: " + _LONG_HE,
+        "pattern: layer-stack\nlayers:\n  - a: " + _LONG_HE + "\n  - b: " + _LONG_HE,
+        "pattern: build-up\nwhole: w\nparts:\n  - a: " + _LONG_HE + "\n  - b: " + _LONG_HE,
+        "pattern: transform\nfrom: f\nto: t\nsteps:\n  - " + _LONG_HE,
+        "pattern: compare\nleft: l\nright: r\nsteps:\n  - "
+        + _LONG_HE + " | " + _LONG_HE,
+        "pattern: split-merge\nsource: s\nmerged: m\nbranches:\n  - a: "
+        + _LONG_HE + "\n  - b: " + _LONG_HE,
+        "pattern: state-machine\nstates:\n  - " + _LONG_HE + "\n  - second state\n"
+        "transitions:\n  - " + _LONG_HE + " -> second state: " + _LONG_HE,
+    ],
+)
+def test_every_pattern_stays_within_the_content_column_with_real_prose(body):
+    # The defect was not specific to one pattern: every generator sized its
+    # canvas from character count. Long prose in ANY of them must grow height,
+    # never width past the column.
+    out = _animate_html(parse_animate(body), "ANIMTOKEN9")
+    width, _ = _svg_size(out)
+    assert width <= _ANIM_CONTENT_WIDTH, f"{body.splitlines()[0]} widened to {width}px"
+
+
+# --- Wrapped text must stay inside the canvas ----------------------------
+
+# Classes whose text-anchor comes from layout.css rather than an attribute --
+# without these the containment check below mis-locates their runs and reports
+# false overflows.
+_CSS_MIDDLE_ANCHORED = {"anim__state-transition-label", "anim__state-name"}
+
+
+def _text_runs(svg: str):
+    """Yield (class, x0, x1) for every text line in the SVG, tspans included."""
+    from xml.etree import ElementTree as ET
+
+    root = ET.fromstring(svg)
+    for el in root.iter():
+        if not el.tag.endswith("text"):
+            continue
+        classes = set((el.get("class") or "").split())
+        # The bigger per-char estimate for name/label classes, matching the
+        # renderer's own choice of _STATE_NAME_CHAR_WIDTH vs the label width.
+        char_w = (
+            _STATE_NAME_CHAR_WIDTH
+            if any("name" in c or "label" in c for c in classes)
+            else _STATE_LABEL_CHAR_WIDTH
+        )
+        anchor = el.get("text-anchor") or (
+            "middle" if classes & _CSS_MIDDLE_ANCHORED else "start"
+        )
+        spans = [c for c in el if c.tag.endswith("tspan")]
+        lines = [(s.text or "", float(s.get("x"))) for s in spans] or [
+            (el.text or "", float(el.get("x")))
+        ]
+        for text, x in lines:
+            width = len(text) * char_w
+            if anchor == "middle":
+                yield classes, x - width / 2, x + width / 2
+            elif anchor == "end":
+                yield classes, x - width, x
+            else:
+                yield classes, x, x + width
+
+
+@pytest.mark.parametrize(
+    "label,body",
+    [
+        ("pipeline-3", "pattern: pipeline\nstages:\n"
+         + "".join(f"  - stage{i}: {_LONG_HE}\n" for i in range(3))),
+        ("pipeline-6", "pattern: pipeline\nstages:\n"
+         + "".join(f"  - s{i}: {_LONG_HE}\n" for i in range(6))),
+        ("layer-stack", f"pattern: layer-stack\nlayers:\n  - a: {_LONG_HE}\n  - b: {_LONG_HE}"),
+        ("build-up", f"pattern: build-up\nwhole: w\nparts:\n"
+         f"  - depth ≠ height: {_LONGER_HE}\n  - b: {_LONGER_HE}"),
+        ("transform", "pattern: transform\nfrom: גובה טיסה H ומרחק depth נמדד\n"
+         f"to: גובה הבניין h מעל הקרקע\nsteps:\n  - {_LONG_HE}"),
+        ("compare", f"pattern: compare\nleft: l\nright: r\nsteps:\n  - {_LONG_HE} | {_LONG_HE}"),
+        ("split-2", f"pattern: split-merge\nsource: {_LONG_HE}\nmerged: {_LONG_HE}\n"
+         f"branches:\n  - a: {_LONG_HE}\n  - b: {_LONG_HE}"),
+        ("split-4", "pattern: split-merge\nsource: s\nmerged: m\nbranches:\n"
+         + "".join(f"  - b{i}: {_LONG_HE}\n" for i in range(4))),
+        ("state-2", f"pattern: state-machine\nstates:\n  - {_LONG_HE}\n  - second\n"
+         f"transitions:\n  - {_LONG_HE} -> second: {_LONG_HE}"),
+    ],
+)
+def test_wrapped_text_stays_inside_the_canvas(label, body):
+    """Every text run must fall inside the viewBox, not just the viewBox be small.
+
+    Capping the canvas width is only half a fix: text that no longer widens
+    the canvas can instead overflow it and be clipped by the SVG's own edge.
+    layer-stack did exactly that -- a fixed 260px row with no wrapping spilled
+    73px of a Hebrew caption outside a 300px canvas, silently cut off.
+    """
+    out = _animate_html(parse_animate(body), "ANIMTOKEN9")
+    svg = re.search(r"<svg.*?</svg>", out, re.S).group(0)
+    min_x, _, width, _ = (
+        float(v) for v in re.search(r'viewBox="([^"]+)"', svg).group(1).split()
+    )
+    for classes, x0, x1 in _text_runs(svg):
+        assert x0 >= min_x - 1, f"{label}: {sorted(classes)} runs off the left edge"
+        assert x1 <= min_x + width + 1, (
+            f"{label}: {sorted(classes)} runs {x1 - (min_x + width):.0f}px "
+            f"past the right edge and is clipped"
+        )

@@ -5,6 +5,7 @@ from p2c.validate import (
     ROUTE_FOR_CODE,
     Finding,
     anchor_to_module,
+    animate_pattern_findings,
     blocking,
     findings_to_json,
     validate_course,
@@ -486,3 +487,61 @@ def test_a_duplicated_topic_marker_does_not_inflate_the_floor_denominator():
         "t4": BRANCHING_MERMAID_BLOCK,
     })
     assert "animation_floor" not in codes(findings)
+
+
+# --- animate pattern monoculture -----------------------------------------
+
+
+class _PatternRendered:
+    """Minimal stand-in: the check reads only animate_pattern_counts."""
+
+    def __init__(self, counts):
+        self.animate_pattern_counts = counts
+
+
+def test_no_monoculture_finding_when_patterns_are_varied():
+    # The distribution a course SHOULD have: no pattern past half.
+    findings = animate_pattern_findings(
+        _PatternRendered({
+            "pipeline": 5, "compare": 4, "build-up": 4,
+            "split-merge": 3, "layer-stack": 3, "transform": 2,
+        })
+    )
+    assert findings == []
+
+
+def test_monoculture_is_reported_when_one_pattern_dominates():
+    # 12 of 20 is 60%, past the 50% ceiling.
+    findings = animate_pattern_findings(
+        _PatternRendered({"pipeline": 12, "compare": 5, "build-up": 3})
+    )
+    assert len(findings) == 1
+    assert findings[0].code == "animate_pattern_monoculture"
+    assert "pipeline" in findings[0].message
+    # A quality problem, not a broken build: it must not block the ship.
+    assert findings[0].blocking is False
+    # The patterns that went unused are the actionable part of the advice.
+    assert "state-machine" in findings[0].message
+
+
+def test_a_small_course_is_not_flagged_for_a_high_share():
+    # 3 of 4 is 75%, but n is too small for the share to mean anything.
+    findings = animate_pattern_findings(
+        _PatternRendered({"pipeline": 3, "compare": 1})
+    )
+    assert findings == []
+
+
+def test_the_real_worlds_distribution_that_prompted_this_check():
+    # The actual counts from unit2's shipped course: 18 pipeline of 61 blocks.
+    # This is 30% -- UNDER the ceiling -- so the check alone would not have
+    # caught it. Recorded deliberately: the ceiling catches only egregious
+    # monoculture, and `references/quiz-format.md`'s selection table is what
+    # actually has to do the work of preventing a lopsided-but-legal spread.
+    findings = animate_pattern_findings(
+        _PatternRendered({
+            "pipeline": 18, "split-merge": 11, "transform": 8,
+            "compare": 8, "build-up": 8, "layer-stack": 7, "state-machine": 1,
+        })
+    )
+    assert findings == []
