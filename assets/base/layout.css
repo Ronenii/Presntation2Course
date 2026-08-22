@@ -206,6 +206,19 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   transform-origin: center center;
 }
 .diagram-lightbox__stage .mermaid svg { max-width: none; }
+/* Same reparent-and-fit treatment as .mermaid above, for the seven animate
+   patterns: dropping overflow-x here (never any -- the fit-scale transform
+   sizes the whole diagram to the stage, so there's nothing left to scroll)
+   and max-width/height:none on state-machine's SVG specifically, since it's
+   the one pattern whose own rule (.anim__state-machine) sets max-width: 100%
+   for the normal in-column view -- that would otherwise fight fitScale by
+   re-capping the SVG's width inside the already-sized stage. */
+.diagram-lightbox__stage .anim {
+  margin: 0; cursor: inherit; overflow: visible;
+  position: absolute; top: 50%; left: 50%;
+  transform-origin: center center;
+}
+.diagram-lightbox__stage .anim svg { max-width: none; height: auto; }
 .diagram-fallback {
   margin: var(--space-6) 0; padding: var(--space-4);
   border: 1px dashed var(--color-warn); border-radius: var(--radius);
@@ -252,7 +265,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .figure img { max-width: 100%; height: auto; border-radius: var(--radius); }
 .figure figcaption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
 
-.anim { margin: var(--space-6) 0; }
+.anim { margin: var(--space-6) 0; cursor: zoom-in; }
 .anim--state-machine { text-align: center; overflow-x: auto; }
 /* max-width rather than width: 100%. Stretching a fixed viewBox across the full
    column scales its text down with it, which is what made a 5-state machine
@@ -378,13 +391,24 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
    wrapper's overflow-x -- the same pattern .mermaid already uses for the same
    reason -- takes over once natural size exceeds the column, instead of scaling
    the text down to fit. */
+/* NOT max-width: 100%. That made the SVG always shrink to fit the column,
+   which meant the `overflow-x: auto` below could never fire -- an oversized
+   canvas silently scaled every glyph down instead of scrolling (a 6-stage
+   pipeline rendered its 13px labels at 8px). The renderer now fits each
+   canvas to the content column by wrapping prose and growing HEIGHT, so a
+   canvas that is STILL too wide has hit a genuine floor (6 pipeline stages,
+   4 split-merge branches) where shrinking text is the wrong trade. Those get
+   a horizontal scrollbar at full, readable size instead. `width: auto` +
+   `max-width: none` keeps the SVG at its intrinsic attribute width so the
+   wrapper actually overflows. */
 .anim__pipeline,
 .anim__layer-stack,
 .anim__transform,
 .anim__build-up,
 .anim__compare,
 .anim__split-merge {
-  max-width: 100%;
+  width: auto;
+  max-width: none;
   height: auto;
 }
 .anim--pipeline,
@@ -445,20 +469,52 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   font-size: 11px;
 }
 
-/* .anim__layer-adds and .anim__build-contrib are the only two classes the
-   renderer gives text-anchor="end" (a fixed-width row's second column,
-   right-aligned against the SVG's own dir="ltr"). Per the SVG/CSS bidi
-   rules, an "end" anchor resolves against the PARAGRAPH direction -- which
-   these elements inherit as ltr from the SVG root, not from their own
-   Hebrew/Arabic content -- so the Unicode Bidi Algorithm reorders trailing
-   neutral characters (spaces, punctuation) to the wrong side of the anchor
-   and the run spills past the box's edge. unicode-bidi: plaintext makes each
-   element resolve its OWN paragraph direction from its first strong
-   character (Unicode's P2/P3 rules), independent of the SVG's dir and
-   without the renderer needing to know the course's language at all. */
-.anim__layer-adds,
-.anim__build-contrib {
-  unicode-bidi: plaintext;
+/* Every animate label renders raw author content into an SVG the renderer
+   always marks dir="ltr" (diagram geometry -- arrows, stacking order -- is
+   spatial, not textual, and stays LTR regardless of course language).
+   `direction` (inherited ltr from the SVG root) controls how a run's own
+   characters reorder, so a Hebrew/Arabic label needs direction: rtl to
+   shape correctly -- unicode-bidi: plaintext does NOT do this: per the SVG
+   spec, `direction` only takes effect once unicode-bidi is `embed` or
+   `bidi-override`; plaintext is a third, unrelated mode that doesn't
+   reliably drive text layout in current engines.
+
+   Once direction: rtl is set, text-anchor="start"/"end" FLIPS which way the
+   run extends from its x coordinate (verified with a real Chromium render,
+   getBBox() before/after): "start" extends LEFTWARD instead of rightward,
+   "end" extends RIGHTWARD instead of leftward. layer-stack's and build-up's
+   row text is centered (text-anchor: middle, unaffected by this -- see
+   _layer_stack_html/_build_up_html for why a left/right name+caption split
+   was replaced with a centered, stacked pair instead of also flipping their
+   anchors: swapping which SIDE a name vs. caption sits on needs the
+   renderer to know the course's language, which mdrender.py deliberately
+   does not). .anim__xform-step-text is the one label still genuinely
+   start-anchored (a single value beside a spine dot, not a name+caption
+   pair), so it alone gets the anchor flip too.
+
+   [dir="rtl"] mirrors the existing convention this file already uses for
+   the drawer's mirrored offset above: these rules apply only on an RTL
+   course, never touching an English one. */
+[dir="rtl"] .anim__xform-step-text {
+  direction: rtl;
+  unicode-bidi: embed;
+  text-anchor: end;
+}
+[dir="rtl"] .anim__pipe-name,
+[dir="rtl"] .anim__xform-label,
+[dir="rtl"] .anim__state-name,
+[dir="rtl"] .anim__state-transition-label,
+[dir="rtl"] .anim__split-name,
+[dir="rtl"] .anim__split-what,
+[dir="rtl"] .anim__cmp-text,
+[dir="rtl"] .anim__cmp-heading,
+[dir="rtl"] .anim__pipe-change,
+[dir="rtl"] .anim__layer-name,
+[dir="rtl"] .anim__layer-adds,
+[dir="rtl"] .anim__build-name,
+[dir="rtl"] .anim__build-contrib {
+  direction: rtl;
+  unicode-bidi: embed;
 }
 
 .anim__xform-step-text {

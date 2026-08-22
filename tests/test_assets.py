@@ -422,23 +422,26 @@ def test_reduced_motion_static_lists_for_the_new_patterns_get_list_styling():
 
 
 def test_new_animate_pattern_svgs_scroll_instead_of_shrinking_text():
-    """.anim__pipeline/.anim__layer-stack/.anim__transform previously matched
-    .anim__state-machine's `width: 100%` -- fine for a small fixed viewBox, but
-    a wide one (a 6-stage pipeline, or a transform block whose step text widened
-    the connector gap) got stretched across the full text column and its text
-    scaled down to illegibility (~5-6px effective at a ~700px column against a
-    ~1400px viewBox). The markup now carries explicit width/height presentation
-    attributes so each SVG renders at its own natural size by default (see
-    _pipeline_html/_layer_stack_html/_transform_html); this asserts the CSS side
-    of that fix: `max-width` (never `width`) caps it from overflowing a narrow
-    column, and the wrapper scrolls -- same `overflow-x: auto` idiom .mermaid
-    already uses -- rather than the SVG scaling its text down to fit.
+    """An oversized animate canvas must SCROLL at full size, never scale down.
+
+    This test previously asserted `max-width: 100%` as the mechanism, which
+    cannot deliver the behaviour its own name describes: `max-width: 100%`
+    makes the SVG always shrink to fit the column, so the `overflow-x: auto`
+    below can never fire and a wide canvas silently scales every glyph down
+    (a 6-stage pipeline rendered its 13px labels at ~8px, a 3-stage one at
+    ~4px). The renderer now fits each canvas to the content column by
+    wrapping prose and growing HEIGHT (see _ANIM_CONTENT_WIDTH), so the only
+    canvases still exceeding it have hit a real floor -- and those must keep
+    their intrinsic width and scroll. Hence `max-width: none`, not 100%.
     """
     css = (ASSETS / "base" / "layout.css").read_text()
     svg_rule_start = css.index(".anim__pipeline,")
     svg_rule = css[svg_rule_start : css.index("}", svg_rule_start)]
-    assert "max-width: 100%" in svg_rule
+    assert "max-width: none" in svg_rule
+    # Neither `width: 100%` (stretches a narrow canvas) nor `max-width: 100%`
+    # (shrinks a wide one) may come back: both scale text away.
     assert re.search(r"(?<!max-)width: 100%", svg_rule) is None
+    assert "max-width: 100%" not in svg_rule
     wrapper_rule_start = css.index(".anim--pipeline,\n.anim--layer-stack,\n.anim--transform")
     wrapper_rule = css[wrapper_rule_start : css.index("}", wrapper_rule_start)]
     assert "overflow-x: auto" in wrapper_rule

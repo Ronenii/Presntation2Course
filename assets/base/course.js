@@ -295,7 +295,7 @@
       document.body.style.overflow = "";
     }
 
-    document.querySelectorAll(".content .mermaid").forEach(function (diagram) {
+    document.querySelectorAll(".content .mermaid, .content .anim").forEach(function (diagram) {
       diagram.setAttribute("tabindex", "0");
       diagram.setAttribute("role", "button");
       diagram.setAttribute("aria-label", "Open diagram, enlarged");

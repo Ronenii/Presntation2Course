@@ -75,6 +75,54 @@ topic and the source.
 
 ## `animate` — a bounded animation pattern
 
+### Choosing the pattern first
+
+Pick the pattern from the **shape of the idea**, not from the order you happen to
+be explaining it in. Almost any technical topic can be *narrated* as a sequence,
+which makes `pipeline` feel like it fits everywhere — it does not, and reaching
+for it by default produces a course where most animations look identical and
+none of them carry the specific relationship being taught. If more than roughly
+a third of a module's animate blocks are the same pattern, that is the signal
+you defaulted rather than chose.
+
+Work down this table and take the FIRST row that genuinely matches:
+
+| The idea is… | Pattern | Not this pattern when… |
+|---|---|---|
+| One artifact is progressively **transformed**, each stage's output feeding the next, and the stages are **irreversible** | `pipeline` | the stages are really just a numbered list of facts, or nothing is being transformed — then it is not a pipeline |
+| Two named things are **contrasted** point by point | `compare` | you are only describing one of them |
+| One thing **splits** into cases/paths that later **recombine** | `split-merge` | the branches never rejoin |
+| Parts **accumulate** into a whole, and the assembled whole is the point | `build-up` | the parts are ordered tiers of abstraction — use `layer-stack` |
+| **Abstraction tiers** stack, and which tier you are at is the point | `layer-stack` | the tiers do not sit above/below each other conceptually |
+| One entity **becomes** another through named derivation steps | `transform` | the "steps" are stages of a flow rather than a derivation — use `pipeline` |
+| A system **occupies states** and moves between them, possibly cycling | `state-machine` | it never returns to an earlier state and nothing is a "state" — a plain flow is a `pipeline` |
+
+Two distinctions worth stating outright, since they are the ones most often
+collapsed:
+
+- `pipeline` vs `transform`: a pipeline has **multiple stages that each hold a
+  different intermediate artifact**; a transform has **one before and one after**
+  with the steps being the derivation that connects them. "Image → features →
+  depth map" is a pipeline. "Disparity becomes metric depth, by inverting and
+  scaling" is a transform.
+- `pipeline` vs `build-up`: a pipeline's earlier stages are **consumed** (the raw
+  frame is gone once encoded); a build-up's parts are **all still present** at the
+  end. If the final frame should show everything at once, it is a build-up.
+
+If no row matches, the topic probably wants a `mermaid` diagram or an inline
+`<svg>` instead — `animate` is for the seven relationships above, not a general
+animation tool.
+
+### Keeping the prose short
+
+Every pattern wraps long text and grows its box **taller** rather than wider, so
+prose is never clipped and the canvas never shrinks to illegibility. But a box
+wrapped to four lines still reads worse than one wrapped to two. Aim for **under
+~40 characters** per name and per description; put the full explanation in the
+surrounding prose, where it belongs. The animate block labels the idea — it does
+not carry the teaching.
+
+
 ````
 ```animate
 pattern: state-machine

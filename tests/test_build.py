@@ -465,10 +465,13 @@ def test_animate_blocks_render_inside_a_built_course(tmp_path):
     )
     result = build(MINI / "outline.json", modules, out, ASSETS)
     html = result.course_html.read_text()
+    # The label sits in a <tspan> inside the <text>: prose is wrapped to keep
+    # the canvas inside the content column instead of widening it (which used
+    # to scale the whole SVG, and its text, down to illegibility).
     assert re.search(
         r'<rect class="anim__pipe-box"[^>]*></rect>'
         r'<rect class="anim__pipe-box anim__pipe-box-active"[^>]*></rect>'
-        r'<text class="anim__pipe-name"[^>]*>Ready</text>',
+        r'<text class="anim__pipe-name"[^>]*><tspan[^>]*>Ready</tspan></text>',
         html,
     )
 
