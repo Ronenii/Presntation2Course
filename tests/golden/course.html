@@ -275,6 +275,19 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
   transform-origin: center center;
 }
 .diagram-lightbox__stage .mermaid svg { max-width: none; }
+/* Same reparent-and-fit treatment as .mermaid above, for the seven animate
+   patterns: dropping overflow-x here (never any -- the fit-scale transform
+   sizes the whole diagram to the stage, so there's nothing left to scroll)
+   and max-width/height:none on state-machine's SVG specifically, since it's
+   the one pattern whose own rule (.anim__state-machine) sets max-width: 100%
+   for the normal in-column view -- that would otherwise fight fitScale by
+   re-capping the SVG's width inside the already-sized stage. */
+.diagram-lightbox__stage .anim {
+  margin: 0; cursor: inherit; overflow: visible;
+  position: absolute; top: 50%; left: 50%;
+  transform-origin: center center;
+}
+.diagram-lightbox__stage .anim svg { max-width: none; height: auto; }
 .diagram-fallback {
   margin: var(--space-6) 0; padding: var(--space-4);
   border: 1px dashed var(--color-warn); border-radius: var(--radius);
@@ -321,7 +334,7 @@ th, td { border: 1px solid var(--color-border); padding: var(--space-2) var(--sp
 .figure img { max-width: 100%; height: auto; border-radius: var(--radius); }
 .figure figcaption { margin-block-start: var(--space-2); color: var(--color-muted); font-size: 0.9rem; }
 
-.anim { margin: var(--space-6) 0; }
+.anim { margin: var(--space-6) 0; cursor: zoom-in; }
 .anim--state-machine { text-align: center; overflow-x: auto; }
 /* max-width rather than width: 100%. Stretching a fixed viewBox across the full
    column scales its text down with it, which is what made a 5-state machine
@@ -1202,7 +1215,7 @@ var anime=function(t){"use strict";const e="undefined"!=typeof window,s=e?window
       document.body.style.overflow = "";
     }
 
-    document.querySelectorAll(".content .mermaid").forEach(function (diagram) {
+    document.querySelectorAll(".content .mermaid, .content .anim").forEach(function (diagram) {
       diagram.setAttribute("tabindex", "0");
       diagram.setAttribute("role", "button");
       diagram.setAttribute("aria-label", "Open diagram, enlarged");
